@@ -81,10 +81,6 @@ export default function Comments({ storageKey }) {
         <span className="text-xs text-reel-muted">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
       </div>
 
-      <p className="text-[11px] text-reel-muted bg-reel-surface2 rounded-lg px-3 py-2 mb-3">
-        ⚠️ Comments sirf is device pe save hote hain — doosre users ko nahi dikhenge.
-      </p>
-
       <div className="flex items-start gap-2 mb-4">
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
