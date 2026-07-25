@@ -1672,6 +1672,35 @@ async def update_settings_api(payload: dict) -> dict:
             cleaned.append(channel)
         payload["global_search_channels"] = cleaned
 
+    CHANNEL_CATEGORY_KEYS = {"anime", "movie", "kdrama", "series", "shortdrama"}
+
+    if "channel_categories" in payload:
+        raw_cc = payload["channel_categories"]
+        if not isinstance(raw_cc, dict):
+            raise HTTPException(status_code=400, detail="'channel_categories' must be an object.")
+        cleaned_cc: dict = {}
+        for channel, cats in raw_cc.items():
+            channel = str(channel).strip()
+            if not channel:
+                continue
+            try:
+                int(channel.replace("-100", ""))
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid channel id: {channel}")
+            if not isinstance(cats, list):
+                raise HTTPException(status_code=400, detail=f"Categories for channel {channel} must be a list.")
+            cats_clean = sorted({
+                str(c).strip().lower() for c in cats
+                if str(c).strip().lower() in CHANNEL_CATEGORY_KEYS
+            })
+            if cats_clean:
+                cleaned_cc[channel] = cats_clean
+        payload["channel_categories"] = cleaned_cc
+        #----- 'anime_channels' stays in sync with channel_categories so the
+        #----- rest of the codebase (AniList/ani.zip lookups) keeps working
+        #----- without needing to know about the newer generic field.
+        payload["anime_channels"] = [ch for ch, cats in cleaned_cc.items() if "anime" in cats]
+
     if "anime_channels" in payload:
         cleaned = []
         for channel in payload["anime_channels"]:
@@ -2346,6 +2375,10 @@ def _bot_served_channels() -> list[dict]:
         add(ch, "manual")
     for ch in s.anime_channels:
         add(ch, "anime")
+    for ch, cats in s.channel_categories.items():
+        for cat in cats:
+            if cat != "anime":
+                add(ch, cat)
     if s.announcement_channel:
         add(s.announcement_channel, "announce")
     if s.skip_channel:
