@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+/* Signature motif: a film-strip sprocket rail. Used sparingly on the
+   nav and section dividers so the "reel" idea shows up structurally,
+   not as decoration slapped on top. */
+.sprocket-rail {
+  height: 10px;
+  background-image: radial-gradient(circle, #0B0B12 2.5px, transparent 2.6px);
+  background-size: 18px 10px;
+  background-repeat: repeat-x;
+  background-position: center;
+  background-color: #E8A33D;
+}
+
+.sprocket-rail-thin {
+  height: 6px;
+  background-image: radial-gradient(circle, #0B0B12 1.6px, transparent 1.7px);
+  background-size: 12px 6px;
+  background-repeat: repeat-x;
+  background-position: center;
+}
+
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #16151F;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3847;
+  border-radius: 4px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
