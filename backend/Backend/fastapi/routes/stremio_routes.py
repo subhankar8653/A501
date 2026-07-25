@@ -367,6 +367,27 @@ async def get_manifest(token: str, token_data: dict = Depends(verify_token)):
                     {"name": "search", "isRequired": False}
                 ],
                 "extraSupported": ["genre", "skip", "search"]
+            },
+            {
+                "type": "movie",
+                "id": "anime_movies",
+                "name": "Anime",
+                "extra": [{"name": "skip"}],
+                "extraSupported": ["skip"]
+            },
+            {
+                "type": "series",
+                "id": "anime_series",
+                "name": "Anime",
+                "extra": [{"name": "skip"}],
+                "extraSupported": ["skip"]
+            },
+            {
+                "type": "series",
+                "id": "kdrama_series",
+                "name": "K-Drama",
+                "extra": [{"name": "skip"}],
+                "extraSupported": ["skip"]
             }
         ]
 
@@ -516,6 +537,14 @@ async def get_catalog(token: str, media_type: str, id: str, extra: Optional[str]
                 sort_params = [("updated_on", "desc")]
 
             vis_filter = _merge_filters(_visibility_query(token_data), _not_exclusive_clause())
+            if id.startswith("anime_"):
+                anime_filter = {"$or": [
+                    {"is_anime": True},
+                    {"$and": [{"original_language": "ja"}, {"genres": "Animation"}]},
+                ]}
+                vis_filter = _merge_filters(vis_filter, anime_filter)
+            elif id.startswith("kdrama_"):
+                vis_filter = _merge_filters(vis_filter, {"original_language": "ko"})
             if media_type == "movie":
                 data = await db.sort_movies(sort_params, page, PAGE_SIZE, genre_filter=genre_filter, extra_filter=vis_filter)
                 items = data.get("movies", [])
