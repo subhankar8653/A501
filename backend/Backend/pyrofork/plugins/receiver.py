@@ -160,6 +160,8 @@ async def _handle_personal_session(client: Client, message: Message) -> None:
             "group_key": f"{channel}:{quality}:{split_key}" if split_key else None,
             "part_number": resolved.get("part_number"),
             "is_anime": bool(doc.get("is_anime")),
+            "is_kdrama": bool(doc.get("is_kdrama")),
+            "is_shortdrama": bool(doc.get("is_shortdrama")),
         })
 
         if media_type == "tv":
