@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams } from '../api'
+import { getStreams, getMeta } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
@@ -45,6 +45,32 @@ export default function Player() {
   const [active, setActive] = useState(null)
   const [error, setError] = useState('')
 
+  const isSeries = type === 'series'
+  const [imdbId, seasonStr, episodeStr] = isSeries ? id.split(':') : [id, null, null]
+  const currentSeason = seasonStr !== undefined ? Number(seasonStr) : null
+  const currentEpisode = episodeStr !== undefined ? Number(episodeStr) : null
+
+  const [seriesMeta, setSeriesMeta] = useState(null)
+  const [autoplay, setAutoplay] = useState(() => {
+    try {
+      return localStorage.getItem('suhani-screen:autoplay') !== 'off'
+    } catch {
+      return true
+    }
+  })
+
+  function toggleAutoplay() {
+    setAutoplay((a) => {
+      const next = !a
+      try {
+        localStorage.setItem('suhani-screen:autoplay', next ? 'on' : 'off')
+      } catch {
+        // ignore storage failures
+      }
+      return next
+    })
+  }
+
   const storageKey = `${type}:${id}`
   const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
   const { saved, toggle: toggleSaved } = useLocalSaved(`suhani-screen:saved:${storageKey}`)
@@ -76,6 +102,22 @@ export default function Player() {
       .catch(() => setError('Stream load nahi hui.'))
   }, [type, id])
 
+  useEffect(() => {
+    if (!isSeries) {
+      setSeriesMeta(null)
+      return
+    }
+    let cancelled = false
+    getMeta('series', imdbId)
+      .then((m) => {
+        if (!cancelled) setSeriesMeta(m)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isSeries, imdbId])
+
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
   const qualities = useMemo(
@@ -86,6 +128,40 @@ export default function Player() {
     () => qualities.find((q) => q.url === active?.url) || null,
     [qualities, active]
   )
+
+  // Every episode across every season, in watch order.
+  const allEpisodes = useMemo(() => {
+    if (!seriesMeta?.videos) return []
+    return [...seriesMeta.videos].sort((a, b) => a.season - b.season || a.episode - b.episode)
+  }, [seriesMeta])
+
+  // Rest of the current season after this episode — or, once you're on the
+  // season's last episode, the *entire* next season's episode list.
+  const upNext = useMemo(() => {
+    if (!isSeries || !allEpisodes.length || currentSeason == null) {
+      return { label: '', episodes: [] }
+    }
+    const sameSeason = allEpisodes.filter((e) => e.season === currentSeason)
+    const idx = sameSeason.findIndex((e) => e.episode === currentEpisode)
+    let episodes = idx >= 0 ? sameSeason.slice(idx + 1) : []
+    let label = `Season ${currentSeason}`
+    if (!episodes.length) {
+      const nextSeasonNum = [...new Set(allEpisodes.map((e) => e.season))]
+        .filter((s) => s > currentSeason)
+        .sort((a, b) => a - b)[0]
+      if (nextSeasonNum !== undefined) {
+        episodes = allEpisodes.filter((e) => e.season === nextSeasonNum)
+        label = `Season ${nextSeasonNum}`
+      }
+    }
+    return { label, episodes }
+  }, [isSeries, allEpisodes, currentSeason, currentEpisode])
+
+  function handleEnded() {
+    if (autoplay && isSeries && upNext.episodes[0]) {
+      navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`)
+    }
+  }
 
   // Fetches the file as a blob first, then downloads from that in-memory
   // blob — so no new tab opens and the backend's real URL never shows up
@@ -162,6 +238,7 @@ export default function Player() {
               onQualityChange={(q) => switchQuality(q)}
               startAt={resumeAt.current}
               onProgressTick={(t) => { resumeAt.current = t }}
+              onEnded={handleEnded}
             />
           </div>
 
@@ -278,6 +355,45 @@ export default function Player() {
               </button>
             </div>
           </div>
+
+          {/* Up next — rest of this season, or the next season once you hit its last episode */}
+          {isSeries && upNext.episodes.length > 0 ? (
+            <div className="mt-8 pt-6 border-t border-white/5">
+              <div className="flex items-center justify-between mb-3 gap-3">
+                <h2 className="font-display text-lg text-reel-ink">Up Next · {upNext.label}</h2>
+                <button
+                  onClick={toggleAutoplay}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full shrink-0 transition ${
+                    autoplay ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${autoplay ? 'bg-reel-bg' : 'bg-reel-muted'}`} />
+                  Autoplay {autoplay ? 'On' : 'Off'}
+                </button>
+              </div>
+              <div className="space-y-3">
+                {upNext.episodes.map((ep) => (
+                  <button
+                    key={ep.id}
+                    onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
+                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 transition rounded-lg p-3 ring-1 ring-white/5"
+                  >
+                    <img
+                      src={ep.thumbnail}
+                      alt={ep.title}
+                      className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">
+                        S{ep.season} · E{ep.episode} · {ep.title}
+                      </p>
+                      <p className="text-xs text-reel-muted mt-1 line-clamp-2">{ep.overview}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* Comments */}
           <div className="mt-8 pt-6 border-t border-white/5">
