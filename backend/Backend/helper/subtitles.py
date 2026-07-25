@@ -10,62 +10,11 @@ from Backend.helper.metadata import (
     fetch_tv_metadata,
     parse_media_name,
 )
+from Backend.helper.languages import LANGUAGES as _LANGUAGES
 from Backend.helper.pyro import clean_filename
 from Backend.logger import LOGGER
 
 SUBTITLE_EXTS = (".srt", ".vtt", ".ass", ".ssa", ".sub")
-
-#----- (ISO 639-2 code, label, match aliases: full names + ISO 639-2/639-1 codes)
-_LANGUAGES = [
-    ("eng", "English", ("english", "eng", "en")),
-    ("hin", "Hindi", ("hindi", "hin", "hi")),
-    ("tam", "Tamil", ("tamil", "tam", "ta")),
-    ("tel", "Telugu", ("telugu", "tel", "te")),
-    ("kan", "Kannada", ("kannada", "kan", "kn")),
-    ("mal", "Malayalam", ("malayalam", "mal", "ml")),
-    ("ben", "Bengali", ("bengali", "bangla", "ben", "bn")),
-    ("mar", "Marathi", ("marathi", "mar", "mr")),
-    ("pan", "Punjabi", ("punjabi", "panjabi", "pan", "pa")),
-    ("guj", "Gujarati", ("gujarati", "guj", "gu")),
-    ("urd", "Urdu", ("urdu", "urd", "ur")),
-    ("ori", "Odia", ("odia", "oriya", "ori", "or")),
-    ("asm", "Assamese", ("assamese", "asm", "as")),
-    ("bho", "Bhojpuri", ("bhojpuri", "bho")),
-    ("kok", "Konkani", ("konkani", "kok")),
-    ("nep", "Nepali", ("nepali", "nep", "ne")),
-    ("sin", "Sinhala", ("sinhala", "sinhalese", "sin", "si")),
-    ("san", "Sanskrit", ("sanskrit", "san", "sa")),
-    ("spa", "Spanish", ("spanish", "espanol", "spa", "es")),
-    ("fre", "French", ("french", "francais", "fre", "fra", "fr")),
-    ("ger", "German", ("german", "deutsch", "ger", "deu", "de")),
-    ("ita", "Italian", ("italian", "italiano", "ita", "it")),
-    ("por", "Portuguese", ("portuguese", "portugues", "por", "pt")),
-    ("rus", "Russian", ("russian", "rus", "ru")),
-    ("ara", "Arabic", ("arabic", "ara", "ar")),
-    ("jpn", "Japanese", ("japanese", "jpn", "ja")),
-    ("kor", "Korean", ("korean", "kor", "ko")),
-    ("chi", "Chinese", ("chinese", "mandarin", "cantonese", "chi", "zho", "zh")),
-    ("tha", "Thai", ("thai", "tha", "th")),
-    ("vie", "Vietnamese", ("vietnamese", "vie", "vi")),
-    ("ind", "Indonesian", ("indonesian", "bahasa", "ind", "id")),
-    ("may", "Malay", ("malay", "melayu", "msa", "ms")),
-    ("fil", "Filipino", ("filipino", "tagalog", "fil", "tgl", "tl")),
-    ("tur", "Turkish", ("turkish", "turkce", "tur", "tr")),
-    ("dut", "Dutch", ("dutch", "nederlands", "dut", "nld", "nl")),
-    ("pol", "Polish", ("polish", "polski", "pol", "pl")),
-    ("swe", "Swedish", ("swedish", "svenska", "swe", "sv")),
-    ("nor", "Norwegian", ("norwegian", "norsk", "nor", "no")),
-    ("dan", "Danish", ("danish", "dansk", "dan", "da")),
-    ("fin", "Finnish", ("finnish", "suomi", "fin", "fi")),
-    ("gre", "Greek", ("greek", "gre", "ell", "el")),
-    ("heb", "Hebrew", ("hebrew", "heb", "he")),
-    ("per", "Persian", ("persian", "farsi", "per", "fas", "fa")),
-    ("ukr", "Ukrainian", ("ukrainian", "ukr", "uk")),
-    ("rum", "Romanian", ("romanian", "rum", "ron", "ro")),
-    ("hun", "Hungarian", ("hungarian", "magyar", "hun", "hu")),
-    ("cze", "Czech", ("czech", "cesky", "cze", "ces", "cs")),
-    ("swa", "Swahili", ("swahili", "swa", "sw")),
-]
 
 
 def is_subtitle_file(name: str) -> bool:
