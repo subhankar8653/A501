@@ -39,6 +39,9 @@ export default function Player() {
   const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
   const { saved, toggle: toggleSaved } = useLocalSaved(`suhani-screen:saved:${storageKey}`)
 
+  const [downloading, setDownloading] = useState(false)
+  const [dlProgress, setDlProgress] = useState(0)
+
   useEffect(() => {
     setStreams(null)
     setActive(null)
@@ -57,16 +60,43 @@ export default function Player() {
 
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
-  function downloadFile() {
-    if (!active?.url) return
-    const a = document.createElement('a')
-    a.href = active.url
-    a.download = meta.filename || 'download'
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+  // Fetches the file as a blob first, then downloads from that in-memory
+  // blob — so no new tab opens and the backend's real URL never shows up
+  // in the address bar. Falls back to opening the direct link only if
+  // the fetch itself fails (e.g. network/CORS issue).
+  async function downloadFile() {
+    if (!active?.url || downloading) return
+    setDownloading(true)
+    setDlProgress(0)
+    try {
+      const res = await fetch(active.url)
+      if (!res.ok || !res.body) throw new Error('bad response')
+      const total = Number(res.headers.get('content-length')) || 0
+      const reader = res.body.getReader()
+      const chunks = []
+      let received = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        received += value.length
+        if (total) setDlProgress(Math.round((received / total) * 100))
+      }
+      const blob = new Blob(chunks)
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = meta.filename || 'download'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
+    } catch {
+      window.open(active.url, '_blank', 'noopener,noreferrer')
+    } finally {
+      setDownloading(false)
+      setDlProgress(0)
+    }
   }
 
   function shareIt() {
@@ -132,9 +162,23 @@ export default function Player() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg>
               {reactions.dislikes}
             </button>
-            <button onClick={downloadFile} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink" title="Download">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Download
+            <button
+              onClick={downloadFile}
+              disabled={downloading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink disabled:opacity-70"
+              title="Download"
+            >
+              {downloading ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+                  {dlProgress ? `${dlProgress}%` : 'Downloading…'}
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download
+                </>
+              )}
             </button>
             <button onClick={shareIt} className="p-2 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink" title="Share">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
