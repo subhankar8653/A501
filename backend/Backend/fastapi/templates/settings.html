@@ -104,7 +104,9 @@
 .add-btn:hover { background: color-mix(in srgb, var(--primary) 28%, transparent); }
 
 /* ── Anime channel checkbox ──────────────────────────────────────────────── */
-.auth-item .s-input { min-width: 0; }
+.auth-item .s-input { flex: 1 1 100%; }
+.auth-item { flex-wrap: wrap; }
+.cat-checks { display: flex; flex-wrap: wrap; gap: 0.4rem; flex: 1; }
 .anime-check {
     display: inline-flex; align-items: center; gap: 0.35rem; flex-shrink: 0;
     cursor: pointer; user-select: none; white-space: nowrap;
@@ -305,19 +307,33 @@
         <!-- Auth Channels -->
         <label class="s-label">AUTH_CHANNELS
             <span style="font-weight:400;text-transform:none;letter-spacing:0">
-                — users must be a member of at least one. Tick <strong>Anime</strong> on a
-                channel to index its files with AniList + api.ani.zip metadata.</span>
+                — users must be a member of at least one. Tick a category on a channel
+                to force its files into that homepage tab (Anime uses AniList + api.ani.zip
+                metadata). Leave all unticked and the category is auto-detected — the
+                files show up under whichever tab fits ("sabhi").</span>
         </label>
-        {% set anime_norm = settings.anime_channels | map('string') | map('replace', '-100', '') | list %}
+        {% set channel_cats = settings.channel_categories or {} %}
+        {% set cat_options = [('anime', 'Anime'), ('movie', 'Movies'), ('kdrama', 'K-Drama'), ('series', 'Web Series'), ('shortdrama', 'Short Drama')] %}
         <div class="multi-list-items" id="auth_channels_items">
             {% for ch in settings.auth_channels %}
-            {% set is_anime = (ch | string | replace('-100', '')) in anime_norm %}
+            {% set ch_norm = ch | string | replace('-100', '') %}
+            {% set ns = namespace(ticked=[]) %}
+            {% for cid, cats in channel_cats.items() %}
+                {% if (cid | string | replace('-100', '')) == ch_norm %}
+                    {% set ns.ticked = cats %}
+                {% endif %}
+            {% endfor %}
             <div class="multi-item auth-item">
                 <input type="text" class="s-input" value="{{ ch }}" data-list="auth_channels">
-                <label class="anime-check {% if is_anime %}is-anime{% endif %}" title="Mark as anime channel — uses AniList/ani.zip metadata">
-                    <input type="checkbox" class="anime-toggle" {% if is_anime %}checked{% endif %} onchange="syncAnimeChip(this)">
-                    <span>Anime</span>
-                </label>
+                <div class="cat-checks">
+                    {% for key, label in cat_options %}
+                    {% set is_on = key in ns.ticked %}
+                    <label class="anime-check {% if is_on %}is-anime{% endif %}" data-cat="{{ key }}" title="Tick to force this channel's files into the {{ label }} tab">
+                        <input type="checkbox" class="anime-toggle" data-cat="{{ key }}" {% if is_on %}checked{% endif %} onchange="syncAnimeChip(this)">
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
                 <button class="remove-btn" onclick="removeItem(this)" title="Remove">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
@@ -1022,13 +1038,27 @@ function generateSessionSecret() {
 }
 
 /* ── Multi-value list helpers ─────────────────────────────────────────── */
-function authRowHTML(value, isAnime) {
+const CHANNEL_CATEGORIES = [
+    ['anime', 'Anime'],
+    ['movie', 'Movies'],
+    ['kdrama', 'K-Drama'],
+    ['series', 'Web Series'],
+    ['shortdrama', 'Short Drama'],
+];
+
+function authRowHTML(value, tickedCats) {
+    tickedCats = tickedCats || [];
+    const chips = CHANNEL_CATEGORIES.map(([key, label]) => {
+        const isOn = tickedCats.includes(key);
+        return `
+        <label class="anime-check ${isOn ? 'is-anime' : ''}" data-cat="${key}" title="Tick to force this channel's files into the ${label} tab">
+            <input type="checkbox" class="anime-toggle" data-cat="${key}" ${isOn ? 'checked' : ''} onchange="syncAnimeChip(this)">
+            <span>${label}</span>
+        </label>`;
+    }).join('');
     return `
         <input type="text" class="s-input" value="${escapeHtmlAttr(value)}" data-list="auth_channels">
-        <label class="anime-check ${isAnime ? 'is-anime' : ''}" title="Mark as anime channel — uses AniList/ani.zip metadata">
-            <input type="checkbox" class="anime-toggle" ${isAnime ? 'checked' : ''} onchange="syncAnimeChip(this)">
-            <span>Anime</span>
-        </label>
+        <div class="cat-checks">${chips}</div>
         <button class="remove-btn" onclick="removeItem(this)" title="Remove">
             <i class="fa-solid fa-xmark"></i>
         </button>
@@ -1050,7 +1080,7 @@ function addItem(listKey) {
 
     if (listKey === 'auth_channels') {
         item.className = 'multi-item auth-item';
-        item.innerHTML = authRowHTML(value, false);
+        item.innerHTML = authRowHTML(value, []);
     } else {
         const isNumeric = listKey === 'approver_ids';
         item.className = 'multi-item';
@@ -1070,16 +1100,17 @@ function addItem(listKey) {
     newInput.focus();
 }
 
-function collectAnimeChannels() {
+function collectChannelCategories() {
     const container = document.getElementById('auth_channels_items');
-    if (!container) return [];
-    const out = [];
+    if (!container) return {};
+    const out = {};
     container.querySelectorAll('.multi-item').forEach(row => {
-        const toggle = row.querySelector('.anime-toggle');
         const input = row.querySelector('input[data-list="auth_channels"]');
-        if (toggle && toggle.checked && input && input.value.trim()) {
-            out.push(input.value.trim());
-        }
+        if (!input || !input.value.trim()) return;
+        const cats = [...row.querySelectorAll('.anime-toggle')]
+            .filter(cb => cb.checked)
+            .map(cb => cb.dataset.cat);
+        if (cats.length) out[input.value.trim()] = cats;
     });
     return out;
 }
@@ -1125,7 +1156,7 @@ async function saveSettings() {
         upstream_repo:                 document.getElementById('upstream_repo').value.trim(),
         upstream_branch:               document.getElementById('upstream_branch').value.trim(),
         auth_channels:                 collectList('auth_channels'),
-        anime_channels:                collectAnimeChannels(),
+        channel_categories:            collectChannelCategories(),
         subscription:                  document.getElementById('subscription').checked,
         subscription_group_id:         parseInt(document.getElementById('subscription_group_id').value || '0', 10),
         payment_instructions:          document.getElementById('payment_instructions').value.trim(),
@@ -1281,8 +1312,8 @@ function renderSettings(s) {
     document.getElementById('skip_channel').value = s.skip_channel || '';
     toggleSkipDeleteField();
 
-    // Auth channels (with per-channel anime checkbox) + other multi-value lists
-    rebuildAuthChannels(s.auth_channels, s.anime_channels);
+    // Auth channels (with per-channel category checkboxes) + other multi-value lists
+    rebuildAuthChannels(s.auth_channels, s.channel_categories);
     rebuildSimpleList('approver_ids_items', s.approver_ids, 'number');
     rebuildSimpleList('multi_tokens_items', s.multi_tokens, 'text');
     rebuildSimpleList('global_search_channels_items', s.global_search_channels, 'text');
@@ -1312,16 +1343,20 @@ function rebuildSimpleList(containerId, values, inputType) {
     });
 }
 
-function rebuildAuthChannels(values, animeValues) {
+function rebuildAuthChannels(values, channelCategories) {
     const container = document.getElementById('auth_channels_items');
     if (!container) return;
-    const animeNorm = (animeValues || []).map(v => String(v).split('-100').join(''));
+    const catMap = {};
+    Object.entries(channelCategories || {}).forEach(([ch, cats]) => {
+        catMap[String(ch).split('-100').join('')] = cats || [];
+    });
     container.innerHTML = '';
     (values || []).forEach(val => {
-        const isAnime = animeNorm.includes(String(val).split('-100').join(''));
+        const norm = String(val).split('-100').join('');
+        const cats = catMap[norm] || [];
         const item = document.createElement('div');
         item.className = 'multi-item auth-item';
-        item.innerHTML = authRowHTML(val, isAnime);
+        item.innerHTML = authRowHTML(val, cats);
         container.appendChild(item);
     });
 }
