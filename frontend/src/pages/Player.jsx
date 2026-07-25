@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getStreams } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
@@ -24,6 +24,16 @@ function parseStreamMeta(stream) {
   return { filename, badges }
 }
 
+// Pulls a short "360p / 480p / 720p / 1080p" style label out of a stream's
+// name or title so the in-player quality menu shows something compact
+// instead of the full filename.
+function qualityLabel(stream) {
+  const hay = `${stream?.name || ''} ${stream?.title || ''}`
+  const res = hay.match(/\b(2160p|4k|1440p|1080p|720p|480p|360p|240p)\b/i)
+  if (res) return res[1].toLowerCase() === '4k' ? '4K' : res[1].toLowerCase()
+  return (stream?.name || 'Auto').split('\n')[0].trim()
+}
+
 function PlayIcon() {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
 }
@@ -41,11 +51,19 @@ export default function Player() {
 
   const [downloading, setDownloading] = useState(false)
   const [dlProgress, setDlProgress] = useState(0)
+  // Continuously tracks current playback position so that switching quality
+  // mid-video can resume from the same spot instead of restarting.
+  const resumeAt = useRef(0)
+
+  function switchQuality(stream) {
+    setActive(stream)
+  }
 
   useEffect(() => {
     setStreams(null)
     setActive(null)
     setError('')
+    resumeAt.current = 0
     getStreams(type, id)
       .then((list) => {
         if (!list.length) {
@@ -59,6 +77,15 @@ export default function Player() {
   }, [type, id])
 
   const meta = useMemo(() => parseStreamMeta(active), [active])
+
+  const qualities = useMemo(
+    () => (streams || []).map((s) => ({ ...s, label: qualityLabel(s) })),
+    [streams]
+  )
+  const activeQualityObj = useMemo(
+    () => qualities.find((q) => q.url === active?.url) || null,
+    [qualities, active]
+  )
 
   // Fetches the file as a blob first, then downloads from that in-memory
   // blob — so no new tab opens and the backend's real URL never shows up
@@ -127,7 +154,15 @@ export default function Player() {
       ) : (
         <>
           <div className="aspect-video bg-black rounded-xl overflow-hidden ring-1 ring-white/10">
-            <VideoPlayer key={active.url} src={active.url} />
+            <VideoPlayer
+              key={active.url}
+              src={active.url}
+              qualities={qualities}
+              activeQuality={activeQualityObj}
+              onQualityChange={(q) => switchQuality(q)}
+              startAt={resumeAt.current}
+              onProgressTick={(t) => { resumeAt.current = t }}
+            />
           </div>
 
           {/* Title + badges */}
@@ -194,21 +229,28 @@ export default function Player() {
 
           {/* Qualities */}
           {streams.length > 1 ? (
-            <div className="mt-5">
-              <p className="text-xs text-reel-muted mb-2">Available qualities</p>
+            <div className="mt-5 rounded-2xl p-3.5 backdrop-blur-md bg-reel-surface/60 ring-1 ring-reel-gold/20 shadow-[0_4px_20px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-reel-gold">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                <p className="text-xs text-reel-ink font-semibold tracking-wide">Available qualities</p>
+                <span className="text-[10px] text-reel-muted ml-auto">Kam MB? Chhoti quality try karo</span>
+              </div>
               <div className="flex gap-2 flex-wrap">
-                {streams.map((s, i) => (
+                {qualities.map((q, i) => (
                   <button
                     key={i}
-                    onClick={() => setActive(s)}
-                    title={s.title}
-                    className={`text-sm px-3 py-1.5 rounded-lg transition whitespace-pre-line ${
-                      s === active
-                        ? 'bg-reel-gold text-reel-bg font-semibold'
-                        : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
+                    onClick={() => switchQuality(q)}
+                    title={q.title}
+                    className={`relative text-sm px-3.5 py-1.5 rounded-xl transition whitespace-pre-line ${
+                      q.url === active?.url
+                        ? 'bg-reel-gold text-reel-bg font-semibold shadow-[0_0_0_1px_rgba(232,163,61,0.4)]'
+                        : 'bg-reel-surface2/80 text-reel-muted hover:text-reel-ink hover:bg-reel-surface2 ring-1 ring-white/5'
                     }`}
                   >
-                    {s.name}
+                    {q.label}
                   </button>
                 ))}
               </div>
