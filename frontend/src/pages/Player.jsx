@@ -5,12 +5,6 @@ import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
 
-const APP_PLAYERS = [
-  { key: 'mx', label: 'MX Player', pkg: 'com.mxtech.videoplayer.ad', className: 'bg-[#1a56db] hover:brightness-110' },
-  { key: 'vlc', label: 'VLC Player', pkg: 'org.videolan.vlc', className: 'bg-[#e6720f] hover:brightness-110' },
-  { key: 'playit', label: 'PlayIt Player', pkg: 'com.playit.videoplayer', className: 'bg-[#7c2ee6] hover:brightness-110' },
-]
-
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
 // into a clean filename + list of badge lines.
 function parseStreamMeta(stream) {
@@ -32,10 +26,6 @@ function qualityLabel(stream) {
   const res = hay.match(/\b(2160p|4k|1440p|1080p|720p|480p|360p|240p)\b/i)
   if (res) return res[1].toLowerCase() === '4k' ? '4K' : res[1].toLowerCase()
   return (stream?.name || 'Auto').split('\n')[0].trim()
-}
-
-function PlayIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
 }
 
 export default function Player() {
@@ -210,13 +200,6 @@ export default function Player() {
     }
   }
 
-  function openInApp(playerKey) {
-    if (!active?.url) return
-    const pkg = APP_PLAYERS.find((p) => p.key === playerKey)?.pkg
-    const bare = active.url.replace(/^https?:\/\//, '')
-    window.location.href = `intent://${bare}#Intent;package=${pkg};type=video/*;scheme=https;end`
-  }
-
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6">
       <button onClick={() => navigate(-1)} className="text-sm text-reel-muted hover:text-reel-ink mb-4">
@@ -304,56 +287,9 @@ export default function Player() {
             </button>
           </div>
 
-          {/* Qualities */}
-          {streams.length > 1 ? (
-            <div className="mt-5 rounded-2xl p-3.5 backdrop-blur-md bg-reel-surface/60 ring-1 ring-reel-gold/20 shadow-[0_4px_20px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-1.5 mb-2.5">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-reel-gold">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                <p className="text-xs text-reel-ink font-semibold tracking-wide">Available qualities</p>
-                <span className="text-[10px] text-reel-muted ml-auto">Kam MB? Chhoti quality try karo</span>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {qualities.map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => switchQuality(q)}
-                    title={q.title}
-                    className={`relative text-sm px-3.5 py-1.5 rounded-xl transition whitespace-pre-line ${
-                      q.url === active?.url
-                        ? 'bg-reel-gold text-reel-bg font-semibold shadow-[0_0_0_1px_rgba(232,163,61,0.4)]'
-                        : 'bg-reel-surface2/80 text-reel-muted hover:text-reel-ink hover:bg-reel-surface2 ring-1 ring-white/5'
-                    }`}
-                  >
-                    {q.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Open in app */}
+          {/* Comments */}
           <div className="mt-6">
-            <p className="text-xs text-reel-muted mb-2 tracking-wide">OPEN IN APP</p>
-            <div className="grid grid-cols-2 gap-2.5">
-              {APP_PLAYERS.slice(0, 2).map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => openInApp(p.key)}
-                  className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold text-white transition ${p.className}`}
-                >
-                  <PlayIcon /> {p.label}
-                </button>
-              ))}
-              <button
-                onClick={() => openInApp('playit')}
-                className={`col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold text-white transition ${APP_PLAYERS[2].className}`}
-              >
-                <PlayIcon /> {APP_PLAYERS[2].label}
-              </button>
-            </div>
+            <Comments storageKey={`suhani-screen:comments:${storageKey}`} />
           </div>
 
           {/* Up next — rest of this season, or the next season once you hit its last episode */}
@@ -394,11 +330,6 @@ export default function Player() {
               </div>
             </div>
           ) : null}
-
-          {/* Comments */}
-          <div className="mt-8 pt-6 border-t border-white/5">
-            <Comments storageKey={`suhani-screen:comments:${storageKey}`} />
-          </div>
         </>
       )}
     </div>
