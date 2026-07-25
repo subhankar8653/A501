@@ -1,54 +1,56 @@
 import { useEffect, useState } from 'react'
-import { getManifest, getCatalog, groupCatalogs } from '../api'
+import { getManifest, groupCatalogsByTab, loadTabByLanguage, HOME_TABS } from '../api'
+import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 
 export default function Home() {
-  const [rails, setRails] = useState(null)
-  const [data, setData] = useState({})
+  const [tabCatalogs, setTabCatalogs] = useState(null) // { anime: [...], movie: [...], ... }
+  const [active, setActive] = useState('anime')
+  const [groupsByTab, setGroupsByTab] = useState({}) // cache: { [tab]: [{language, items}] }
+  const [loadingTab, setLoadingTab] = useState(false)
   const [error, setError] = useState('')
 
+  // Load the manifest once, sort catalogs into tabs.
   useEffect(() => {
     let cancelled = false
-
-    async function load() {
-      try {
-        const manifest = await getManifest()
-        const grouped = groupCatalogs(manifest.catalogs)
+    getManifest()
+      .then((manifest) => {
         if (cancelled) return
-        setRails(grouped)
-
-        const allCatalogs = [
-          ...grouped.anime,
-          ...grouped.kdrama,
-          ...grouped.movie,
-          ...grouped.series,
-          ...grouped.custom,
-        ]
-
-        for (const cat of allCatalogs) {
-          getCatalog(cat.type, cat.id)
-            .then((metas) => {
-              if (cancelled) return
-              setData((prev) => ({ ...prev, [`${cat.type}:${cat.id}`]: metas }))
-            })
-            .catch(() => {})
-        }
-      } catch {
+        setTabCatalogs(groupCatalogsByTab(manifest.catalogs))
+      })
+      .catch(() => {
         if (!cancelled) setError('Library load nahi ho payi. Setup check karo.')
-      }
-    }
-
-    load()
+      })
     return () => {
       cancelled = true
     }
   }, [])
 
+  // Whenever the active tab changes, load (and cache) that tab's content.
+  useEffect(() => {
+    if (!tabCatalogs) return
+    if (groupsByTab[active]) return // already cached
+
+    let cancelled = false
+    setLoadingTab(true)
+    loadTabByLanguage(tabCatalogs[active])
+      .then((groups) => {
+        if (cancelled) return
+        setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTab(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, tabCatalogs])
+
   if (error) {
     return <p className="text-center text-reel-rust mt-10">{error}</p>
   }
 
-  if (!rails) {
+  if (!tabCatalogs) {
     return (
       <div className="max-w-6xl mx-auto px-0 sm:px-6 py-8">
         <Rail title="Loading…" loading items={[]} />
@@ -56,31 +58,44 @@ export default function Home() {
     )
   }
 
-  const sections = [
-    ...rails.anime.map((c) => ({ ...c, sectionTitle: c.name || 'Anime' })),
-    ...rails.kdrama.map((c) => ({ ...c, sectionTitle: c.name || 'K-Drama' })),
-    ...rails.movie.map((c) => ({ ...c, sectionTitle: `Movies · ${c.name}` })),
-    ...rails.series.map((c) => ({ ...c, sectionTitle: `Series · ${c.name}` })),
-    ...rails.custom.map((c) => ({ ...c, sectionTitle: c.name })),
-  ]
-
-  const hasAnyData = Object.keys(data).length > 0
+  const groups = groupsByTab[active]
+  const hasCatalogsForTab = (tabCatalogs[active] || []).length > 0
 
   return (
     <div className="max-w-6xl mx-auto py-8">
-      {sections.map((cat) => (
-        <Rail
-          key={`${cat.type}:${cat.id}`}
-          title={cat.sectionTitle}
-          items={data[`${cat.type}:${cat.id}`]}
-          loading={!data[`${cat.type}:${cat.id}`]}
-        />
-      ))}
-      {!hasAnyData && sections.length === 0 ? (
+      <div className="bg-reel-surface/95 border-b border-white/5 mb-6">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 sm:px-0 py-3">
+          {HOME_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActive(tab.key)}
+              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition border ${
+                active === tab.key
+                  ? 'bg-reel-gold text-black border-reel-gold'
+                  : 'bg-reel-surface2 text-reel-ink border-white/5 hover:border-reel-gold/50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!hasCatalogsForTab ? (
         <p className="text-center text-reel-muted mt-10 px-4">
-          Catalog abhi khali hai — apne AUTH channel mein files forward karo, catalogs yahan aa jayenge.
+          Is category mein abhi content nahi hai.
         </p>
-      ) : null}
+      ) : loadingTab && !groups ? (
+        <Rail title="Loading…" loading items={[]} />
+      ) : groups && groups.length > 0 ? (
+        groups.map(({ language, items }) => (
+          <LanguageRail key={language} language={language} items={items} />
+        ))
+      ) : (
+        <p className="text-center text-reel-muted mt-10 px-4">
+          Is category mein abhi content nahi hai.
+        </p>
+      )}
     </div>
   )
 }
