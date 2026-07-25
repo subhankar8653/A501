@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getStreams } from '../api'
+import VideoPlayer from '../components/VideoPlayer'
 
 export default function Player() {
   const { type, id } = useParams()
@@ -38,13 +39,7 @@ export default function Player() {
       ) : (
         <>
           <div className="aspect-video bg-black rounded-xl overflow-hidden ring-1 ring-white/10">
-            <video
-              key={active.url}
-              src={active.url}
-              controls
-              autoPlay
-              className="w-full h-full"
-            />
+            <VideoPlayer key={active.url} src={active.url} />
           </div>
 
           {streams.length > 1 ? (
