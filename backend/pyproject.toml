@@ -3,7 +3,7 @@ name = "Telegram-Stremio"
 version = "4.7.3"
 description = "A powerful, self-hosted Telegram Stremio Media Server built with FastAPI, MongoDB, and PyroFork seamlessly integrated with Stremio for automated media streaming and discovery."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "aiofiles>=24.1.0",
     "fastapi>=0.115.12",
