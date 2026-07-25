@@ -68,18 +68,61 @@ export async function getStreams(type, id) {
   return data.streams || []
 }
 
-// Groups manifest catalogs into rails, separating out any custom
-// catalogs whose name looks like Anime / K-Drama so the home page
-// can give them their own section instead of a generic "Custom" pile.
-export function groupCatalogs(manifestCatalogs) {
-  const rails = { movie: [], series: [], anime: [], kdrama: [], custom: [] }
+// Home page content-type tabs, in display order (Anime always first).
+export const HOME_TABS = [
+  { key: 'anime', label: 'Anime' },
+  { key: 'movie', label: 'Movies' },
+  { key: 'kdrama', label: 'K-Drama' },
+  { key: 'series', label: 'Web Series' },
+  { key: 'shortdrama', label: 'Short Drama' },
+]
+
+// Sorts every manifest catalog into one of the home-page tabs, by name
+// first (Anime / K-Drama / Short Drama get their own tab regardless of
+// type) and falls back to the Stremio type (movie/series) otherwise.
+export function groupCatalogsByTab(manifestCatalogs) {
+  const tabs = { anime: [], movie: [], kdrama: [], series: [], shortdrama: [] }
   for (const cat of manifestCatalogs || []) {
     const name = (cat.name || '').toLowerCase()
-    if (name.includes('anime')) rails.anime.push(cat)
-    else if (name.includes('k-drama') || name.includes('kdrama') || name.includes('korean')) rails.kdrama.push(cat)
-    else if (cat.id.startsWith('custom_')) rails.custom.push(cat)
-    else if (cat.type === 'movie') rails.movie.push(cat)
-    else if (cat.type === 'series') rails.series.push(cat)
+    if (name.includes('anime')) tabs.anime.push(cat)
+    else if (name.includes('k-drama') || name.includes('kdrama')) tabs.kdrama.push(cat)
+    else if (name.includes('short drama') || name.includes('short_drama') || name.includes('shortdrama')) {
+      tabs.shortdrama.push(cat)
+    } else if (cat.type === 'movie') tabs.movie.push(cat)
+    else if (cat.type === 'series') tabs.series.push(cat)
   }
-  return rails
+  return tabs
+}
+
+// Fetches every catalog for one tab, merges + de-dupes items by id, then
+// groups them by language (an item can land in more than one language
+// group if it's multi-audio). Groups are ordered by item count, so
+// whichever language has the most content shows first.
+export async function loadTabByLanguage(catalogsForTab) {
+  const merged = new Map()
+  await Promise.all(
+    (catalogsForTab || []).map(async (cat) => {
+      try {
+        const metas = await getCatalog(cat.type, cat.id)
+        for (const item of metas) {
+          if (item && item.id && !merged.has(item.id)) merged.set(item.id, item)
+        }
+      } catch {
+        // one catalog failing shouldn't blank out the whole tab
+      }
+    })
+  )
+
+  const byLanguage = new Map()
+  for (const item of merged.values()) {
+    const languages = item.languages && item.languages.length ? item.languages : ['Other']
+    for (const lang of languages) {
+      if (!byLanguage.has(lang)) byLanguage.set(lang, [])
+      byLanguage.get(lang).push(item)
+    }
+  }
+
+  return [...byLanguage.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([language, items]) => ({ language, items }))
 }
