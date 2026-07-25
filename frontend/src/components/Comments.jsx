@@ -110,7 +110,7 @@ export default function Comments({ storageKey }) {
       </div>
 
       {comments.length === 0 ? (
-        <p className="text-xs text-reel-muted py-2">Sabse pehle comment karo!</p>
+        <p className="text-xs text-reel-muted py-2">comment here!</p>
       ) : (
         <div className="space-y-3">
           {comments.slice().reverse().map((c, revIdx) => {
