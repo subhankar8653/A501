@@ -18,6 +18,7 @@ from Backend.fastapi.themes import DEFAULT_THEME, get_theme
 from Backend.helper.fanart import fanart_artwork
 from Backend.helper.global_search import global_search, is_global_search_enabled
 from Backend.helper.imdb import get_detail, get_season
+from Backend.helper.languages import detect_languages, language_label_for_code
 from Backend.helper.metadata import resolve_cover_url, COMBINED_SEASON, COMBINED_EPISODE_BASE
 from Backend.helper.split_files import parse_combined_episodes, combined_name_key
 from Backend.helper.settings_manager import SettingsManager
@@ -188,6 +189,38 @@ async def _apply_fanart(meta: dict, item: dict) -> None:
         meta["background"] = art["background"]
 
 
+#----- Collect every quality/episode release filename stored on a doc
+def _quality_names(item: dict) -> list:
+    names = []
+    if item.get("media_type") == "tv":
+        for season in item.get("seasons", []) or []:
+            for episode in season.get("episodes", []) or []:
+                for q in episode.get("telegram", []) or []:
+                    if q.get("name"):
+                        names.append(q["name"])
+    else:
+        for q in item.get("telegram", []) or []:
+            if q.get("name"):
+                names.append(q["name"])
+    return names
+
+
+#----- Every language available for a title — detected from its release filenames
+#----- (handles multi-audio releases), falling back to TMDB's original_language
+#----- when nothing could be detected from filenames.
+def item_languages(item: dict) -> list:
+    found = []
+    for name in _quality_names(item):
+        for label in detect_languages(name):
+            if label not in found:
+                found.append(label)
+    if not found:
+        fallback = language_label_for_code(item.get("original_language"))
+        if fallback:
+            found.append(fallback)
+    return found
+
+
 #----- Map an internal media item into a Stremio meta object
 def convert_to_stremio_meta(item: dict) -> dict:
     media_type = "series" if item.get("media_type") == "tv" else "movie"
@@ -208,6 +241,7 @@ def convert_to_stremio_meta(item: dict) -> dict:
         "description": item.get("description") or "",
         "cast": item.get("cast") or [],
         "runtime": item.get("runtime") or "",
+        "languages": item_languages(item),
     }
     return meta
 
@@ -528,6 +562,7 @@ async def get_meta(token: str, media_type: str, id: str, token_data: dict = Depe
         "moviedb_id": media.get("tmdb_id", ""),
         "cast": media.get("cast") or [],
         "runtime": media.get("runtime") or "",
+        "languages": item_languages(media),
     }
 
     await _apply_fanart(meta_obj, media)
