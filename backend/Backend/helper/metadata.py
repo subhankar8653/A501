@@ -626,7 +626,21 @@ def _build_imdb_tv_payload(imdb, ep, imdb_id, title, season, episode, quality, e
 
 
 #----- ── Anime helpers ───────────────────────────────────────────────────────────
+def _channel_categories(channel) -> set:
+    """Forced homepage categories picked for this AUTH channel in the admin
+    panel (Anime / Movies / K-Drama / Web Series / Short Drama). Empty set
+    means 'sabhi' — no override, category is auto-detected as before."""
+    target = str(channel).strip().replace("-100", "")
+    mapping = SettingsManager.current().channel_categories
+    for ch, cats in mapping.items():
+        if str(ch).strip().replace("-100", "") == target:
+            return {str(c).strip().lower() for c in cats}
+    return set()
+
+
 def _is_anime_channel(channel) -> bool:
+    if "anime" in _channel_categories(channel):
+        return True
     anime_channels = SettingsManager.current().anime_channels
     if not anime_channels:
         return False
@@ -839,6 +853,11 @@ async def metadata(filename: str, channel: int, msg_id, override_id: str = None,
         if result is not None:
             if anime_channel:
                 result["is_anime"] = True
+            forced_categories = _channel_categories(channel)
+            if "kdrama" in forced_categories:
+                result["is_kdrama"] = True
+            if "shortdrama" in forced_categories:
+                result["is_shortdrama"] = True
             result["group_key"] = group_key
             result["part_number"] = part_number
         return result

@@ -56,6 +56,8 @@ class TVShowSchema(BaseModel):
     updated_on: datetime = Field(default_factory=datetime.utcnow)
     seasons: List[Season] = Field(default_factory=list)
     is_anime: Optional[bool] = False
+    is_kdrama: Optional[bool] = False
+    is_shortdrama: Optional[bool] = False
     original_language: Optional[str] = None
     origin_country: Optional[List[str]] = Field(default_factory=list)
     production_countries: Optional[List[str]] = Field(default_factory=list)
@@ -83,6 +85,8 @@ class MovieSchema(BaseModel):
     updated_on: datetime = Field(default_factory=datetime.utcnow)
     telegram: Optional[List[QualityDetail]]
     is_anime: Optional[bool] = False
+    is_kdrama: Optional[bool] = False
+    is_shortdrama: Optional[bool] = False
     original_language: Optional[str] = None
     origin_country: Optional[List[str]] = Field(default_factory=list)
     production_countries: Optional[List[str]] = Field(default_factory=list)

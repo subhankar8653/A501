@@ -1270,6 +1270,8 @@ class Database:
                 runtime=metadata_info['runtime'],
                 media_type=metadata_info['media_type'],
                 is_anime=metadata_info.get('is_anime', False),
+                is_kdrama=metadata_info.get('is_kdrama', False),
+                is_shortdrama=metadata_info.get('is_shortdrama', False),
                 original_language=metadata_info.get('original_language'),
                 origin_country=metadata_info.get('origin_country', []) or [],
                 telegram=[quality_detail]
@@ -1292,6 +1294,8 @@ class Database:
                 runtime=metadata_info['runtime'],
                 media_type=metadata_info['media_type'],
                 is_anime=metadata_info.get('is_anime', False),
+                is_kdrama=metadata_info.get('is_kdrama', False),
+                is_shortdrama=metadata_info.get('is_shortdrama', False),
                 original_language=metadata_info.get('original_language'),
                 origin_country=metadata_info.get('origin_country', []) or [],
                 seasons=[Season(
@@ -1463,6 +1467,10 @@ class Database:
             existing_movie["tmdb_id"] = tmdb_id
         if movie_dict.get("is_anime"):
             existing_movie["is_anime"] = True
+        if movie_dict.get("is_kdrama"):
+            existing_movie["is_kdrama"] = True
+        if movie_dict.get("is_shortdrama"):
+            existing_movie["is_shortdrama"] = True
 
         existing_qualities = existing_movie.get("telegram", [])
 
@@ -1530,6 +1538,10 @@ class Database:
             existing_tv["tmdb_id"] = tmdb_id
         if tv_show_dict.get("is_anime"):
             existing_tv["is_anime"] = True
+        if tv_show_dict.get("is_kdrama"):
+            existing_tv["is_kdrama"] = True
+        if tv_show_dict.get("is_shortdrama"):
+            existing_tv["is_shortdrama"] = True
 
         for season in tv_show_dict["seasons"]:
             existing_season = next(

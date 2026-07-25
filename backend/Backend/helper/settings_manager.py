@@ -34,6 +34,7 @@ _DEFAULTS: Dict[str, Any] = {
     "global_search": False,
     "global_search_channels": [],
     "anime_channels": [],
+    "channel_categories": {},
     "manual_channels": [],
     "announce_new_content": False,
     "announcement_channel": "",
@@ -122,6 +123,14 @@ class Settings:
     @property
     def anime_channels(self) -> List[str]:
         return list(self._d.get("anime_channels") or [])
+
+    @property
+    def channel_categories(self) -> Dict[str, List[str]]:
+        """channel_id -> list of forced homepage categories
+        (anime / movie / kdrama / series / shortdrama). A channel with no
+        entry (or an empty list) falls back to auto-detection ('sabhi')."""
+        raw = self._d.get("channel_categories") or {}
+        return {str(k): list(v or []) for k, v in raw.items()}
 
     @property
     def manual_channels(self) -> List[str]:
