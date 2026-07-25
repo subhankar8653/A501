@@ -17,7 +17,7 @@ function fmt(t) {
 // Native <video> stays the playback engine — this just layers custom,
 // touch-friendly controls on top of it so the underlying speed/behavior
 // is unchanged.
-export default function VideoPlayer({ src, poster, onEnded }) {
+export default function VideoPlayer({ src, poster, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
   const videoRef = useRef(null)
   const containerRef = useRef(null)
   const progressRef = useRef(null)
@@ -35,11 +35,15 @@ export default function VideoPlayer({ src, poster, onEnded }) {
   const [buffering, setBuffering] = useState(true)
   const [showControls, setShowControls] = useState(true)
   const [skipPulse, setSkipPulse] = useState(null) // 'left' | 'right' | null
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false)
 
   const scheduleHide = useCallback(() => {
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
-      if (videoRef.current && !videoRef.current.paused) setShowControls(false)
+      if (videoRef.current && !videoRef.current.paused) {
+        setShowControls(false)
+        setQualityMenuOpen(false)
+      }
     }, HIDE_DELAY)
   }, [])
 
@@ -51,8 +55,14 @@ export default function VideoPlayer({ src, poster, onEnded }) {
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
-    const onTime = () => setCurrent(v.currentTime)
-    const onDur = () => setDuration(v.duration || 0)
+    const onTime = () => {
+      setCurrent(v.currentTime)
+      onProgressTick && onProgressTick(v.currentTime)
+    }
+    const onDur = () => {
+      setDuration(v.duration || 0)
+      if (startAt > 0) v.currentTime = startAt
+    }
     const onProgress = () => {
       if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1))
     }
@@ -122,6 +132,12 @@ export default function VideoPlayer({ src, poster, onEnded }) {
     v.playbackRate = next
     setSpeed(next)
     wake()
+  }
+
+  function selectQuality(q) {
+    setQualityMenuOpen(false)
+    if (q === activeQuality) return
+    onQualityChange && onQualityChange(q)
   }
 
   function toggleFullscreen() {
@@ -286,6 +302,43 @@ export default function VideoPlayer({ src, poster, onEnded }) {
           <button onClick={cycleSpeed} className="text-xs font-semibold px-2 py-1 rounded bg-white/10 shrink-0">
             {speed}x
           </button>
+
+          {qualities && qualities.length > 1 && (
+            <div className="relative shrink-0">
+              <button
+                onClick={() => { setQualityMenuOpen((s) => !s); wake() }}
+                className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded transition ${
+                  qualityMenuOpen ? 'bg-reel-gold text-reel-bg' : 'bg-white/10 text-reel-ink'
+                }`}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                {activeQuality?.label || 'Quality'}
+              </button>
+
+              {qualityMenuOpen && (
+                <div className="absolute bottom-full right-0 mb-2 min-w-[132px] rounded-xl overflow-hidden backdrop-blur-md bg-reel-surface/95 ring-1 ring-reel-gold/25 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+                  <p className="text-[10px] uppercase tracking-wide text-reel-muted px-3 pt-2 pb-1">Quality</p>
+                  {qualities.map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => selectQuality(q)}
+                      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 text-xs transition ${
+                        q === activeQuality ? 'text-reel-gold font-semibold' : 'text-reel-ink hover:bg-white/5'
+                      }`}
+                    >
+                      {q.label}
+                      {q === activeQuality && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <button onClick={toggleFullscreen} className="p-1 shrink-0">
             {fullscreen ? (
