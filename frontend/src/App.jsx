@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getConfig } from './api'
 import Navbar from './components/Navbar'
 import Setup from './pages/Setup'
@@ -13,6 +13,19 @@ function RequireConfig({ children }) {
   return children
 }
 
+// The player page gets a fullscreen, YouTube-style layout — no site header,
+// no back button row above the video.
+function ChromeForRoute({ children }) {
+  const { pathname } = useLocation()
+  const isPlayer = pathname.startsWith('/watch/')
+  return (
+    <>
+      {!isPlayer && <Navbar />}
+      {children}
+    </>
+  )
+}
+
 export default function App() {
   return (
     <Routes>
@@ -21,14 +34,15 @@ export default function App() {
         path="/*"
         element={
           <RequireConfig>
-            <Navbar />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/title/:type/:id" element={<Detail />} />
-              <Route path="/watch/:type/:id" element={<Player />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <ChromeForRoute>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/search" element={<Search />} />
+                <Route path="/title/:type/:id" element={<Detail />} />
+                <Route path="/watch/:type/:id" element={<Player />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </ChromeForRoute>
           </RequireConfig>
         }
       />
