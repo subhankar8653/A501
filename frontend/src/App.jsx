@@ -13,14 +13,13 @@ function RequireConfig({ children }) {
   return children
 }
 
-// The player page gets a fullscreen, YouTube-style layout — no site header,
-// no back button row above the video.
+// The player and title-detail pages get a fullscreen layout — no site header.
 function ChromeForRoute({ children }) {
   const { pathname } = useLocation()
-  const isPlayer = pathname.startsWith('/watch/')
+  const hideChrome = pathname.startsWith('/watch/') || pathname.startsWith('/title/')
   return (
     <>
-      {!isPlayer && <Navbar />}
+      {!hideChrome && <Navbar />}
       {children}
     </>
   )
