@@ -109,9 +109,7 @@ export default function Comments({ storageKey }) {
         </div>
       </div>
 
-      {comments.length === 0 ? (
-        <p className="text-xs text-reel-muted py-2">comment here!</p>
-      ) : (
+      {comments.length === 0 ? null : (
         <div className="space-y-3">
           {comments.slice().reverse().map((c, revIdx) => {
             const idx = comments.length - 1 - revIdx
