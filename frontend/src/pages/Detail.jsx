@@ -28,7 +28,13 @@ export default function Detail() {
 
   const seasons = useMemo(() => {
     if (!meta?.videos) return []
-    return [...new Set(meta.videos.map((v) => v.season))].sort((a, b) => a - b)
+    const nums = [...new Set(meta.videos.map((v) => v.season))]
+    // Season 0 holds combined/special episodes — show it last, not first.
+    return nums.sort((a, b) => {
+      if (a === 0) return 1
+      if (b === 0) return -1
+      return a - b
+    })
   }, [meta])
 
   const episodes = useMemo(() => {
@@ -106,7 +112,7 @@ export default function Detail() {
                       : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
                   }`}
                 >
-                  Season {s}
+                  {s === 0 ? 'Combined' : `Season ${s}`}
                 </button>
               ))}
             </div>
