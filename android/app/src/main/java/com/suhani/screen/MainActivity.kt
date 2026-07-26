@@ -29,10 +29,25 @@ class MainActivity : AppCompatActivity() {
         webView.settings.allowFileAccess = false
         webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                swipeRefresh.isRefreshing = false
+            }
+
+            override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
+                super.onReceivedError(view, errorCode, description, failingUrl)
+                swipeRefresh.isRefreshing = false
+            }
+        }
         webView.webChromeClient = WebChromeClient()
 
-        swipeRefresh.setOnRefreshListener { webView.reload() }
+        swipeRefresh.setOnRefreshListener {
+            webView.reload()
+            // Safety net: if the page load somehow never fires onPageFinished
+            // (slow network, hung request), don't leave the spinner stuck forever.
+            swipeRefresh.postDelayed({ swipeRefresh.isRefreshing = false }, 8000)
+        }
         webView.setOnScrollChangeListener { _, scrollY, _, _, _ ->
             swipeRefresh.isEnabled = scrollY == 0
         }
