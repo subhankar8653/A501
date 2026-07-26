@@ -202,10 +202,6 @@ export default function Player() {
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6">
-      <button onClick={() => navigate(-1)} className="text-sm text-reel-muted hover:text-reel-ink mb-4">
-        ← Back
-      </button>
-
       {error ? (
         <p className="text-reel-rust">{error}</p>
       ) : !active ? (
