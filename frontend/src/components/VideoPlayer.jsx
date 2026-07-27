@@ -14,10 +14,32 @@ function fmt(t) {
   return h ? `${h}:${mm.padStart(2, '0')}:${ss}` : `${mm}:${ss}`
 }
 
+// Agar A501 ka Android WebView shell hai (MainActivity.kt ka JS bridge), to woh
+// window.AndroidPlayer.playVideo(uri, title) expose karta hai — us case mein HTML5
+// <video> tag ke bajaye seedha Sisisisi ka native ExoPlayer (gestures, equalizer,
+// subtitles, cast, PiP - sab kuch) khulta hai, online stream ya offline/downloaded
+// local file dono ke liye. Plain browser/desktop mein (bridge nahi milta) neeche
+// wala web player hi fallback ki tarah chalta rehta hai.
+function useNativePlayerHandoff(src, title) {
+  const [handedOff, setHandedOff] = useState(false)
+  useEffect(() => {
+    if (!src) return
+    const bridge = window.AndroidPlayer
+    if (bridge && typeof bridge.playVideo === 'function') {
+      bridge.playVideo(src, title || 'Video')
+      setHandedOff(true)
+    } else {
+      setHandedOff(false)
+    }
+  }, [src, title])
+  return handedOff
+}
+
 // Native <video> stays the playback engine — this just layers custom,
 // touch-friendly controls on top of it so the underlying speed/behavior
 // is unchanged.
-export default function VideoPlayer({ src, poster, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
+export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
+  const handedOffToNative = useNativePlayerHandoff(src, title)
   const videoRef = useRef(null)
   const containerRef = useRef(null)
   const progressRef = useRef(null)
@@ -199,6 +221,19 @@ export default function VideoPlayer({ src, poster, onEnded, qualities, activeQua
 
   const progressPct = duration ? Math.min((current / duration) * 100, 100) : 0
   const bufferedPct = duration ? Math.min((buffered / duration) * 100, 100) : 0
+
+  // Native app (Android WebView) mein hum yahan kuch render nahi karte — video
+  // already native PlayerActivity mein pura-screen khul chuka hai.
+  if (handedOffToNative) {
+    return (
+      <div className="relative w-full h-full bg-black flex items-center justify-center">
+        {poster && (
+          <img src={poster} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+        )}
+        <p className="relative text-xs text-reel-muted">Native player mein khul raha hai…</p>
+      </div>
+    )
+  }
 
   return (
     <div
