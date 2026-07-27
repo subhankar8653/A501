@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MX Player jaisa halka bottom shadow — flat solid color band nahi, balki
+    transparent se gradually black hota hua gradient, taaki seekbar/buttons
+    padhne layak rahein par ek dikhta hua "black stripe" na bane.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="90"
+        android:startColor="#99000000"
+        android:centerColor="#4D000000"
+        android:endColor="#00000000"
+        android:type="linear" />
+</shape>

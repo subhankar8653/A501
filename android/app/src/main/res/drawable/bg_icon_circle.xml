@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shape fix: MX Player ke perfectly-round icon buttons ki jagah ab ek
+     rounded-square "squircle" — same glass look (subtle fill + hairline
+     border) lekin silhouette alag hai, taaki player apna khud ka visual
+     identity rakhe, MX ka carbon-copy na lage. (Naam legacy reason se
+     "circle" hi hai — sab jagah isi drawable ko reference kiya jaata hai,
+     rename karne se bahut saari files touch karni padtin.) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="90"
+        android:startColor="#59000000"
+        android:endColor="#33000000"
+        android:type="linear" />
+    <stroke android:width="0.75dp" android:color="#26FFFFFF" />
+    <corners android:radius="13dp" />
+</shape>

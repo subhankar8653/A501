@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Phone outline, tilted from portrait to landscape -->
+    <path
+        android:pathData="M8.27,3.5 L15.5,4.9 C16.32,5.06 16.87,5.86 16.71,6.68 L14.83,16.5 C14.67,17.32 13.87,17.87 13.05,17.71 L5.82,16.31 C5,16.15 4.45,15.35 4.61,14.53 L6.49,4.71 C6.65,3.89 7.45,3.34 8.27,3.5 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- Rotate arrow curving around the phone -->
+    <path
+        android:pathData="M18.4,8.2 C19.6,9.65 20.2,11.55 19.86,13.53 C19.24,17.1 15.84,19.5 12.27,18.88"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M17,5.6 L18.55,8.35 L21.3,6.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

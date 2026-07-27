@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 100%-200% volume boost zone ke liye red fill, jaisa reference screenshot
+     mein blue ke upar red segment dikhta hai jab boost active hota hai. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FF3B30" />
+    <corners android:radius="6dp" />
+</shape>

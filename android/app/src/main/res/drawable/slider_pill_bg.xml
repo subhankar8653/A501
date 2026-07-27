@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium upgrade: flat dark pill ki jagah ab glass pill — subtle gradient
+     + halka gold hairline border, taaki volume/brightness slider premium
+     "frosted glass capsule" jaisa dikhe (reference: iOS/MX Pro control style). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#73000000"
+        android:endColor="#59000000"
+        android:type="linear" />
+    <corners android:radius="18dp" />
+    <stroke android:width="0.75dp" android:color="#26FFD700" />
+</shape>

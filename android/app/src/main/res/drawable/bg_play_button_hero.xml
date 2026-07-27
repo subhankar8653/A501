@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shape fix: center play/pause "hero" button MX Player mein ek perfect
+     gold-ring circle hota hai — sabse pehli cheez jo copy jaisi dikhti thi.
+     Ab wahi radial glow + gold hairline squircle (rounded-square) mein,
+     baaki icon buttons ke naye shape-language ke saath consistent, lekin
+     size/elevation se ab bhi clearly sabse "hero"/prominent button hai. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="34dp"
+        android:centerColor="#59FFD700"
+        android:startColor="#59FFD700"
+        android:endColor="#59000000" />
+    <stroke
+        android:width="1.4dp"
+        android:color="#FFD700" />
+    <corners android:radius="20dp" />
+</shape>

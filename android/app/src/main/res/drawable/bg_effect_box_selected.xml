@@ -1,0 +1,9 @@
+<!-- Premium fix: pehle ye box blue (#3399FF) tha — app ke baaki hisse
+     (video player, audio player, grid cards) sab gold-themed hain, ye ek
+     hi jagah off-brand blue thi. Ab consistent gold accent. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#1FFFD700" />
+    <corners android:radius="10dp" />
+    <stroke android:width="2dp" android:color="#FFD700" />
+</shape>

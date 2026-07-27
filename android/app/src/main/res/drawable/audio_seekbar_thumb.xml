@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium upgrade: default plain gold dot thumb ki jagah ab ek chhota
+     glowing gold orb — soft outer glow ring + solid gold core, seekbar ke
+     saath cohesive "premium player" look ke liye. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="18dp"
+        android:height="18dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="#33FFD700" />
+        </shape>
+    </item>
+    <item
+        android:width="11dp"
+        android:height="11dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="#FFD700" />
+            <stroke android:width="1dp" android:color="#FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

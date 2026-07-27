@@ -1,1 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium upgrade: default flat grey/gold system SeekBar track ki jagah
+     ab MX/Spotify jaisa slim rounded pill track — background halka grey
+     glass, progress ek smooth gold gradient fill. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <corners android:radius="3dp" />
+            <solid android:color="#332F2F2F" />
+            <size android:height="4dp" />
+        </shape>
+    </item>
+
+    <item android:id="@android:id/secondaryProgress">
+        <clip>
+            <shape android:shape="rectangle">
+                <corners android:radius="3dp" />
+                <solid android:color="#26FFD700" />
+                <size android:height="4dp" />
+            </shape>
+        </clip>
+    </item>
+
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <corners android:radius="3dp" />
+                <gradient
+                    android:angle="0"
+                    android:startColor="#FFD700"
+                    android:endColor="#FFB300"
+                    android:type="linear" />
+                <size android:height="4dp" />
+            </shape>
+        </clip>
+    </item>
+
+</layer-list>

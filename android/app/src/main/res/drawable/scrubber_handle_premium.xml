@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium upgrade: DefaultTimeBar ka default plain white dot handle ki
+     jagah ab layered gold "glow" handle — halka translucent outer glow ring
+     + solid gold center dot, jaisa premium OTT apps (Netflix/Prime) mein
+     scrubber dikhta hai. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#40FFD700" />
+            <size android:width="18dp" android:height="18dp" />
+        </shape>
+    </item>
+    <item
+        android:width="10dp"
+        android:height="10dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="#FFD700" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium upgrade: flat black badge → subtle gradient + hairline gold
+     border, taaki duration/quality/corrupt badges chhote premium chips
+     jaise dikhein, plain black box jaise nahi. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#E6000000"
+        android:endColor="#CC000000"
+        android:type="linear" />
+    <corners android:radius="8dp" />
+    <stroke android:width="0.5dp" android:color="#26FFD700" />
+</shape>
