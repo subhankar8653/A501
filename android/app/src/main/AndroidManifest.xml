@@ -4,11 +4,33 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Sisisisi player ke liye: offline/local video files play karne ke liye -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Cast (Chromecast) device discovery ke liye -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Equalizer / Bass Boost / Virtualizer ke liye -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Background Play (screen off ke baad bhi audio chalu) ke liye foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="Suhani Screen"
         android:theme="@style/Theme.SuhaniScreen"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="false"
+        android:supportsRtl="true">
+
+        <!-- Cast SDK yahan se apni options leta hai (PlayerActivity ke andar cast button ke liye) -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.suhani.videoplayer.CastOptionsProvider" />
 
         <activity
             android:name=".MainActivity"
@@ -19,5 +41,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Sisisisi ka full-featured native video player - web frontend (VideoPlayer.jsx)
+             ab isi Activity ko JS bridge ke through launch karta hai, HTML5 <video> tag ke
+             bajaye. Online (http/hls) aur offline (local file) dono URI accept karta hai. -->
+        <activity
+            android:name="com.suhani.videoplayer.PlayerActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified"
+            android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+
+        <service
+            android:name="com.suhani.videoplayer.BackgroundPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
     </application>
 </manifest>
