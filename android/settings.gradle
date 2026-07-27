@@ -10,6 +10,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Sisisisi video player ke self-built media3 AARs (app/libs/*.aar) ke liye —
+        // FAIL_ON_PROJECT_REPOS ki wajah se app/build.gradle mein apna repositories{}
+        // block declare nahi kar sakte, isliye flatDir yahan root settings.gradle mein.
+        flatDir {
+            dirs("app/libs")
+        }
     }
 }
 rootProject.name = "SuhaniScreen"
