@@ -1,12 +1,37 @@
 package com.suhani.screen
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.suhani.videoplayer.PlayerActivity
+
+/**
+ * Web frontend (VideoPlayer.jsx) isi bridge ke through native Sisisisi PlayerActivity
+ * (full ExoPlayer - gestures, equalizer, subtitles, cast, PiP) khol sakta hai, HTML5
+ * <video> tag ke bajaye. JS se call: window.AndroidPlayer.playVideo(uri, title)
+ *
+ * - Online stream: uri = "https://..." ya "*.m3u8"/"*.mpd" link
+ * - Offline/downloaded: uri = local file ka "file://" ya "content://" path
+ * (dono hi ExoPlayer/PlayerActivity handle karta hai, alag se code nahi likhna padta)
+ */
+class WebAppInterface(private val activity: MainActivity) {
+    @JavascriptInterface
+    fun playVideo(uri: String, title: String) {
+        activity.runOnUiThread {
+            val intent = Intent(activity, PlayerActivity::class.java).apply {
+                putExtra("video_uri", uri)
+                putExtra("video_title", title)
+            }
+            activity.startActivity(intent)
+        }
+    }
+}
 
 class MainActivity : AppCompatActivity() {
 
@@ -41,6 +66,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
         webView.webChromeClient = WebChromeClient()
+
+        // Native player bridge — frontend isse pehchan kar HTML5 <video> ki jagah
+        // seedha native Sisisisi player khol sakta hai (window.AndroidPlayer check).
+        webView.addJavascriptInterface(WebAppInterface(this), "AndroidPlayer")
 
         swipeRefresh.setOnRefreshListener {
             webView.reload()
