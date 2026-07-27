@@ -1,0 +1,1161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- playerContainer: video + saare overlays (top bar, controls, indicators) is ek
+         FrameLayout ke andar hai taaki Audio Track / Subtitle panel khulne par isko poora
+         ek saath shrink kiya ja sake (side-by-side split), aur band hone par wapas
+         match_parent width par animate ho jaaye. Gravity start rakha hai taaki shrink hone
+         par ye left side par rahe aur right side khaali (jahan panel dikhta hai) ho jaaye. -->
+    <FrameLayout
+        android:id="@+id/playerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="top|start">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:use_controller="true"
+        app:controller_layout_id="@layout/custom_player_control_view"
+        app:show_buffering="when_playing"
+        app:surface_type="texture_view" />
+
+    <!-- Ambient Glow Mode (signature feature): video ke dominant edge-colors se driven
+         soft blurred glow, Philips Ambilight/Chromecast ambient jaisa. Controls ke NEECHE
+         z-order mein hai (touch bilkul consume nahi karta), PlayerActivity isko har ~800ms
+         mein naye sampled colors ke saath update karta hai. -->
+    <com.suhani.videoplayer.AmbientGlowView
+        android:id="@+id/ambientGlowView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
+    <!-- Dual Subtitle: doosri, independent subtitle file (DualSubtitleController.kt se
+         driven, ExoPlayer ke apne text-renderer se alag) — screen ke UPAR dikhti hai
+         taaki primary subtitle (PlayerView ka apna SubtitleView, bottom) se overlap
+         na ho. Language-learning / do-subtitle-ek-saath use-case ke liye. -->
+    <TextView
+        android:id="@+id/secondarySubtitleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="28dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:shadowColor="#000000"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="4"
+        android:visibility="gone"
+        tools:text="Secondary subtitle line" />
+
+    <!-- Night Mode overlay: warm/dim tint jab Night Mode ON ho -->
+    <View
+        android:id="@+id/nightModeOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#66000000"
+        android:visibility="gone" />
+
+    <!-- Ambient Sleep Timer: sleep timer khatam hone se pehle ke last 2 minute mein
+         yeh overlay dheere-dheere (ValueAnimator se) warm/amber tone mein fade-in
+         hota hai, taaki pause hone se pehle aankhon ko ek soft "wind-down" cue mile —
+         achanak andhera/pause hone jaisa jhatka nahi lagta. Alpha 0 se shuru hokar
+         PlayerActivity dheere-dheere 0.55 tak le jaata hai. -->
+    <View
+        android:id="@+id/sleepDimOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFB36A1E"
+        android:alpha="0"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false" />
+
+    <!-- Audio Only overlay: video track disabled hone par blank black screen ki jagah
+         ek saaf placeholder (icon + label) taaki confuse na ho ki video "atak" gaya. -->
+    <LinearLayout
+        android:id="@+id/audioOnlyOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false">
+
+        <ImageView
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:src="@drawable/ic_audiotrack"
+            app:tint="#888888"
+            android:contentDescription="Audio Only" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Audio Only Mode"
+            android:textColor="#AAAAAA"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+
+    <!-- Top container: back/title/speed/decoder/more/lock row + quick-actions row.
+         UNIQUE LOOK v2: floating "card" strip bhi ek solid opaque band jaisa
+         lag raha tha (poori width covers karta tha) — ab koi background/box
+         hi nahi hai, sirf har icon apne chhote glass-squircle (bg_icon_circle)
+         ke saath seedha video par float karta hai. Title/time text par
+         shadow deke legibility maintain ki hai bina kisi dark strip ke. -->
+    <LinearLayout
+        android:id="@+id/topContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical"
+        android:background="@drawable/bg_top_gradient">
+
+        <!-- Row 1: back, title, speed, decoder, more, lock -->
+        <LinearLayout
+            android:id="@+id/topBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginEnd="10dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="6dp">
+
+            <ImageView
+                android:id="@+id/backButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="9dp"
+                android:src="@drawable/ic_back"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="back" />
+
+            <TextView
+                android:id="@+id/playerTitleText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="6"
+                tools:text="Movie_Sample.mkv" />
+
+            <ImageView
+                android:id="@+id/audioTrackButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_audiotrack"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="audio track" />
+
+            <ImageView
+                android:id="@+id/subtitleButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_subtitle"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="subtitle" />
+
+            <TextView
+                android:id="@+id/speedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0x"
+                android:textColor="#FFD700"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:padding="8dp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="6"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <TextView
+                android:id="@+id/decoderButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="HW+"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:padding="8dp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="6"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="decoder select" />
+
+            <ImageView
+                android:id="@+id/moreButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:padding="9dp"
+                android:src="@drawable/ic_more_vert"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="more" />
+
+        </LinearLayout>
+
+
+    </LinearLayout>
+
+    <!-- Side actions dock: quick-action icons ab top ki lambi horizontal
+         "chain" mein nahi hain — screen ke right edge par ek vertical dock
+         hai. FIX: pehle ye poori screen height mein center hoke free-grow
+         karta tha, isliye status bar (top) aur bottom control row (PIP/
+         Aspect) se takra raha tha. Ab isko top bar aur bottom controls ke
+         BEECH ek fixed "safe zone" mein hi rakha hai (marginTop/marginBottom
+         se), aur wo poora zone ek ScrollView hai — agar content us zone se
+         bada ho (jaise expanded grid), toh andar hi scroll hoga, kabhi bhi
+         kisi doosre element se overlap nahi karega, screen size kuch bhi ho. -->
+    <!-- Ye poora side dock ab screen par kabhi nahi dikhta (permanently
+         visibility="gone") — iske saare icons (Cast, Audio Effect,
+         Screenshot, Rotate, A-B Repeat, Background Play, Night Mode,
+         Shuffle, Loop, Mute, Sleep Timer, frame step) ab three-dot
+         (More) menu ke andar move ho gaye hain. Views yahin rakhe hain
+         (sirf hidden) taaki inki existing click-logic/toggle-state code
+         bina rewrite kiye reuse ho sake — More menu inhi buttons par
+         performClick() call karta hai. -->
+    <ScrollView
+        android:id="@+id/quickActionsScroll"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:layout_marginTop="86dp"
+        android:layout_marginBottom="140dp"
+        android:layout_marginEnd="8dp"
+        android:visibility="gone"
+        android:scrollbars="none"
+        android:overScrollMode="never"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:id="@+id/quickActionsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal|center_vertical"
+            android:paddingVertical="6dp">
+
+            <LinearLayout
+                android:id="@+id/primaryQuickActions"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal">
+
+                <ImageView
+                    android:id="@+id/castButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginVertical="4dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_cast"
+                    android:background="@drawable/bg_icon_circle"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="cast" />
+
+                <ImageView
+                    android:id="@+id/equalizerButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginVertical="4dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_equalizer"
+                    android:background="@drawable/bg_icon_circle"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="audio effect" />
+
+                <ImageView
+                    android:id="@+id/screenshotButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginVertical="4dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_camera"
+                    android:background="@drawable/bg_icon_circle"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="screenshot" />
+
+                <ImageView
+                    android:id="@+id/rotateButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginVertical="4dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_screen_rotation"
+                    android:background="@drawable/bg_icon_circle"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="rotate" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/expandActionsButton"
+                android:layout_width="40dp"
+                android:layout_height="34dp"
+                android:layout_marginTop="2dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_back"
+                android:rotation="270"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="baaki features dikhao" />
+
+            <!-- Expanded set: 2-column grid, MX ke 10-item horizontal-scroll-
+                 with-labels ki jagah — chevron dabaane par isi dock mein
+                 neeche ki taraf khulta hai. -->
+            <LinearLayout
+                android:id="@+id/extraQuickActions"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:layout_marginTop="4dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/abRepeatButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_ab_repeat"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="a-b repeat" />
+
+                        <TextView
+                            android:id="@+id/abRepeatLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="A-B Repeat"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/aspectRatioButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_aspect_ratio"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="aspect ratio" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Aspect"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/backgroundPlayButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_pip"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="background play" />
+
+                        <TextView
+                            android:id="@+id/backgroundPlayLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="BG Play: Off"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/nightModeButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_night_mode"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="night mode" />
+
+                        <TextView
+                            android:id="@+id/nightModeLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Night Mode"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/shuffleButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_shuffle"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="shuffle" />
+
+                        <TextView
+                            android:id="@+id/shuffleLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Shuffle"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/loopButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_loop"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="loop" />
+
+                        <TextView
+                            android:id="@+id/loopLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Loop"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/muteButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_volume_up"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="mute" />
+
+                        <TextView
+                            android:id="@+id/muteLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Mute"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/sleepTimerButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_timer"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="sleep timer" />
+
+                        <TextView
+                            android:id="@+id/sleepTimerLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Sleep Timer"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Premium feature: Frame-by-Frame stepping — jab video pause
+                     ho, in buttons se ek-ek frame precisely aage/peeche move
+                     kar sakte ho. -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/frameBackButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_frame_back"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="previous frame" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Prev Frame"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/frameForwardButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_frame_forward"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="next frame" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Next Frame"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Naye "sabse alag" features: Ambient Glow, Stats for Nerds -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/ambientGlowButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_ambient_glow"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="ambient glow" />
+
+                        <TextView
+                            android:id="@+id/ambientGlowLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Ambient Glow"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/statsForNerdsButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_stats_nerds"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="stats for nerds" />
+
+                        <TextView
+                            android:id="@+id/statsForNerdsLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Stats"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Naye "sabse alag" features: One-Handed Reach Mode, Mark Intro (Auto Skip) -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/reachModeButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_reach_mode"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="one-handed reach mode" />
+
+                        <TextView
+                            android:id="@+id/reachModeLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Reach Mode"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="6dp">
+
+                        <ImageView
+                            android:id="@+id/markIntroButton"
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:padding="11dp"
+                            android:src="@drawable/ic_fast_forward"
+                            android:background="@drawable/bg_icon_circle"
+                            android:foreground="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="mark intro for auto-skip" />
+
+                        <TextView
+                            android:id="@+id/markIntroLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Mark Intro"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Video Display info badge: More menu ke "Video Display" switch se toggle hota hai -->
+    <TextView
+        android:id="@+id/videoInfoBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="96dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/duration_badge_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:visibility="gone"
+        tools:text="1920x1080 • H.264 • HW" />
+
+    <ImageView
+        android:id="@+id/unlockButton"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="20dp"
+        android:padding="8dp"
+        android:src="@drawable/ic_lock"
+        android:visibility="gone"
+        android:contentDescription="unlock" />
+
+    <LinearLayout
+        android:id="@+id/gestureIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="60dp"
+        android:minWidth="150dp"
+        android:layout_gravity="center"
+        android:background="@drawable/duration_badge_bg"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingHorizontal="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/gestureText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            tools:text="Brightness 60%" />
+
+    </LinearLayout>
+
+    <!-- Hold-to-2x-speed badge: YouTube jaisa pill, bilkul VIDEO KE TOP BORDER
+         par dikhta hai (gestureIndicator se alag), taaki video ke beech ka
+         content block na ho. -->
+    <TextView
+        android:id="@+id/speedIndicatorBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="5dp"
+        android:text="2x"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:text="2x" />
+
+    <!-- Premium feature: Pinch-to-Zoom active hone par yeh chip dikhta hai,
+         tap karke ek tap mein zoom 1x reset ho jaata hai. -->
+    <LinearLayout
+        android:id="@+id/resetZoomChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="14dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:visibility="gone"
+        android:foreground="?attr/selectableItemBackgroundBorderless">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_zoom_reset"
+            app:tint="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/resetZoomText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="Reset Zoom"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+    <!-- Seek (+10s / -10s) feedback: YouTube jaisa — bold "10s" text +
+         chevron arrow ek chhote translucent circle mein, poori tarah screen
+         ke andar (kabhi bhi edge se clip/cut nahi hota jaisa pehle ho raha
+         tha), thoda margin ke saath edge se andar. -->
+    <LinearLayout
+        android:id="@+id/seekIndicatorLeft"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="28dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/seek_chevron_bg">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_fast_rewind"
+                android:contentDescription="rewind" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/seekTextLeft"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="5"
+            tools:text="10s" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/seekIndicatorRight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="28dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/seekTextRight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="5"
+            tools:text="10s" />
+
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/seek_chevron_bg">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_fast_forward"
+                android:contentDescription="forward" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/brightnessSliderContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="20dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:background="@drawable/slider_pill_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/brightnessPercentText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            tools:text="73%" />
+
+        <FrameLayout
+            android:layout_width="4dp"
+            android:layout_height="130dp"
+            android:background="@drawable/slider_track_bg">
+
+            <View
+                android:id="@+id/brightnessFill"
+                android:layout_width="match_parent"
+                android:layout_height="65dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/slider_fill_bg" />
+        </FrameLayout>
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginTop="8dp"
+            android:src="@drawable/ic_brightness"
+            android:contentDescription="brightness" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/volumeSliderContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="20dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:background="@drawable/slider_pill_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/volumePercentText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            tools:text="53%" />
+
+        <FrameLayout
+            android:layout_width="4dp"
+            android:layout_height="130dp"
+            android:background="@drawable/slider_track_bg">
+
+            <!-- 0%-100%: neeche blue fill -->
+            <View
+                android:id="@+id/volumeFill"
+                android:layout_width="match_parent"
+                android:layout_height="65dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/slider_fill_bg" />
+
+            <!-- 100%-200%: boost active hone par blue ke upar red fill -->
+            <View
+                android:id="@+id/volumeBoostFill"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_gravity="bottom"
+                android:background="@drawable/slider_fill_boost_bg"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <ImageView
+            android:id="@+id/volumeSliderIcon"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginTop="8dp"
+            android:src="@drawable/ic_volume_up"
+            android:contentDescription="volume" />
+    </LinearLayout>
+
+    <!-- Scrub-preview thumbnail: timeline (exo_progress) ko drag karte waqt yahan us
+         position ka actual video frame + timestamp dikhta hai — YouTube/premium players
+         jaisa "seek karne se pehle dekh lo kahan pahunchoge" touch. Default GONE hai,
+         PlayerActivity isko drag ke dauraan translationX se horizontally move karta hai
+         aur frame set karta hai. Bottom margin control-bar ke upar rakhta hai taaki
+         overlap na ho. -->
+    <LinearLayout
+        android:id="@+id/scrubPreviewContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginBottom="86dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:background="@drawable/bg_scrub_preview_card"
+        android:padding="6dp"
+        android:visibility="gone"
+        android:elevation="10dp">
+
+        <ImageView
+            android:id="@+id/scrubPreviewImage"
+            android:layout_width="128dp"
+            android:layout_height="72dp"
+            android:background="#000000"
+            android:scaleType="centerCrop"
+            android:contentDescription="preview frame" />
+
+        <TextView
+            android:id="@+id/scrubPreviewTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="#FFD700"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            tools:text="12:34" />
+    </LinearLayout>
+
+    <!-- "Stats for nerds": codec/resolution/bitrate/dropped-frames overlay, power-users
+         ke liye (tech-savvy audience jaise nerdy customers isko bahut pasand karte hain).
+         Toggle "Stats" button se (extraQuickActions grid), monospace font taaki numbers
+         align ho kar dikhein — jaisa YouTube ka apna "Stats for nerds" hota hai. -->
+    <TextView
+        android:id="@+id/statsForNerdsOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="72dp"
+        android:layout_marginStart="14dp"
+        android:background="@drawable/bg_scrub_preview_card"
+        android:padding="10dp"
+        android:fontFamily="monospace"
+        android:textColor="#00FF88"
+        android:textSize="11sp"
+        android:lineSpacingExtra="2dp"
+        android:visibility="gone"
+        android:elevation="10dp"
+        tools:text="Video: 1920x1080 h264\nBitrate: 4500 kbps\nDropped frames: 0\nAudio: aac 128 kbps" />
+
+    <!-- Auto Intro/Recap Skip: jab current position marked intro-range ke andar aaye
+         (same series/folder mein pehle ek episode par mark kiya hua), yeh pill button
+         khud-ba-khud dikh jaata hai — tap karte hi intro ke end tak seek ho jaata hai. -->
+    <LinearLayout
+        android:id="@+id/skipIntroButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="14dp"
+        android:layout_marginBottom="96dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:visibility="gone"
+        android:elevation="10dp"
+        android:foreground="?attr/selectableItemBackgroundBorderless">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Skip Intro"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="6dp"
+            android:src="@drawable/ic_fast_forward"
+            app:tint="#FFFFFF" />
+    </LinearLayout>
+
+    </FrameLayout>
+
+</FrameLayout>

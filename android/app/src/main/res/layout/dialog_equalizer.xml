@@ -1,0 +1,893 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/dialog_equalizer_bg"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Tabs -->
+        <LinearLayout
+            android:id="@+id/tabRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tabAudioEffect"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Audio Effect"
+                android:textColor="#AAAAAA"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:padding="8dp" />
+
+            <TextView
+                android:id="@+id/tabEqualizer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Equalizer"
+                android:textColor="#FFD700"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:padding="8dp" />
+        </LinearLayout>
+
+        <!-- Sliding underline indicator (jaise MX Player mein tab ke neeche blue line slide karti hai) -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginBottom="12dp"
+            android:background="#26FFFFFF">
+
+            <View
+                android:id="@+id/tabIndicator"
+                android:layout_width="0dp"
+                android:layout_height="2dp"
+                android:layout_gravity="start"
+                android:background="#FFD700" />
+        </FrameLayout>
+
+        <!-- Audio Effect page: MX Player jaisa 3x2 preset button grid -->
+        <LinearLayout
+            android:id="@+id/pageAudioEffect"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- Row 1: Original, Clarity, Bass Boost -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="10dp">
+
+                <LinearLayout
+                    android:id="@+id/effectOriginal"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_selected">
+
+                    <ImageView
+                        android:id="@+id/effectOriginalIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_equalizer" />
+
+                    <TextView
+                        android:id="@+id/effectOriginalLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Original"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectClarity"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectClarityIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_mic" />
+
+                    <TextView
+                        android:id="@+id/effectClarityLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Clarity"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectBassBoost"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectBassBoostIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_volume_boost" />
+
+                    <TextView
+                        android:id="@+id/effectBassBoostLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Bass Boost"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row 2: Treble Boost, Movie, Music -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="10dp">
+
+                <LinearLayout
+                    android:id="@+id/effectTrebleBoost"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectTrebleBoostIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_volume_up" />
+
+                    <TextView
+                        android:id="@+id/effectTrebleBoostLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Treble Boost"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectMovie"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectMovieIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_camera" />
+
+                    <TextView
+                        android:id="@+id/effectMovieLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Movie"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectMusic"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectMusicIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_audiotrack" />
+
+                    <TextView
+                        android:id="@+id/effectMusicLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Music"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row 3: Vocal Boost, Rock, Pop -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="10dp">
+
+                <LinearLayout
+                    android:id="@+id/effectVocalBoost"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectVocalBoostIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_mic" />
+
+                    <TextView
+                        android:id="@+id/effectVocalBoostLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Vocal Boost"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectRock"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectRockIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_equalizer" />
+
+                    <TextView
+                        android:id="@+id/effectRockLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Rock"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectPop"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectPopIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_favorite" />
+
+                    <TextView
+                        android:id="@+id/effectPopLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Pop"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row 4: Party, 3D Surround, Podcast -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="10dp">
+
+                <LinearLayout
+                    android:id="@+id/effectParty"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectPartyIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_shuffle" />
+
+                    <TextView
+                        android:id="@+id/effectPartyLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Party"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effect3DSurround"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effect3DSurroundIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_reverb" />
+
+                    <TextView
+                        android:id="@+id/effect3DSurroundLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="3D Surround"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/effectPodcast"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingVertical="16dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/bg_effect_box_unselected">
+
+                    <ImageView
+                        android:id="@+id/effectPodcastIcon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_subtitle" />
+
+                    <TextView
+                        android:id="@+id/effectPodcastLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Podcast"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Equalizer page: on/off + presets + 5 bands + Reverb -->
+        <LinearLayout
+            android:id="@+id/pageEqualizer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- "Equalizer" title (sliders icon) + On/Off switch, MX Player jaisa -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_equalizer" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Equalizer"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/equalizerOnOffLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="On"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp" />
+
+                <Switch
+                    android:id="@+id/equalizerSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumbTint="#FFD700"
+                    android:trackTint="#66FFD700" />
+            </LinearLayout>
+
+            <!-- Preset buttons: horizontally scrollable, MX Player jaise 10 presets -->
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:paddingVertical="6dp">
+
+                <LinearLayout
+                    android:id="@+id/presetRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/presetCustom"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Custom"
+                        android:textColor="#FFD700"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetNormal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Normal"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetClassical"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Classical"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetDance"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Dance"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetFlat"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Flat"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetFolk"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Folk"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetHeavyMetal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Heavy Metal"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetHipHop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Hip Hop"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetJazz"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Jazz"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetPop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Pop"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/presetRock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="14dp"
+                        android:text="Rock"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:textSize="13sp" />
+
+                </LinearLayout>
+            </HorizontalScrollView>
+
+            <!-- 5 band sliders, rounded bordered box jaisa MX Player mein hai -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_eq_box"
+                android:orientation="horizontal"
+                android:weightSum="5"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="8dp">
+
+                <!-- Band 0 : 60Hz -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/bandLabel0"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 dB"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp" />
+
+                    <com.suhani.videoplayer.VerticalSeekBar
+                        android:id="@+id/bandSeek0"
+                        android:layout_width="36dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:progressDrawable="@drawable/audio_seekbar_progress"
+                        android:thumb="@drawable/audio_seekbar_thumb"
+                        android:splitTrack="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="60 Hz"
+                        android:textColor="#AAAAAA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Band 1 : 230Hz -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/bandLabel1"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 dB"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp" />
+
+                    <com.suhani.videoplayer.VerticalSeekBar
+                        android:id="@+id/bandSeek1"
+                        android:layout_width="36dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:progressDrawable="@drawable/audio_seekbar_progress"
+                        android:thumb="@drawable/audio_seekbar_thumb"
+                        android:splitTrack="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="230 Hz"
+                        android:textColor="#AAAAAA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Band 2 : 910Hz -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/bandLabel2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 dB"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp" />
+
+                    <com.suhani.videoplayer.VerticalSeekBar
+                        android:id="@+id/bandSeek2"
+                        android:layout_width="36dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:progressDrawable="@drawable/audio_seekbar_progress"
+                        android:thumb="@drawable/audio_seekbar_thumb"
+                        android:splitTrack="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="910 Hz"
+                        android:textColor="#AAAAAA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Band 3 : 3600Hz -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/bandLabel3"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 dB"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp" />
+
+                    <com.suhani.videoplayer.VerticalSeekBar
+                        android:id="@+id/bandSeek3"
+                        android:layout_width="36dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:progressDrawable="@drawable/audio_seekbar_progress"
+                        android:thumb="@drawable/audio_seekbar_thumb"
+                        android:splitTrack="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="3600 Hz"
+                        android:textColor="#AAAAAA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Band 4 : 14000Hz -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/bandLabel4"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 dB"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp" />
+
+                    <com.suhani.videoplayer.VerticalSeekBar
+                        android:id="@+id/bandSeek4"
+                        android:layout_width="36dp"
+                        android:layout_height="150dp"
+                        android:layout_gravity="center"
+                        android:progressDrawable="@drawable/audio_seekbar_progress"
+                        android:thumb="@drawable/audio_seekbar_thumb"
+                        android:splitTrack="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="14000 Hz"
+                        android:textColor="#AAAAAA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Volume Boost: EQ ki normal ±dB range ke upar bhi loudness badhane ke liye
+                 (LoudnessEnhancer use karta hai, taaki sound apni max capacity tak ja sake) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="14dp">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_volume_boost" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Volume Boost"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/volumeBoostValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0%"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/volumeBoostSeekBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0"
+                android:progressDrawable="@drawable/audio_seekbar_progress"
+                android:thumb="@drawable/audio_seekbar_thumb"
+                android:splitTrack="false" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="100% par sound bahut zyada loud ho jaata hai, thoda distortion ho sakta hai"
+                android:textColor="#777777"
+                android:textSize="11sp" />
+
+            <!-- Reverb row: icon + label + current value + dropdown arrow, MX Player jaisa -->
+            <LinearLayout
+                android:id="@+id/reverbRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingVertical="14dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_reverb" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Reverb"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/reverbValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:text="None"
+                    android:textColor="#AAAAAA"
+                    android:textSize="14sp" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_arrow_drop_down" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

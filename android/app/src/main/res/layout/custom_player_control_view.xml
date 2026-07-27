@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    UNIQUE LOOK v2: pehle poore control area ke peeche ek "floating card" box
+    tha — lekin wo bhi almost-full-width solid dark band jaisa hi dikh raha
+    tha (bilkul MX ke edge-to-edge strip jaisa hi, bas rounded corners ke
+    saath). Ab koi background/box hi nahi — seekbar aur buttons seedha video
+    par float karte hain, sirf apne individual squircle backgrounds (lock,
+    play/pause hero) ke saath. Time text par shadow hai taaki bina kisi dark
+    strip ke bhi bright video par readable rahe.
+    Ye layout PlayerView ke app:controller_layout_id se attach hota hai (activity_player.xml),
+    isliye exo_play / exo_pause / exo_prev / exo_next / exo_progress / exo_position / exo_duration
+    media3 khud automatically bind kar leta hai - koi extra Kotlin wiring nahi chahiye.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:orientation="vertical"
+    android:background="@drawable/bg_bottom_gradient"
+    android:paddingBottom="22dp">
+
+    <LinearLayout
+        android:id="@+id/controlsCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_marginEnd="6dp"
+        android:layout_marginBottom="6dp"
+        android:orientation="vertical"
+        android:paddingTop="14dp"
+        android:paddingBottom="10dp">
+
+        <!-- Seekbar row: position | timebar | duration -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="12dp">
+
+            <TextView
+                android:id="@id/exo_position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:minWidth="42dp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="6" />
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@id/exo_progress"
+                android:layout_width="0dp"
+                android:layout_height="26dp"
+                android:layout_weight="1"
+                android:layout_marginHorizontal="6dp"
+                app:played_color="#FFD700"
+                app:scrubber_color="#FFD700"
+                app:unplayed_color="#4DFFFFFF"
+                app:buffered_color="#80FFFFFF"
+                app:scrubber_drawable="@drawable/scrubber_handle_premium"
+                app:scrubber_enabled_size="18dp"
+                app:scrubber_disabled_size="10dp"
+                app:scrubber_dragged_size="22dp" />
+
+            <TextView
+                android:id="@id/exo_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:minWidth="42dp"
+                android:gravity="end"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="6" />
+        </LinearLayout>
+
+
+        <!-- Single bottom row: Lock, Prev, Play/Pause, Next, PIP, Resize -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingTop="4dp">
+
+            <ImageView
+                android:id="@+id/lockButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="9dp"
+                android:src="@drawable/ic_lock"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="lock" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@id/exo_prev"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:padding="9dp"
+                android:src="@drawable/ic_skip_previous"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="previous" />
+
+            <FrameLayout
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_marginHorizontal="4dp">
+
+                <ImageButton
+                    android:id="@id/exo_play"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="14dp"
+                    android:elevation="6dp"
+                    android:src="@drawable/ic_play_arrow"
+                    android:background="@drawable/bg_play_button_hero"
+                    android:contentDescription="play" />
+
+                <ImageButton
+                    android:id="@id/exo_pause"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="14dp"
+                    android:elevation="6dp"
+                    android:src="@drawable/ic_pause"
+                    android:background="@drawable/bg_play_button_hero"
+                    android:contentDescription="pause" />
+            </FrameLayout>
+
+            <ImageButton
+                android:id="@id/exo_next"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:padding="9dp"
+                android:src="@drawable/ic_skip_next"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="next" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageView
+                android:id="@+id/bottomPipButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="7dp"
+                android:src="@drawable/ic_pip"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="picture in picture" />
+
+            <ImageView
+                android:id="@+id/bottomAspectButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:padding="7dp"
+                android:src="@drawable/ic_aspect_ratio"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="resize" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
