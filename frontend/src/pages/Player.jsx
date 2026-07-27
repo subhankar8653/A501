@@ -212,6 +212,7 @@ export default function Player() {
             <VideoPlayer
               key={active.url}
               src={active.url}
+              title={meta.filename}
               qualities={qualities}
               activeQuality={activeQualityObj}
               onQualityChange={(q) => switchQuality(q)}
