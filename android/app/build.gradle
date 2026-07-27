@@ -3,14 +3,21 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Sisisisi video player ka self-built media3 AAR (app/libs/media3-*.aar) flatDir
+// repo se aata hai — declare kiya gaya hai root settings.gradle mein (dependencyResolutionManagement),
+// FAIL_ON_PROJECT_REPOS mode ki wajah se yahan app-level par declare nahi kar sakte.
+
 android {
     namespace "com.suhani.screen"
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.suhani.screen"
-        minSdk 21
-        targetSdk 34
+        // NOTE: Sisisisi player ke self-built media3 AARs cross-module D8 desugaring
+        // crash (AbstractMethodError) se bachne ke liye minSdk 24 maangte hain — 23 wapas
+        // mat karna, warna PlayerActivity random crash karega.
+        minSdk 24
+        targetSdk 36
         versionCode 1
         versionName "1.0"
     }
@@ -28,9 +35,64 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+// Sisisisi jaisa hi fix: media3-ui/media3-session jaise self-built AARs Maven wale
+// media3-exoplayer/media3-common ke saath ABI-mismatch crash (AbstractMethodError /
+// NoSuchMethodError) dete hain agar dono mix ho jaayein — isliye Maven se aane wale
+// in modules ko explicitly exclude karo, sab kuch flatDir AAR se hi aaye.
+configurations.all {
+    exclude group: 'androidx.media3', module: 'media3-exoplayer'
+    exclude group: 'androidx.media3', module: 'media3-common'
+    exclude group: 'androidx.media3', module: 'media3-common-ktx'
+    exclude group: 'androidx.media3', module: 'media3-container'
+    exclude group: 'androidx.media3', module: 'media3-database'
+    exclude group: 'androidx.media3', module: 'media3-datasource'
+    exclude group: 'androidx.media3', module: 'media3-decoder'
+    exclude group: 'androidx.media3', module: 'media3-extractor'
+    exclude group: 'androidx.media3', module: 'media3-ui'
+    exclude group: 'androidx.media3', module: 'media3-session'
 }
 
 dependencies {
+    // --- A501 (WebView shell) ke original deps ---
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
+
+    // --- Sisisisi video player ke deps ---
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+
+    implementation 'com.google.guava:guava:33.3.1-android'
+    implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
+
+    // Media3 ExoPlayer core - self-built AARs (app/libs/)
+    implementation(name: 'media3-exoplayer', ext: 'aar')
+    implementation(name: 'media3-common', ext: 'aar')
+    implementation(name: 'media3-container', ext: 'aar')
+    implementation(name: 'media3-database', ext: 'aar')
+    implementation(name: 'media3-datasource', ext: 'aar')
+    implementation(name: 'media3-decoder', ext: 'aar')
+    implementation(name: 'media3-extractor', ext: 'aar')
+    implementation(name: 'media3-ui', ext: 'aar')
+    implementation(name: 'media3-session', ext: 'aar')
+
+    // HLS (.m3u8) / DASH (.mpd) stream support — online play ke liye zaroori
+    implementation 'androidx.media3:media3-exoplayer-hls:1.10.0'
+    implementation 'androidx.media3:media3-exoplayer-dash:1.10.0'
+
+    // Apna self-built FFmpeg decoder (Apache-2.0 wrapper, LGPL-only codecs)
+    implementation(name: 'media3-ffmpeg-decoder', ext: 'aar')
+
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+
+    // Chromecast
+    implementation 'com.google.android.gms:play-services-cast-framework:22.3.1'
+    implementation 'androidx.mediarouter:mediarouter:1.7.0'
 }
