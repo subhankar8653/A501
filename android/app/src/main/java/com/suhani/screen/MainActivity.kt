@@ -1,9 +1,7 @@
 package com.suhani.screen
 
-import android.app.PictureInPictureParams
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -17,8 +15,12 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -89,6 +91,7 @@ class MainActivity : AppCompatActivity() {
     private var inlineOverlay: FrameLayout? = null
     private var inlinePlayerView: PlayerView? = null
     private var inlineLocked = false
+    private var subtitleManuallyDisabled = false
     private var speedIndex = 1 // 1.0x default
     private var resizeModeIndex = 0
     private var inlineUri: String = ""
@@ -153,7 +156,6 @@ class MainActivity : AppCompatActivity() {
         if (inlineOverlay == null) {
             val root = LayoutInflater.from(this).inflate(R.layout.inline_player_view, null) as FrameLayout
             val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
-            val titleText = root.findViewById<TextView>(R.id.inlineTitleText)
             val speedButton = root.findViewById<TextView>(R.id.inlineSpeedButton)
             val subtitleButton = root.findViewById<ImageView>(R.id.inlineSubtitleButton)
             val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
@@ -162,17 +164,25 @@ class MainActivity : AppCompatActivity() {
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
+            val topBarRoot = root.findViewById<View>(R.id.inlineTopBarRoot)
             val unlockButton = root.findViewById<ImageView>(R.id.inlineUnlockButton)
 
             backButton.setOnClickListener { unmountInlinePlayer() }
             moreButton.setOnClickListener { openFullscreenFromInline() }
             fullscreenButton.setOnClickListener { openFullscreenFromInline() }
 
+            // Bug fix: sirf visibility toggle karne se kuch nahi hota tha kyunki by
+            // default koi text track select hi nahi hoti thi (subtitleView hamesha
+            // khaali rehta) — ab track type ko explicitly enable/disable karte hain,
+            // aur pehli baar milte hi (onTracksChanged) khud-ba-khud pehla text track
+            // select kar dete hain, jaise fullscreen player karta hai.
             subtitleButton.setOnClickListener {
-                val sv = playerView.subtitleView ?: return@setOnClickListener
-                val nowHidden = sv.visibility == View.VISIBLE
-                sv.visibility = if (nowHidden) View.GONE else View.VISIBLE
-                subtitleButton.alpha = if (nowHidden) 0.5f else 1f
+                val p = inlinePlayer ?: return@setOnClickListener
+                subtitleManuallyDisabled = !subtitleManuallyDisabled
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitleManuallyDisabled)
+                    .build()
+                subtitleButton.alpha = if (subtitleManuallyDisabled) 0.5f else 1f
             }
 
             speedButton.setOnClickListener {
@@ -187,16 +197,24 @@ class MainActivity : AppCompatActivity() {
                 playerView.resizeMode = resizeModes[resizeModeIndex]
             }
 
-            pipButton.setOnClickListener { enterInlinePip() }
+            // Bug fix: is chhoti overlay window par real Android PiP lagane se poora
+            // WebView+video ek saath tiny frame mein simat jaata tha (bilkul tootा hua
+            // dikhta tha) — kyunki PiP poori Activity ki window shrink karta hai, sirf
+            // is div ko nahi. Ab PiP tap karne par pehle fullscreen khulta hai (jahan
+            // poori window sirf video hi hai), aur wahi turant real PiP mein chala
+            // jaata hai — yahi sahi/kaam karne wala tareeka hai.
+            pipButton.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
 
             lockButton.setOnClickListener {
                 inlineLocked = true
                 playerView.useController = false
+                topBarRoot.visibility = View.GONE
                 unlockButton.visibility = View.VISIBLE
             }
             unlockButton.setOnClickListener {
                 inlineLocked = false
                 playerView.useController = true
+                topBarRoot.visibility = View.VISIBLE
                 unlockButton.visibility = View.GONE
             }
 
@@ -217,6 +235,21 @@ class MainActivity : AppCompatActivity() {
         val player = inlinePlayer ?: ExoPlayer.Builder(this).build().also {
             inlinePlayer = it
             inlinePlayerView?.player = it
+            // Fullscreen player jaisa hi behavior: koi bhi text/subtitle track available
+            // ho aur user ne khud-se OFF na kiya ho, to pehla milte hi khud-ba-khud select
+            // kar do — warna subtitle button "on" dikhta lekin kuch bhi nahi dikhta.
+            it.addListener(object : Player.Listener {
+                override fun onTracksChanged(tracks: Tracks) {
+                    if (subtitleManuallyDisabled) return
+                    val alreadySelected = tracks.groups.any { g -> g.type == C.TRACK_TYPE_TEXT && g.isSelected }
+                    if (alreadySelected) return
+                    val firstTextGroup = tracks.groups.firstOrNull { g -> g.type == C.TRACK_TYPE_TEXT }
+                        ?: return
+                    it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
+                        .setOverrideForType(TrackSelectionOverride(firstTextGroup.mediaTrackGroup, 0))
+                        .build()
+                }
+            })
         }
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
         player.prepare()
@@ -243,19 +276,11 @@ class MainActivity : AppCompatActivity() {
         inlinePlayer?.pause()
     }
 
-    private fun enterInlinePip() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                enterPictureInPictureMode(PictureInPictureParams.Builder().build())
-            } catch (e: Exception) {
-                // Device/OEM PiP support na ho to chup-chaap ignore — crash nahi karna.
-            }
-        }
-    }
-
-    /** Chhote player ke fullscreen/more button se poora native PlayerActivity khulta hai,
-     *  wahi position/playing-state ke saath; wapas aane par onActivityResult se sync hota hai. */
-    private fun openFullscreenFromInline() {
+    /** Chhote player ke fullscreen/more/PiP button se poora native PlayerActivity khulta hai,
+     *  wahi position/playing-state ke saath; wapas aane par onActivityResult se sync hota hai.
+     *  enterPipImmediately=true ho to PlayerActivity khulte hi turant real PiP mein chala jaata hai
+     *  (isi Activity ka apna already-working PiP implementation use karke). */
+    private fun openFullscreenFromInline(enterPipImmediately: Boolean = false) {
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         inlinePlayer?.pause()
@@ -266,6 +291,7 @@ class MainActivity : AppCompatActivity() {
             putExtra("video_qualities_json", inlineQualitiesJson)
             putExtra("resume_position_ms", pos)
             putExtra("resume_playing", wasPlaying)
+            putExtra("enter_pip_immediately", enterPipImmediately)
         }
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
