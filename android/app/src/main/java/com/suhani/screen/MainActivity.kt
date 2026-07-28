@@ -3,8 +3,10 @@ package com.suhani.screen
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -103,6 +105,8 @@ class MainActivity : AppCompatActivity() {
     private var speedIndex = 1 // 1.0x default
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
+    private var inlineLongPressSpeedActive = false
+    private var inlineSpeedBeforeLongPress = 1f
     private val inlineEqProcessor = EqualizerAudioProcessor()
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
@@ -198,19 +202,9 @@ class MainActivity : AppCompatActivity() {
             moreButton.setOnClickListener { openFullscreenFromInline() }
             fullscreenButton.setOnClickListener { openFullscreenFromInline() }
 
-            // Bug fix: sirf visibility toggle karne se kuch nahi hota tha kyunki by
-            // default koi text track select hi nahi hoti thi (subtitleView hamesha
-            // khaali rehta) — ab track type ko explicitly enable/disable karte hain,
-            // aur pehli baar milte hi (onTracksChanged) khud-ba-khud pehla text track
-            // select kar dete hain, jaise fullscreen player karta hai.
-            subtitleButton.setOnClickListener {
-                val p = inlinePlayer ?: return@setOnClickListener
-                subtitleManuallyDisabled = !subtitleManuallyDisabled
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitleManuallyDisabled)
-                    .build()
-                subtitleButton.alpha = if (subtitleManuallyDisabled) 0.5f else 1f
-            }
+            // Pehle sirf ek silent on/off toggle tha — ab fullscreen jaisa hi ek
+            // asli track-picker popup khulta hai (available subtitle tracks + Off).
+            subtitleButton.setOnClickListener { showInlineSubtitleDialog(subtitleButton) }
 
             speedButton.setOnClickListener {
                 speedIndex = (speedIndex + 1) % SPEEDS.size
@@ -246,6 +240,58 @@ class MainActivity : AppCompatActivity() {
                 playerView.useController = true
                 topBarRoot.visibility = View.VISIBLE
                 unlockButton.visibility = View.GONE
+            }
+
+            // --- Gestures: double-tap ±10s seek, hold-anywhere-for-2x-speed ---
+            // Fullscreen ke gestureDetector jaisa hi — bas chhote area ke hisaab
+            // se feedback (inlineSeekFeedback pill / inlineSpeedBadge).
+            val seekFeedback = root.findViewById<TextView>(R.id.inlineSeekFeedback)
+            val speedBadge = root.findViewById<TextView>(R.id.inlineSpeedBadge)
+            val hideInlineSeekFeedback = Runnable { seekFeedback.visibility = View.GONE }
+
+            val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    if (inlineLocked) return true
+                    val forward = e.x >= playerView.width / 2
+                    val p = inlinePlayer ?: return true
+                    val max = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                    val target = if (forward) (p.currentPosition + 10_000).coerceAtMost(max)
+                                 else (p.currentPosition - 10_000).coerceAtLeast(0)
+                    p.seekTo(target)
+                    seekFeedback.text = if (forward) "⏩ 10s" else "⏪ 10s"
+                    seekFeedback.removeCallbacks(hideInlineSeekFeedback)
+                    seekFeedback.visibility = View.VISIBLE
+                    seekFeedback.postDelayed(hideInlineSeekFeedback, 600)
+                    return true
+                }
+
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (inlineLocked) return true
+                    if (playerView.isControllerFullyVisible) playerView.hideController()
+                    else playerView.showController()
+                    return true
+                }
+
+                override fun onLongPress(e: MotionEvent) {
+                    // Lock mein bhi hold-to-2x allow karte hain, fullscreen jaisa hi.
+                    val p = inlinePlayer ?: return
+                    inlineLongPressSpeedActive = true
+                    inlineSpeedBeforeLongPress = try { p.playbackParameters.speed } catch (_: Exception) { 1f }
+                    p.playbackParameters = PlaybackParameters(2f)
+                    speedBadge.visibility = View.VISIBLE
+                }
+            })
+
+            playerView.setOnTouchListener { _, event ->
+                gestureDetector.onTouchEvent(event)
+                if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
+                    if (inlineLongPressSpeedActive) {
+                        inlineLongPressSpeedActive = false
+                        inlinePlayer?.playbackParameters = PlaybackParameters(inlineSpeedBeforeLongPress)
+                        speedBadge.visibility = View.GONE
+                    }
+                }
+                true
             }
 
             val overlay = FrameLayout(this).apply {
@@ -360,16 +406,83 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
-     *  koi settings sub-screen nahi (wo dialog fullscreen mein already khula milta
-     *  hai agar zyada advanced audio options chahiye ho). */
-    private fun showInlineAudioTrackDialog() {
+    /** Fullscreen ke showSubtitleMenu() ka compact version — track list + Off,
+     *  is se pehle bas ek silent on/off toggle tha jisme kuch dikhta hi nahi tha
+     *  ki kaunsi track chal rahi hai. */
+    private fun showInlineSubtitleDialog(subtitleButton: ImageView) {
         val player = inlinePlayer ?: return
-        val tracksGroup = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val textGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         val labels = mutableListOf<String>()
         val trackRefs = mutableListOf<Pair<Tracks.Group, Int>>()
 
-        tracksGroup.forEach { group ->
+        textGroups.forEach { group ->
+            for (i in 0 until group.length) {
+                val format = group.getTrackFormat(i)
+                val langCode = format.language?.trim()?.takeIf { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
+                val label = format.label?.trim()?.takeIf { it.isNotEmpty() }
+                val name = when {
+                    langCode != null -> try {
+                        java.util.Locale(langCode).getDisplayLanguage(java.util.Locale.ENGLISH)
+                    } catch (_: Exception) { langCode }
+                    label != null -> label
+                    else -> "Subtitle #${labels.size + 1}"
+                }
+                labels.add(name)
+                trackRefs.add(Pair(group, i))
+            }
+        }
+
+        if (labels.isEmpty()) {
+            android.widget.Toast.makeText(this, "Is video mein koi subtitle track nahi mili", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        labels.add("Off")
+
+        var selectedIndex = if (subtitleManuallyDisabled) labels.size - 1
+            else trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }.let { if (it < 0) 0 else it }
+
+        AlertDialog.Builder(this)
+            .setTitle("Subtitles")
+            .setSingleChoiceItems(labels.toTypedArray(), selectedIndex) { dialog, which ->
+                if (which == labels.size - 1) {
+                    subtitleManuallyDisabled = true
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        .build()
+                    subtitleButton.alpha = 0.5f
+                } else {
+                    subtitleManuallyDisabled = false
+                    val (group, index) = trackRefs[which]
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                        .build()
+                    subtitleButton.alpha = 1f
+                }
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
+     *  koi settings sub-screen nahi (wo dialog fullscreen mein already khula milta
+     *  hai agar zyada advanced audio options chahiye ho).
+     *
+     *  Robustness fix: kabhi-kabhi ek group ka reported `.type` audio nahi dikhta
+     *  (renderer-mapping quirk) jabki uska format `audio/...` mime hi hai — isliye
+     *  ab type-check ke saath-saath mimeType se bhi audio tracks dhoondte hain,
+     *  taaki genuinely single-audio-track file par bhi dialog khaali na dikhe. */
+    private fun showInlineAudioTrackDialog() {
+        val player = inlinePlayer ?: return
+        val allGroups = player.currentTracks.groups
+        val audioGroups = allGroups.filter { group ->
+            group.type == C.TRACK_TYPE_AUDIO ||
+                (0 until group.length).any { i -> group.getTrackFormat(i).sampleMimeType?.startsWith("audio/") == true }
+        }
+        val labels = mutableListOf<String>()
+        val trackRefs = mutableListOf<Pair<Tracks.Group, Int>>()
+
+        audioGroups.forEach { group ->
             for (i in 0 until group.length) {
                 val format = group.getTrackFormat(i)
                 val langCode = format.language?.trim()?.takeIf { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
@@ -384,6 +497,11 @@ class MainActivity : AppCompatActivity() {
                 labels.add(name)
                 trackRefs.add(Pair(group, i))
             }
+        }
+
+        if (labels.isEmpty()) {
+            android.widget.Toast.makeText(this, "Audio track ki info abhi load ho rahi hai, thodi der mein try karein", android.widget.Toast.LENGTH_SHORT).show()
+            return
         }
         labels.add("Disable")
 
