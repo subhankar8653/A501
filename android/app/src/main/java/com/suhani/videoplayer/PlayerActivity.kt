@@ -830,7 +830,18 @@ class PlayerActivity : AppCompatActivity() {
         // aur ExoPlayer ka onVideoSizeChanged actual decoded size se ise confirm/correct karega.
         queue.getOrNull(queueStartIndex)?.let { applyOrientationForVideo(it.width, it.height) }
 
-        buildPlayer(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON, enableFallback = true)
+        // Chhote inline player se fullscreen mein handoff hote waqt exact position/playing
+        // state bhi aati hai (MainActivity se) — taaki fullscreen mein wahi se resume ho,
+        // shuru se dobara na chale.
+        val resumePositionMs = intent.getLongExtra("resume_position_ms", -1L)
+        val resumePlaying = intent.getBooleanExtra("resume_playing", true)
+
+        buildPlayer(
+            DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON,
+            enableFallback = true,
+            resumePositionMs = resumePositionMs,
+            forcePlayWhenReady = if (resumePositionMs >= 0) resumePlaying else null
+        )
     }
 
     // Bug fix: PlayerActivity ab manifest mein "singleTask" hai (see AndroidManifest), isliye
@@ -1275,8 +1286,8 @@ class PlayerActivity : AppCompatActivity() {
     // Player build / rebuild (decoder mode change ke liye player rebuild hota hai
     // kyunki DefaultRenderersFactory sirf construction time par set hoti hai)
     // ---------------------------------------------------------------------
-    private fun buildPlayer(extensionMode: Int, enableFallback: Boolean, resumePositionMs: Long = -1L, resumeIndex: Int = -1) {
-        val wasPlaying = if (::player.isInitialized) player.playWhenReady else true
+    private fun buildPlayer(extensionMode: Int, enableFallback: Boolean, resumePositionMs: Long = -1L, resumeIndex: Int = -1, forcePlayWhenReady: Boolean? = null) {
+        val wasPlaying = forcePlayWhenReady ?: (if (::player.isInitialized) player.playWhenReady else true)
         // Bug fix: pehle rebuild (jaise decoder-error se auto-recovery, ya manual decoder
         // switch) ek NAYA ExoPlayer banata tha jiski apni fresh/default trackSelectionParameters
         // hoti thi — isliye user ki chuni hui "Hindi" audio track (ya koi bhi manual audio/
@@ -5851,6 +5862,22 @@ class PlayerActivity : AppCompatActivity() {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, flags)
         return RemoteAction(icon, title, title, pendingIntent)
+    }
+
+    // Chhote inline player (MainActivity) se yahan aaye the to wapas jaate waqt current
+    // position + playing state bhi saath bhej do, taaki chhota player wahi se resume ho
+    // jahan tak fullscreen mein dekha tha — stale/purani position par na ruke.
+    override fun finish() {
+        if (::player.isInitialized) {
+            setResult(
+                RESULT_OK,
+                Intent().apply {
+                    putExtra("resume_position_ms", player.currentPosition)
+                    putExtra("resume_playing", player.playWhenReady)
+                }
+            )
+        }
+        super.finish()
     }
 
     @Deprecated("Deprecated in Java")
