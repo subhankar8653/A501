@@ -15,53 +15,27 @@ function fmt(t) {
 }
 
 // ---------------------------------------------------------------------------
-// NATIVE INLINE BRIDGE CONTRACT (Sisisisi / A501 Android shell must implement)
+// NATIVE HANDOFF BRIDGE (Sisisisi / A501 Android shell)
 // ---------------------------------------------------------------------------
-// Isse pehle bridge poore video ko ek alag native Activity mein handoff kar
-// deta tha (window.AndroidPlayer.playVideo). Ab bridge sirf ek "engine" hai —
-// video *isi* WebView page ke andar, is exact <div> ki jagah pe, ek native
-// SurfaceView/TextureView ke through render hota hai (jaise YouTube inline
-// embed). Saare custom controls (play/pause, seek, quality, speed, mute,
-// fullscreen) yeh React component hi banata/dikhata hai — native sirf decode
-// + render + equalizer/gestures jaisा engine-level kaam karta hai.
+// App ke andar video is inline React player mein nahi khulta — is div ki
+// jagah sirf ek poster/tap-to-play dikhta hai, aur asli playback poore-screen
+// wale native Sisisisi PlayerActivity (full ExoPlayer: gestures, equalizer,
+// subtitles, cast, PiP, ab quality-switch bhi) mein hoti hai. Isse app ka
+// pura rich native player experience milta hai, browser jaisa bare <video>
+// tag nahi.
 //
-// window.AndroidPlayer must expose:
-//   mount(src: string, title: string, poster: string, startAtSeconds: number)
-//     -> naya native surface create/attach karo is rect ki jagah par.
-//   updateRect(left, top, width, height)  // CSS px, viewport-relative
-//     -> jab bhi rect badle (resize/scroll/fullscreen), surface ko wahi
-//        exact position/size par move/resize karo.
-//   play() / pause()
-//   seekTo(seconds)
-//   setMuted(bool)
-//   setSpeed(rate)
-//   setQuality(url)   // resume time bridge khud current position se le
-//   destroy()          // unmount / naya video / navigate away
+// window.AndroidPlayer.playVideo(uri, title, qualitiesJson) call hoti hai:
+//   uri            -> abhi active stream ka URL
+//   title          -> filename/title dikhane ke liye
+//   qualitiesJson  -> JSON.stringify([{url, label}, ...]) — native player
+//                     isi list se apna khud ka quality-switch menu banata hai
 //
-// Native → JS callbacks (evaluateJavascript se call karo), window par:
-//   window.__nativePlayerBridge.onLoadedMetadata(durationSeconds)
-//   window.__nativePlayerBridge.onTimeUpdate(currentSeconds, bufferedEndSeconds)
-//   window.__nativePlayerBridge.onPlay()
-//   window.__nativePlayerBridge.onPause()
-//   window.__nativePlayerBridge.onWaiting()
-//   window.__nativePlayerBridge.onPlaying()
-//   window.__nativePlayerBridge.onEnded()
-//   window.__nativePlayerBridge.onError(message)
-//
-// IMPORTANT (Android side): native surface ko WebView ke *peeche* (z-order
-// mein neeche) add karna hoga, aur WebView ka background sirf is video-rect
-// ki jagah transparent hona chahiye (WebView.setBackgroundColor(Color.TRANSPARENT)
-// + page ka <html>/<body> background CSS se match) — tabhi yeh upar wale
-// HTML controls (progress bar, quality button, etc.) native video ke UPAR
-// dikhengे, jaisa neeche render logic assume karta hai.
+// Web par (bina app ke, plain browser mein) yeh bridge exist nahi karta,
+// isliye wahan normal HTML5 <video> fallback + poora custom control UI
+// (neeche wala code) hi chalta hai — koi behavior change nahi.
 function detectNativeBridge() {
-  return !!(window.AndroidPlayer && typeof window.AndroidPlayer.mount === 'function')
+  return !!(window.AndroidPlayer && typeof window.AndroidPlayer.playVideo === 'function')
 }
-
-// Native <video> stays the playback engine — this just layers custom,
-// touch-friendly controls on top of it so the underlying speed/behavior
-// is unchanged. Jab native bridge available hai, wahi controls ab native
-// engine ko drive karte hain instead of the <video> element.
 export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
   const isNative = useRef(detectNativeBridge()).current
   const videoRef = useRef(null)
@@ -144,58 +118,22 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     }
   }, [isNative, scheduleHide, onEnded])
 
-  // --- Native bridge: register callbacks the Android side calls into ------
-  useEffect(() => {
-    if (!isNative) return
-    window.__nativePlayerBridge = {
-      onLoadedMetadata: (dur) => setDuration(dur || 0),
-      onTimeUpdate: (t, bufEnd) => {
-        setCurrent(t || 0)
-        if (bufEnd) setBuffered(bufEnd)
-        onProgressTick && onProgressTick(t || 0)
-      },
-      onPlay: () => { setPlaying(true); scheduleHide() },
-      onPause: () => { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current) },
-      onWaiting: () => setBuffering(true),
-      onPlaying: () => setBuffering(false),
-      onEnded: () => { setPlaying(false); setShowControls(true); onEnded && onEnded() },
-      onError: () => setBuffering(false),
-    }
-    return () => { delete window.__nativePlayerBridge }
-  }, [isNative, scheduleHide, onEnded, onProgressTick])
+  // Native player ko qualities bhejne ke liye {url, label} tak trim kar do —
+  // baaki stream metadata (title/size/etc.) native side ko nahi chahiye.
+  const qualityPayload = useCallback(
+    () => JSON.stringify((qualities || []).map((q) => ({ url: q.url, label: q.label }))),
+    [qualities]
+  )
 
-  // --- Native bridge: mount/destroy the engine when src changes -----------
-  useEffect(() => {
+  const launchNative = useCallback(() => {
     if (!isNative || !src) return
-    setBuffering(true)
-    window.AndroidPlayer.mount(src, title || 'Video', poster || '', startAt || 0)
-    return () => {
-      window.AndroidPlayer.destroy && window.AndroidPlayer.destroy()
-    }
-  }, [isNative, src])
+    window.AndroidPlayer.playVideo(src, title || 'Video', qualityPayload())
+  }, [isNative, src, title, qualityPayload])
 
-  // --- Native bridge: keep the on-screen surface glued to this div --------
+  // --- Native bridge: har naye src par poore-screen native player khol do --
   useEffect(() => {
-    if (!isNative) return
-    const el = containerRef.current
-    if (!el) return
-    function sendRect() {
-      const r = el.getBoundingClientRect()
-      window.AndroidPlayer.updateRect(r.left, r.top, r.width, r.height)
-    }
-    sendRect()
-    const ro = new ResizeObserver(sendRect)
-    ro.observe(el)
-    window.addEventListener('scroll', sendRect, true)
-    window.addEventListener('resize', sendRect)
-    document.addEventListener('fullscreenchange', sendRect)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('scroll', sendRect, true)
-      window.removeEventListener('resize', sendRect)
-      document.removeEventListener('fullscreenchange', sendRect)
-    }
-  }, [isNative])
+    launchNative()
+  }, [launchNative])
 
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement)
@@ -204,11 +142,6 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   }, [])
 
   function togglePlay() {
-    if (isNative) {
-      if (playing) window.AndroidPlayer.pause()
-      else window.AndroidPlayer.play()
-      return
-    }
     const v = videoRef.current
     if (!v) return
     if (v.paused) v.play().catch(() => {})
@@ -216,28 +149,17 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   }
 
   function skip(sec) {
-    if (isNative) {
-      const max = duration || Infinity
-      const target = Math.min(Math.max(current + sec, 0), max)
-      window.AndroidPlayer.seekTo(target)
-      setCurrent(target)
-    } else {
-      const v = videoRef.current
-      if (!v) return
-      const max = duration || v.duration || Infinity
-      v.currentTime = Math.min(Math.max(v.currentTime + sec, 0), max)
-    }
+    const v = videoRef.current
+    if (!v) return
+    const max = duration || v.duration || Infinity
+    v.currentTime = Math.min(Math.max(v.currentTime + sec, 0), max)
     setSkipPulse(sec < 0 ? 'left' : 'right')
     setTimeout(() => setSkipPulse(null), 600)
   }
 
   function toggleMute() {
     const next = !muted
-    if (isNative) {
-      window.AndroidPlayer.setMuted(next)
-    } else {
-      videoRef.current.muted = next
-    }
+    videoRef.current.muted = next
     setMuted(next)
     wake()
   }
@@ -245,11 +167,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   function cycleSpeed() {
     const idx = SPEEDS.indexOf(speed)
     const next = SPEEDS[(idx + 1) % SPEEDS.length]
-    if (isNative) {
-      window.AndroidPlayer.setSpeed(next)
-    } else {
-      videoRef.current.playbackRate = next
-    }
+    videoRef.current.playbackRate = next
     setSpeed(next)
     wake()
   }
@@ -292,13 +210,9 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     if (!bar) return
     const rect = bar.getBoundingClientRect()
     const frac = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
-    const dur = duration || (isNative ? 0 : videoRef.current?.duration) || 0
+    const dur = duration || videoRef.current?.duration || 0
     const target = frac * dur
-    if (isNative) {
-      window.AndroidPlayer.seekTo(target)
-    } else {
-      videoRef.current.currentTime = target
-    }
+    videoRef.current.currentTime = target
     setCurrent(target)
   }
 
@@ -327,30 +241,38 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   const progressPct = duration ? Math.min((current / duration) * 100, 100) : 0
   const bufferedPct = duration ? Math.min((buffered / duration) * 100, 100) : 0
 
+  // App ke andar: koi inline control UI nahi, seedha poore-screen native
+  // Sisisisi player khulta hai (launchNative effect se). Yeh sirf poster
+  // dikhata hai — agar user vaapas is page par aa jaaye to tap karke player
+  // dobara khol sake.
+  if (isNative) {
+    return (
+      <div
+        className="relative w-full h-full bg-black flex items-center justify-center cursor-pointer bg-center bg-cover"
+        style={poster ? { backgroundImage: `url(${poster})` } : undefined}
+        onClick={launchNative}
+      >
+        <div className="w-14 h-14 rounded-full bg-reel-gold/90 flex items-center justify-center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#0B0B12"><path d="M8 5v14l11-7z" /></svg>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={containerRef}
       className="relative w-full h-full bg-black select-none overflow-hidden"
       onMouseMove={wake}
     >
-      {isNative ? (
-        // Native engine (Sisisisi ExoPlayer, gestures/equalizer intact)
-        // renders *behind* this transparent div, exactly at its rect —
-        // see the bridge contract note above the component.
-        <div
-          className="w-full h-full bg-center bg-cover"
-          style={poster ? { backgroundImage: `url(${poster})` } : undefined}
-        />
-      ) : (
-        <video
-          ref={videoRef}
-          src={src}
-          poster={poster}
-          playsInline
-          autoPlay
-          className="w-full h-full"
-        />
-      )}
+      <video
+        ref={videoRef}
+        src={src}
+        poster={poster}
+        playsInline
+        autoPlay
+        className="w-full h-full"
+      />
 
       {buffering && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
