@@ -16,7 +16,7 @@
     android:layout_gravity="bottom"
     android:orientation="vertical"
     android:background="@drawable/bg_bottom_gradient"
-    android:paddingBottom="6dp">
+    android:paddingBottom="4dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -24,7 +24,7 @@
         android:layout_marginStart="4dp"
         android:layout_marginEnd="4dp"
         android:orientation="vertical"
-        android:paddingTop="6dp"
+        android:paddingTop="4dp"
         android:paddingBottom="2dp">
 
         <!-- Seekbar row: position | timebar | duration -->
@@ -40,8 +40,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="#FFFFFF"
-                android:textSize="9sp"
-                android:minWidth="26dp"
+                android:textSize="8sp"
+                android:minWidth="20dp"
                 android:shadowColor="#CC000000"
                 android:shadowDx="0"
                 android:shadowDy="1"
@@ -50,25 +50,25 @@
             <androidx.media3.ui.DefaultTimeBar
                 android:id="@id/exo_progress"
                 android:layout_width="0dp"
-                android:layout_height="18dp"
+                android:layout_height="14dp"
                 android:layout_weight="1"
-                android:layout_marginHorizontal="4dp"
+                android:layout_marginHorizontal="3dp"
                 app:played_color="#FFD700"
                 app:scrubber_color="#FFD700"
                 app:unplayed_color="#4DFFFFFF"
                 app:buffered_color="#80FFFFFF"
                 app:scrubber_drawable="@drawable/scrubber_handle_premium"
-                app:scrubber_enabled_size="11dp"
-                app:scrubber_disabled_size="6dp"
-                app:scrubber_dragged_size="14dp" />
+                app:scrubber_enabled_size="8dp"
+                app:scrubber_disabled_size="4dp"
+                app:scrubber_dragged_size="10dp" />
 
             <TextView
                 android:id="@id/exo_duration"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="#FFFFFF"
-                android:textSize="9sp"
-                android:minWidth="26dp"
+                android:textSize="8sp"
+                android:minWidth="20dp"
                 android:gravity="end"
                 android:shadowColor="#CC000000"
                 android:shadowDx="0"
@@ -87,9 +87,9 @@
 
             <ImageView
                 android:id="@+id/inlineLockButton"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:padding="5dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:padding="4dp"
                 android:src="@drawable/ic_lock"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
@@ -102,25 +102,25 @@
 
             <ImageButton
                 android:id="@id/exo_prev"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:padding="5dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:padding="4dp"
                 android:src="@drawable/ic_skip_previous"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="previous" />
 
             <FrameLayout
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
                 android:layout_marginHorizontal="2dp">
 
                 <ImageButton
                     android:id="@id/exo_play"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:padding="8dp"
-                    android:elevation="4dp"
+                    android:padding="6dp"
+                    android:elevation="3dp"
                     android:src="@drawable/ic_play_arrow"
                     android:background="@drawable/bg_play_button_hero"
                     android:contentDescription="play" />
@@ -129,8 +129,8 @@
                     android:id="@id/exo_pause"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:padding="8dp"
-                    android:elevation="4dp"
+                    android:padding="6dp"
+                    android:elevation="3dp"
                     android:src="@drawable/ic_pause"
                     android:background="@drawable/bg_play_button_hero"
                     android:contentDescription="pause" />
@@ -138,9 +138,9 @@
 
             <ImageButton
                 android:id="@id/exo_next"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:padding="5dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:padding="4dp"
                 android:src="@drawable/ic_skip_next"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
@@ -153,9 +153,9 @@
 
             <ImageView
                 android:id="@+id/inlinePipButton"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:padding="4dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:padding="3dp"
                 android:src="@drawable/ic_pip"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
@@ -163,10 +163,10 @@
 
             <ImageView
                 android:id="@+id/inlineAspectButton"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_marginStart="2dp"
-                android:padding="4dp"
+                android:padding="3dp"
                 android:src="@drawable/ic_aspect_ratio"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
@@ -174,10 +174,10 @@
 
             <ImageView
                 android:id="@+id/inlineFullscreenButton"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_marginStart="2dp"
-                android:padding="4dp"
+                android:padding="3dp"
                 android:src="@drawable/ic_fullscreen_expand"
                 android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"

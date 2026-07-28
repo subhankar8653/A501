@@ -16,37 +16,39 @@
 
     <include layout="@layout/inline_top_bar" />
 
-    <!-- Double-tap ±10s seek ka feedback — fullscreen ke gesture-indicator
-         jaisa hi, bas ek chhota center pill (left/right decide karne ki
-         zaroorat nahi, text hi bata deta hai). -->
+    <!-- Double-tap ±10s seek ka feedback — ab fullscreen ke speedIndicatorBadge
+         jaisa hi ek chhota pill, video ke top border ke paas (center video
+         ko block nahi karta, bilkul fullscreen wale small notification jaisa). -->
     <TextView
         android:id="@+id/inlineSeekFeedback"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:background="@drawable/bg_icon_circle"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="6dp"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="38dp"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="9dp"
+        android:paddingVertical="3dp"
+        android:textColor="#0B0B12"
+        android:textSize="10sp"
         android:textStyle="bold"
         android:visibility="gone"
         tools:text="⏩ 10s" />
 
-    <!-- Hold-to-2x speed badge — fullscreen ke speedIndicatorBadge jaisa hi. -->
+    <!-- Hold-to-2x speed badge — fullscreen ke speedIndicatorBadge jaisa hi
+         (chhota pill, video ke top border ke paas). -->
     <TextView
         android:id="@+id/inlineSpeedBadge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="52dp"
+        android:layout_marginTop="38dp"
         android:background="@drawable/speed_badge_bg"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="4dp"
-        android:text="2x speed"
+        android:paddingHorizontal="9dp"
+        android:paddingVertical="3dp"
+        android:text="2x"
         android:textColor="#0B0B12"
         android:textStyle="bold"
-        android:textSize="11sp"
+        android:textSize="10sp"
         android:visibility="gone" />
 
     <!-- Lock hone par yahi dikhta hai — baaki sab (top bar/bottom controls)
