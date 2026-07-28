@@ -14,17 +14,22 @@ import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.suhani.videoplayer.EqualizerAudioProcessor
+import com.suhani.videoplayer.FfmpegRenderersFactory
 import com.suhani.videoplayer.PlayerActivity
 
 /**
@@ -34,8 +39,9 @@ import com.suhani.videoplayer.PlayerActivity
  *   window.AndroidPlayer.mount(uri, title, qualitiesJson)
  *     -> is jagah (jiska rect updateRect se milta hai) ek chhota native
  *        player start ho jaata hai, autoplay ke saath, apne poore controls
- *        (play/pause, seek, lock, subtitle toggle, speed, PiP, aspect-ratio,
- *        fullscreen) ke saath — bas icon size chhote (is area ke hisaab se).
+ *        (play/pause, seek, lock, audio track, subtitle toggle, speed,
+ *        decoder select, PiP, aspect-ratio, fullscreen) ke saath — bas icon
+ *        size chhote (is area ke hisaab se), fullscreen jaisi hi feature parity.
  *   window.AndroidPlayer.updateRect(left, top, width, height)  // CSS px
  *     -> jab bhi video-container ka size/position badle (scroll/resize),
  *        chhote player ko wahi exact jagah par move/resize karo.
@@ -43,11 +49,12 @@ import com.suhani.videoplayer.PlayerActivity
  *     -> naya video / page chhodne par chhota player hata do.
  *
  * Chhote player ke "more" (3-dot) button aur fullscreen-expand button dono
- * poore-screen wale PlayerActivity ko khol dete hain — audio-track/decoder-
- * switch/equalizer/cast/A-B-repeat/chapters jaisi advanced cheezein wahi
- * already banी hui hain, dobara chhote screen par nahi banayi — wahi
- * position/playing-state ke saath khulta hai, aur wapas aane par chhota
- * player sync ho jaata hai (onActivityResult se).
+ * poore-screen wale PlayerActivity ko khol dete hain — equalizer/cast/
+ * A-B-repeat/chapters jaisi bahut advanced cheezein abhi bhi wahi hain
+ * (dobara chhote screen par nahi banayi), lekin audio-track/decoder-select
+ * ab dono jagah available hain. Fullscreen wahi position/playing-state ke
+ * saath khulta hai, aur wapas aane par chhota player sync ho jaata hai
+ * (onActivityResult se).
  *
  * - Online stream: uri = "https://..." ya "*.m3u8"/"*.mpd" link
  * - Offline/downloaded: uri = local file ka "file://" ya "content://" path
@@ -92,11 +99,29 @@ class MainActivity : AppCompatActivity() {
     private var inlinePlayerView: PlayerView? = null
     private var inlineLocked = false
     private var subtitleManuallyDisabled = false
+    private var audioManuallyDisabled = false
     private var speedIndex = 1 // 1.0x default
     private var resizeModeIndex = 0
+    private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
+    private val inlineEqProcessor = EqualizerAudioProcessor()
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
     private var inlineQualitiesJson: String = "[]"
+
+    // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
+    // purane player se hata kar naye player par dobara laga sakein.
+    private val inlineTracksListener = object : Player.Listener {
+        override fun onTracksChanged(tracks: Tracks) {
+            if (subtitleManuallyDisabled) return
+            val alreadySelected = tracks.groups.any { g -> g.type == C.TRACK_TYPE_TEXT && g.isSelected }
+            if (alreadySelected) return
+            val firstTextGroup = tracks.groups.firstOrNull { g -> g.type == C.TRACK_TYPE_TEXT } ?: return
+            val p = inlinePlayer ?: return
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setOverrideForType(TrackSelectionOverride(firstTextGroup.mediaTrackGroup, 0))
+                .build()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,6 +183,8 @@ class MainActivity : AppCompatActivity() {
             val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
             val speedButton = root.findViewById<TextView>(R.id.inlineSpeedButton)
             val subtitleButton = root.findViewById<ImageView>(R.id.inlineSubtitleButton)
+            val audioTrackButton = root.findViewById<ImageView>(R.id.inlineAudioTrackButton)
+            val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
             val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
             val moreButton = root.findViewById<ImageView>(R.id.inlineMoreButton)
             val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
@@ -191,6 +218,9 @@ class MainActivity : AppCompatActivity() {
                 inlinePlayer?.playbackParameters = PlaybackParameters(rate)
                 speedButton.text = "${rate}x"
             }
+
+            audioTrackButton.setOnClickListener { showInlineAudioTrackDialog() }
+            decoderButton.setOnClickListener { showInlineDecoderDialog(decoderButton) }
 
             aspectButton.setOnClickListener {
                 resizeModeIndex = (resizeModeIndex + 1) % resizeModes.size
@@ -232,24 +262,13 @@ class MainActivity : AppCompatActivity() {
 
         inlineOverlay?.findViewById<TextView>(R.id.inlineTitleText)?.text = title
 
-        val player = inlinePlayer ?: ExoPlayer.Builder(this).build().also {
+        val player = inlinePlayer ?: buildInlineExoPlayer().also {
             inlinePlayer = it
             inlinePlayerView?.player = it
             // Fullscreen player jaisa hi behavior: koi bhi text/subtitle track available
             // ho aur user ne khud-se OFF na kiya ho, to pehla milte hi khud-ba-khud select
             // kar do — warna subtitle button "on" dikhta lekin kuch bhi nahi dikhta.
-            it.addListener(object : Player.Listener {
-                override fun onTracksChanged(tracks: Tracks) {
-                    if (subtitleManuallyDisabled) return
-                    val alreadySelected = tracks.groups.any { g -> g.type == C.TRACK_TYPE_TEXT && g.isSelected }
-                    if (alreadySelected) return
-                    val firstTextGroup = tracks.groups.firstOrNull { g -> g.type == C.TRACK_TYPE_TEXT }
-                        ?: return
-                    it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
-                        .setOverrideForType(TrackSelectionOverride(firstTextGroup.mediaTrackGroup, 0))
-                        .build()
-                }
-            })
+            it.addListener(inlineTracksListener)
         }
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
         player.prepare()
@@ -274,6 +293,122 @@ class MainActivity : AppCompatActivity() {
     fun unmountInlinePlayer() {
         inlineOverlay?.visibility = View.GONE
         inlinePlayer?.pause()
+    }
+
+    /** Fullscreen wale buildPlayer() jaisa hi — FfmpegRenderersFactory (HW/HW+/SW
+     *  decoder switch, LGPL audio codecs) ke saath ExoPlayer banata hai, taaki
+     *  chhota inline player bhi wahi decoder options support kare. */
+    private fun buildInlineExoPlayer(): ExoPlayer {
+        val extensionMode = when (decoderMode) {
+            0 -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF
+            1 -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+            else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+        }
+        val renderersFactory = FfmpegRenderersFactory(this, inlineEqProcessor)
+            .setExtensionRendererMode(extensionMode)
+            .setEnableDecoderFallback(decoderMode != 0)
+        return ExoPlayer.Builder(this, renderersFactory)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus= */ true
+            )
+            .build()
+    }
+
+    /** Decoder badalne ke liye poora ExoPlayer instance dobara banana padta hai
+     *  (renderersFactory sirf construction time par set hoti hai) — isliye position,
+     *  playing-state aur track selection (audio/subtitle choice) capture karke naye
+     *  player par wapas apply karte hain, taaki switch ke baad bhi wahi cheez chale. */
+    private fun rebuildInlinePlayer() {
+        val old = inlinePlayer ?: return
+        val pos = old.currentPosition
+        val wasPlaying = old.playWhenReady
+        val previousParams = old.trackSelectionParameters
+        old.removeListener(inlineTracksListener)
+        old.release()
+
+        val fresh = buildInlineExoPlayer()
+        fresh.trackSelectionParameters = previousParams
+        fresh.addListener(inlineTracksListener)
+        inlinePlayer = fresh
+        inlinePlayerView?.player = fresh
+        fresh.setMediaItem(MediaItem.fromUri(Uri.parse(inlineUri)))
+        fresh.prepare()
+        fresh.seekTo(pos)
+        fresh.playWhenReady = wasPlaying
+    }
+
+    /** Fullscreen ke showDecoderDialog() jaisa hi (HW/HW+/SW choice), bas chhote
+     *  player par rebuildInlinePlayer() se apply hota hai. */
+    private fun showInlineDecoderDialog(decoderButton: TextView) {
+        val options = arrayOf("HW decoder", "HW+ decoder", "SW decoder")
+        AlertDialog.Builder(this)
+            .setTitle("Select decoder")
+            .setSingleChoiceItems(options, decoderMode) { dialog, which ->
+                decoderMode = which
+                decoderButton.text = when (which) {
+                    0 -> "HW"
+                    1 -> "HW+"
+                    else -> "SW"
+                }
+                rebuildInlinePlayer()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
+     *  koi settings sub-screen nahi (wo dialog fullscreen mein already khula milta
+     *  hai agar zyada advanced audio options chahiye ho). */
+    private fun showInlineAudioTrackDialog() {
+        val player = inlinePlayer ?: return
+        val tracksGroup = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val labels = mutableListOf<String>()
+        val trackRefs = mutableListOf<Pair<Tracks.Group, Int>>()
+
+        tracksGroup.forEach { group ->
+            for (i in 0 until group.length) {
+                val format = group.getTrackFormat(i)
+                val langCode = format.language?.trim()?.takeIf { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
+                val label = format.label?.trim()?.takeIf { it.isNotEmpty() }
+                val name = when {
+                    langCode != null -> try {
+                        java.util.Locale(langCode).getDisplayLanguage(java.util.Locale.ENGLISH)
+                    } catch (_: Exception) { langCode }
+                    label != null -> label
+                    else -> "Track #${labels.size + 1}"
+                }
+                labels.add(name)
+                trackRefs.add(Pair(group, i))
+            }
+        }
+        labels.add("Disable")
+
+        var selectedIndex = trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }
+        if (selectedIndex < 0) selectedIndex = if (audioManuallyDisabled) labels.size - 1 else 0
+
+        AlertDialog.Builder(this)
+            .setTitle("Audio track")
+            .setSingleChoiceItems(labels.toTypedArray(), selectedIndex) { dialog, which ->
+                if (which == labels.size - 1) {
+                    audioManuallyDisabled = true
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                        .build()
+                } else {
+                    audioManuallyDisabled = false
+                    val (group, index) = trackRefs[which]
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                        .build()
+                }
+                dialog.dismiss()
+            }
+            .show()
     }
 
     /** Chhote player ke fullscreen/more/PiP button se poora native PlayerActivity khulta hai,
