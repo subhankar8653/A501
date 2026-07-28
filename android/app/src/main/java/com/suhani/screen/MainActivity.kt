@@ -1,9 +1,12 @@
 package com.suhani.screen
 
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -11,31 +14,38 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.suhani.videoplayer.PlayerActivity
 
 /**
- * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhota
+ * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhote
  * (inline) native player mein play karta hai, HTML5 <video> tag ke bajaye:
  *
  *   window.AndroidPlayer.mount(uri, title, qualitiesJson)
  *     -> is jagah (jiska rect updateRect se milta hai) ek chhota native
- *        ExoPlayer player start ho jaata hai, autoplay ke saath.
+ *        player start ho jaata hai, autoplay ke saath, apne poore controls
+ *        (play/pause, seek, lock, subtitle toggle, speed, PiP, aspect-ratio,
+ *        fullscreen) ke saath — bas icon size chhote (is area ke hisaab se).
  *   window.AndroidPlayer.updateRect(left, top, width, height)  // CSS px
  *     -> jab bhi video-container ka size/position badle (scroll/resize),
  *        chhote player ko wahi exact jagah par move/resize karo.
  *   window.AndroidPlayer.unmount()
  *     -> naya video / page chhodne par chhota player hata do.
  *
- * Chhote player ke apne built-in controller mein ek fullscreen icon bhi hota
- * hai (media3 ka default) — usse tap karte hi poore-screen wala, saare rich
- * features (gestures, equalizer, subtitles, cast, PiP, quality-switch) wala
- * PlayerActivity khulta hai, wahi position/playing-state ke saath. Wahan se
- * back aane par chhota player wahi se resume ho jaata hai.
+ * Chhote player ke "more" (3-dot) button aur fullscreen-expand button dono
+ * poore-screen wale PlayerActivity ko khol dete hain — audio-track/decoder-
+ * switch/equalizer/cast/A-B-repeat/chapters jaisi advanced cheezein wahi
+ * already banी hui hain, dobara chhote screen par nahi banayi — wahi
+ * position/playing-state ke saath khulta hai, aur wapas aane par chhota
+ * player sync ho jaata hai (onActivityResult se).
  *
  * - Online stream: uri = "https://..." ya "*.m3u8"/"*.mpd" link
  * - Offline/downloaded: uri = local file ka "file://" ya "content://" path
@@ -62,15 +72,25 @@ class MainActivity : AppCompatActivity() {
 
     private val SITE_URL = "https://a501.vercel.app/"
     private val REQUEST_FULLSCREEN_PLAYER = 9001
+    private val SPEEDS = floatArrayOf(0.5f, 1f, 1.25f, 1.5f, 2f)
+    private val resizeModes = intArrayOf(
+        AspectRatioFrameLayout.RESIZE_MODE_FIT,
+        AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH,
+        AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT,
+        AspectRatioFrameLayout.RESIZE_MODE_FILL,
+        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    )
 
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
 
-    // Chhota (inline) native player — bas basic playback + built-in fullscreen
-    // button; poora rich experience fullscreen PlayerActivity mein milta hai.
+    // Chhota (inline) native player aur uske controls
     private var inlinePlayer: ExoPlayer? = null
-    private var inlinePlayerView: PlayerView? = null
     private var inlineOverlay: FrameLayout? = null
+    private var inlinePlayerView: PlayerView? = null
+    private var inlineLocked = false
+    private var speedIndex = 1 // 1.0x default
+    private var resizeModeIndex = 0
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
     private var inlineQualitiesJson: String = "[]"
@@ -123,27 +143,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Chhota inline player (over)lay create/reuse karke naya video load karta hai. */
+    /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
+     *  aur uske saare (scaled-down) controls wire karta hai. */
     fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
         inlineUri = uri
         inlineTitle = title
         inlineQualitiesJson = qualitiesJson
 
         if (inlineOverlay == null) {
-            val playerView = PlayerView(this).apply {
-                useController = true
-                // Fullscreen icon media3 ke controller mein khud-ba-khud dikhne lagta hai
-                // jaise hi ye listener set hota hai — tap hote hi poora native player khulta hai.
-                setControllerOnFullScreenModeChangedListener { openFullscreenFromInline() }
+            val root = LayoutInflater.from(this).inflate(R.layout.inline_player_view, null) as FrameLayout
+            val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
+            val titleText = root.findViewById<TextView>(R.id.inlineTitleText)
+            val speedButton = root.findViewById<TextView>(R.id.inlineSpeedButton)
+            val subtitleButton = root.findViewById<ImageView>(R.id.inlineSubtitleButton)
+            val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
+            val moreButton = root.findViewById<ImageView>(R.id.inlineMoreButton)
+            val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
+            val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
+            val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
+            val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
+            val unlockButton = root.findViewById<ImageView>(R.id.inlineUnlockButton)
+
+            backButton.setOnClickListener { unmountInlinePlayer() }
+            moreButton.setOnClickListener { openFullscreenFromInline() }
+            fullscreenButton.setOnClickListener { openFullscreenFromInline() }
+
+            subtitleButton.setOnClickListener {
+                val sv = playerView.subtitleView ?: return@setOnClickListener
+                val nowHidden = sv.visibility == View.VISIBLE
+                sv.visibility = if (nowHidden) View.GONE else View.VISIBLE
+                subtitleButton.alpha = if (nowHidden) 0.5f else 1f
             }
+
+            speedButton.setOnClickListener {
+                speedIndex = (speedIndex + 1) % SPEEDS.size
+                val rate = SPEEDS[speedIndex]
+                inlinePlayer?.playbackParameters = PlaybackParameters(rate)
+                speedButton.text = "${rate}x"
+            }
+
+            aspectButton.setOnClickListener {
+                resizeModeIndex = (resizeModeIndex + 1) % resizeModes.size
+                playerView.resizeMode = resizeModes[resizeModeIndex]
+            }
+
+            pipButton.setOnClickListener { enterInlinePip() }
+
+            lockButton.setOnClickListener {
+                inlineLocked = true
+                playerView.useController = false
+                unlockButton.visibility = View.VISIBLE
+            }
+            unlockButton.setOnClickListener {
+                inlineLocked = false
+                playerView.useController = true
+                unlockButton.visibility = View.GONE
+            }
+
             val overlay = FrameLayout(this).apply {
-                addView(
-                    playerView,
-                    FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                    )
-                )
+                addView(root, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                ))
                 visibility = View.GONE
             }
             val content = findViewById<ViewGroup>(android.R.id.content)
@@ -151,6 +211,8 @@ class MainActivity : AppCompatActivity() {
             inlinePlayerView = playerView
             inlineOverlay = overlay
         }
+
+        inlineOverlay?.findViewById<TextView>(R.id.inlineTitleText)?.text = title
 
         val player = inlinePlayer ?: ExoPlayer.Builder(this).build().also {
             inlinePlayer = it
@@ -181,7 +243,17 @@ class MainActivity : AppCompatActivity() {
         inlinePlayer?.pause()
     }
 
-    /** Chhote player ke fullscreen icon se poora native PlayerActivity khulta hai,
+    private fun enterInlinePip() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+            } catch (e: Exception) {
+                // Device/OEM PiP support na ho to chup-chaap ignore — crash nahi karna.
+            }
+        }
+    }
+
+    /** Chhote player ke fullscreen/more button se poora native PlayerActivity khulta hai,
      *  wahi position/playing-state ke saath; wapas aane par onActivityResult se sync hota hai. */
     private fun openFullscreenFromInline() {
         val pos = inlinePlayer?.currentPosition ?: 0L
