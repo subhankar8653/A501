@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Chhote (inline) player ka top bar — fullscreen wale topBar jaisा hi
+    look/order, bas chhota. Audio-track/decoder-switch jaise dialogs yahan
+    dobara nahi banaye — "more" (3-dot) seedha fullscreen khol deta hai
+    jahan wo sab already available hain.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="top"
+    android:orientation="vertical"
+    android:background="@drawable/bg_top_gradient">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="4dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="2dp"
+        android:paddingVertical="2dp">
+
+        <ImageView
+            android:id="@+id/inlineBackButton"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_back"
+            android:background="@drawable/bg_icon_circle"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="back" />
+
+        <TextView
+            android:id="@+id/inlineTitleText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4" />
+
+        <ImageView
+            android:id="@+id/inlineSubtitleButton"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:padding="4dp"
+            android:src="@drawable/ic_subtitle"
+            android:background="@drawable/bg_icon_circle"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="subtitle" />
+
+        <TextView
+            android:id="@+id/inlineSpeedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1.0x"
+            android:textColor="#FFD700"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:padding="4dp"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+
+        <ImageView
+            android:id="@+id/inlineMoreButton"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="2dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_more_vert"
+            android:background="@drawable/bg_icon_circle"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="more" />
+
+    </LinearLayout>
+
+</LinearLayout>
