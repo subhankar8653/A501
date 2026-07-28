@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Chhote (inline) player ka top bar — fullscreen wale topBar jaisा hi
-    look/order, bas chhota. Audio-track/decoder-switch jaise dialogs yahan
-    dobara nahi banaye — "more" (3-dot) seedha fullscreen khol deta hai
-    jahan wo sab already available hain.
+    look/order/icons (audio track, subtitle, speed, decoder, more) — ab
+    poori parity hai, koi feature "more" ke peeche chhupa nahi.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/inlineTopBarRoot"
@@ -51,9 +50,20 @@
             android:shadowRadius="4" />
 
         <ImageView
+            android:id="@+id/inlineAudioTrackButton"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:padding="4dp"
+            android:src="@drawable/ic_audiotrack"
+            android:background="@drawable/bg_icon_circle"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="audio track" />
+
+        <ImageView
             android:id="@+id/inlineSubtitleButton"
             android:layout_width="22dp"
             android:layout_height="22dp"
+            android:layout_marginStart="2dp"
             android:padding="4dp"
             android:src="@drawable/ic_subtitle"
             android:background="@drawable/bg_icon_circle"
@@ -74,6 +84,22 @@
             android:shadowDy="1"
             android:shadowRadius="4"
             android:background="?attr/selectableItemBackgroundBorderless" />
+
+        <TextView
+            android:id="@+id/inlineDecoderButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="HW+"
+            android:textColor="#FFFFFF"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:padding="4dp"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="decoder select" />
 
         <ImageView
             android:id="@+id/inlineMoreButton"

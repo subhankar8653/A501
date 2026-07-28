@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Chhote (inline) player ka bottom control bar — fullscreen wale
-    custom_player_control_view.xml jaisा hi look/buttons, bas sab kuch
-    chhota (is small area ke hisaab se). exo_play/exo_pause/exo_progress/
-    exo_position/exo_duration ke ids fullscreen jaise hi rakhe hain isliye
-    media3 khud automatically bind kar leta hai — extra wiring nahi chahiye.
+    custom_player_control_view.xml jaisा hi look/buttons (lock, prev,
+    play/pause, next, pip, resize, fullscreen), bas sab kuch chhota (is
+    small area ke hisaab se). exo_play/exo_pause/exo_prev/exo_next/
+    exo_progress/exo_position/exo_duration ke ids fullscreen jaise hi
+    rakhe hain isliye media3 khud automatically bind kar leta hai — extra
+    wiring nahi chahiye. (exo_prev/exo_next abhi grayed/disabled dikhenge
+    jab tak single video mount hai — queue milte hi khud enable ho jaayenge.)
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -97,6 +100,16 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
+            <ImageButton
+                android:id="@id/exo_prev"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:padding="5dp"
+                android:src="@drawable/ic_skip_previous"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="previous" />
+
             <FrameLayout
                 android:layout_width="32dp"
                 android:layout_height="32dp"
@@ -122,6 +135,16 @@
                     android:background="@drawable/bg_play_button_hero"
                     android:contentDescription="pause" />
             </FrameLayout>
+
+            <ImageButton
+                android:id="@id/exo_next"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:padding="5dp"
+                android:src="@drawable/ic_skip_next"
+                android:background="@drawable/bg_icon_circle"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="next" />
 
             <View
                 android:layout_width="0dp"
