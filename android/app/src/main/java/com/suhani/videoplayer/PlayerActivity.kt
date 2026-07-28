@@ -842,6 +842,12 @@ class PlayerActivity : AppCompatActivity() {
             resumePositionMs = resumePositionMs,
             forcePlayWhenReady = if (resumePositionMs >= 0) resumePlaying else null
         )
+
+        // Chhote inline player ke PiP button se aaye the to yahan aate hi turant
+        // real PiP mein chale jaao — isi Activity ka apna, already-working PiP.
+        if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+            playerView.post { tryEnterPipOnBack() }
+        }
     }
 
     // Bug fix: PlayerActivity ab manifest mein "singleTask" hai (see AndroidManifest), isliye
