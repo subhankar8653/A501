@@ -94,6 +94,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import org.json.JSONArray
 
 /**
  * MX Player jaisa playback screen.
@@ -163,6 +164,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var player: ExoPlayer
     private lateinit var playerView: PlayerView
     private lateinit var playerContainer: FrameLayout
+    // Web frontend se aayi quality list (label -> url) — More menu ke "Quality"
+    // option se yahi list dikhti hai, jugaad-style: bas mediaItem swap + resume.
+    private var availableQualities: List<Pair<String, String>> = emptyList()
     // Audio Track / Subtitle jaisa koi bhi overlay panel khula hai to count yahan track hota hai
     // (nested panels — jaise Subtitle -> Settings — ke liye), taaki sirf pehla panel khulne par
     // shrink ho aur sirf aakhri panel band hone par hi wapas normal size mein aaye.
@@ -797,6 +801,19 @@ class PlayerActivity : AppCompatActivity() {
         val videoUri = intent.getStringExtra("video_uri")
         val videoTitle = intent.getStringExtra("video_title") ?: "Video"
         playerTitleText.text = videoTitle
+
+        // Web se bheji quality list parse karo (agar hai) — [{"url":"...","label":"480p"}, ...]
+        availableQualities = try {
+            val arr = JSONArray(intent.getStringExtra("video_qualities_json") ?: "[]")
+            (0 until arr.length()).mapNotNull { i ->
+                val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                val url = obj.optString("url").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val label = obj.optString("label").takeIf { it.isNotBlank() } ?: url
+                label to url
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
 
         // Playlist load karo (agar MainActivity se aayi hai), warna sirf current video ka
         // single-item fallback banao taaki app crash na ho (bug-fix: pehle koi fallback nahi tha)
@@ -3814,6 +3831,7 @@ class PlayerActivity : AppCompatActivity() {
             Triple("Add To Playlist", R.drawable.ic_playlist_play, true),
             Triple("Information", R.drawable.ic_info, false),
             Triple("Share", R.drawable.ic_share, false),
+            Triple("Quality", R.drawable.ic_quality, false),
             Triple("Network Stream", R.drawable.ic_network_stream, false),
             Triple("Tutorial", R.drawable.ic_info, false)
         )
@@ -3872,6 +3890,7 @@ class PlayerActivity : AppCompatActivity() {
                 "Add To Playlist" -> showAddToPlaylistDialog()
                 "Information" -> showInformationDialog()
                 "Share" -> shareCurrentVideo()
+                "Quality" -> showQualityDialog()
                 "Network Stream" -> showNetworkStreamDialog()
                 "Tutorial" -> showTutorialDialog()
                 // In sabki apni click-logic/toggle-state pehle se hidden
@@ -4712,6 +4731,31 @@ class PlayerActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Share fail ho gaya: ${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // Jugaad-style quality switch: koi adaptive HLS/DASH switching nahi — bas
+    // current position save karo, naye quality URL ka MediaItem load karo, aur
+    // wahi position se resume karo. Website ke quality button jaisa hi result.
+    private fun showQualityDialog() {
+        if (availableQualities.size < 2) {
+            Toast.makeText(this, "Is video ke liye aur koi quality available nahi hai", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = availableQualities.map { it.first }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Quality")
+            .setItems(labels) { _, which ->
+                val (label, url) = availableQualities[which]
+                val resumePos = player.currentPosition
+                val wasPlaying = player.isPlaying || player.playWhenReady
+                val item = MediaItem.Builder().setUri(Uri.parse(url)).build()
+                player.setMediaItem(item, resumePos)
+                player.prepare()
+                player.playWhenReady = wasPlaying
+                Toast.makeText(this, "Quality: $label", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showNetworkStreamDialog() {
