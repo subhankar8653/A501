@@ -15,26 +15,25 @@ function fmt(t) {
 }
 
 // ---------------------------------------------------------------------------
-// NATIVE HANDOFF BRIDGE (Sisisisi / A501 Android shell)
+// NATIVE INLINE BRIDGE (Sisisisi / A501 Android shell)
 // ---------------------------------------------------------------------------
-// App ke andar video is inline React player mein nahi khulta — is div ki
-// jagah sirf ek poster/tap-to-play dikhta hai, aur asli playback poore-screen
-// wale native Sisisisi PlayerActivity (full ExoPlayer: gestures, equalizer,
-// subtitles, cast, PiP, ab quality-switch bhi) mein hoti hai. Isse app ka
-// pura rich native player experience milta hai, browser jaisa bare <video>
-// tag nahi.
+// App ke andar video YouTube jaisa chhote (inline) native player mein play
+// hota hai, is exact div ki jagah par — poori-screen wale native player par
+// seedhe nahi jaate. Chhote player ke apne built-in controller mein hi ek
+// fullscreen icon hota hai; usse tap karte hi poora rich native PlayerActivity
+// (gestures, equalizer, subtitles, cast, PiP, quality-switch) khulta hai —
+// aur wahan se wapas aane par chhota player wahi position se resume ho jaata hai.
 //
-// window.AndroidPlayer.playVideo(uri, title, qualitiesJson) call hoti hai:
-//   uri            -> abhi active stream ka URL
-//   title          -> filename/title dikhane ke liye
-//   qualitiesJson  -> JSON.stringify([{url, label}, ...]) — native player
-//                     isi list se apna khud ka quality-switch menu banata hai
+// window.AndroidPlayer.mount(uri, title, qualitiesJson) — naya video load/start
+// window.AndroidPlayer.updateRect(left, top, width, height) — CSS px, is div ka
+//   rect jab bhi badle (resize/scroll), chhote player ko wahi jagah chipkaye rakhta hai
+// window.AndroidPlayer.unmount() — naya video/page chhodne par hata do
 //
 // Web par (bina app ke, plain browser mein) yeh bridge exist nahi karta,
 // isliye wahan normal HTML5 <video> fallback + poora custom control UI
 // (neeche wala code) hi chalta hai — koi behavior change nahi.
 function detectNativeBridge() {
-  return !!(window.AndroidPlayer && typeof window.AndroidPlayer.playVideo === 'function')
+  return !!(window.AndroidPlayer && typeof window.AndroidPlayer.mount === 'function')
 }
 export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
   const isNative = useRef(detectNativeBridge()).current
@@ -125,15 +124,35 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     [qualities]
   )
 
-  const launchNative = useCallback(() => {
+  // --- Native bridge: chhota inline player mount/unmount karo har naye src par ---
+  useEffect(() => {
     if (!isNative || !src) return
-    window.AndroidPlayer.playVideo(src, title || 'Video', qualityPayload())
+    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload())
+    return () => {
+      window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
+    }
   }, [isNative, src, title, qualityPayload])
 
-  // --- Native bridge: har naye src par poore-screen native player khol do --
+  // --- Native bridge: chhote player ko is div ki exact jagah par chipkaaye rakho ---
   useEffect(() => {
-    launchNative()
-  }, [launchNative])
+    if (!isNative) return
+    const el = containerRef.current
+    if (!el) return
+    function sendRect() {
+      const r = el.getBoundingClientRect()
+      window.AndroidPlayer.updateRect(r.left, r.top, r.width, r.height)
+    }
+    sendRect()
+    const ro = new ResizeObserver(sendRect)
+    ro.observe(el)
+    window.addEventListener('scroll', sendRect, true)
+    window.addEventListener('resize', sendRect)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('scroll', sendRect, true)
+      window.removeEventListener('resize', sendRect)
+    }
+  }, [isNative])
 
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement)
@@ -241,22 +260,11 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   const progressPct = duration ? Math.min((current / duration) * 100, 100) : 0
   const bufferedPct = duration ? Math.min((buffered / duration) * 100, 100) : 0
 
-  // App ke andar: koi inline control UI nahi, seedha poore-screen native
-  // Sisisisi player khulta hai (launchNative effect se). Yeh sirf poster
-  // dikhata hai — agar user vaapas is page par aa jaaye to tap karke player
-  // dobara khol sake.
+  // App ke andar: is div ki exact jagah par chhota native player khud chipak
+  // (overlay ho) jaata hai (mount/updateRect effects se) — isliye yahan sirf
+  // ek khaali placeholder chahiye, apna koi control/UI nahi.
   if (isNative) {
-    return (
-      <div
-        className="relative w-full h-full bg-black flex items-center justify-center cursor-pointer bg-center bg-cover"
-        style={poster ? { backgroundImage: `url(${poster})` } : undefined}
-        onClick={launchNative}
-      >
-        <div className="w-14 h-14 rounded-full bg-reel-gold/90 flex items-center justify-center">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="#0B0B12"><path d="M8 5v14l11-7z" /></svg>
-        </div>
-      </div>
-    )
+    return <div ref={containerRef} className="relative w-full h-full bg-black" />
   }
 
   return (
