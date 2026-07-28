@@ -1,49 +1,79 @@
 package com.suhani.screen
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
+import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.suhani.videoplayer.PlayerActivity
 
 /**
- * Web frontend (VideoPlayer.jsx) isi bridge ke through native Sisisisi PlayerActivity
- * (full ExoPlayer - gestures, equalizer, subtitles, cast, PiP, quality-switch) khol
- * sakta hai, HTML5 <video> tag ke bajaye. JS se call:
- *   window.AndroidPlayer.playVideo(uri, title, qualitiesJson)
+ * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhota
+ * (inline) native player mein play karta hai, HTML5 <video> tag ke bajaye:
+ *
+ *   window.AndroidPlayer.mount(uri, title, qualitiesJson)
+ *     -> is jagah (jiska rect updateRect se milta hai) ek chhota native
+ *        ExoPlayer player start ho jaata hai, autoplay ke saath.
+ *   window.AndroidPlayer.updateRect(left, top, width, height)  // CSS px
+ *     -> jab bhi video-container ka size/position badle (scroll/resize),
+ *        chhote player ko wahi exact jagah par move/resize karo.
+ *   window.AndroidPlayer.unmount()
+ *     -> naya video / page chhodne par chhota player hata do.
+ *
+ * Chhote player ke apne built-in controller mein ek fullscreen icon bhi hota
+ * hai (media3 ka default) — usse tap karte hi poore-screen wala, saare rich
+ * features (gestures, equalizer, subtitles, cast, PiP, quality-switch) wala
+ * PlayerActivity khulta hai, wahi position/playing-state ke saath. Wahan se
+ * back aane par chhota player wahi se resume ho jaata hai.
  *
  * - Online stream: uri = "https://..." ya "*.m3u8"/"*.mpd" link
  * - Offline/downloaded: uri = local file ka "file://" ya "content://" path
- * (dono hi ExoPlayer/PlayerActivity handle karta hai, alag se code nahi likhna padta)
  * - qualitiesJson = website ke jaisa hi quality list: '[{"url":"...","label":"480p"},...]'
- *   PlayerActivity isi se apna "Quality" menu banata hai (More menu -> Quality).
  */
 class WebAppInterface(private val activity: MainActivity) {
-    @JvmOverloads
     @JavascriptInterface
-    fun playVideo(uri: String, title: String, qualitiesJson: String = "[]") {
-        activity.runOnUiThread {
-            val intent = Intent(activity, PlayerActivity::class.java).apply {
-                putExtra("video_uri", uri)
-                putExtra("video_title", title)
-                putExtra("video_qualities_json", qualitiesJson)
-            }
-            activity.startActivity(intent)
-        }
+    fun mount(uri: String, title: String, qualitiesJson: String) {
+        activity.runOnUiThread { activity.mountInlinePlayer(uri, title, qualitiesJson) }
+    }
+
+    @JavascriptInterface
+    fun updateRect(left: Double, top: Double, width: Double, height: Double) {
+        activity.runOnUiThread { activity.updateInlinePlayerRect(left, top, width, height) }
+    }
+
+    @JavascriptInterface
+    fun unmount() {
+        activity.runOnUiThread { activity.unmountInlinePlayer() }
     }
 }
 
 class MainActivity : AppCompatActivity() {
 
     private val SITE_URL = "https://a501.vercel.app/"
+    private val REQUEST_FULLSCREEN_PLAYER = 9001
 
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
+
+    // Chhota (inline) native player — bas basic playback + built-in fullscreen
+    // button; poora rich experience fullscreen PlayerActivity mein milta hai.
+    private var inlinePlayer: ExoPlayer? = null
+    private var inlinePlayerView: PlayerView? = null
+    private var inlineOverlay: FrameLayout? = null
+    private var inlineUri: String = ""
+    private var inlineTitle: String = ""
+    private var inlineQualitiesJson: String = "[]"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,7 +103,7 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = WebChromeClient()
 
         // Native player bridge — frontend isse pehchan kar HTML5 <video> ki jagah
-        // seedha native Sisisisi player khol sakta hai (window.AndroidPlayer check).
+        // seedha native Sisisisi (chhota inline, fullscreen-expandable) player khol sakta hai.
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidPlayer")
 
         swipeRefresh.setOnRefreshListener {
@@ -93,6 +123,99 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Chhota inline player (over)lay create/reuse karke naya video load karta hai. */
+    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
+        inlineUri = uri
+        inlineTitle = title
+        inlineQualitiesJson = qualitiesJson
+
+        if (inlineOverlay == null) {
+            val playerView = PlayerView(this).apply {
+                useController = true
+                // Fullscreen icon media3 ke controller mein khud-ba-khud dikhne lagta hai
+                // jaise hi ye listener set hota hai — tap hote hi poora native player khulta hai.
+                setControllerOnFullScreenModeChangedListener { openFullscreenFromInline() }
+            }
+            val overlay = FrameLayout(this).apply {
+                addView(
+                    playerView,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+                visibility = View.GONE
+            }
+            val content = findViewById<ViewGroup>(android.R.id.content)
+            content.addView(overlay, FrameLayout.LayoutParams(0, 0))
+            inlinePlayerView = playerView
+            inlineOverlay = overlay
+        }
+
+        val player = inlinePlayer ?: ExoPlayer.Builder(this).build().also {
+            inlinePlayer = it
+            inlinePlayerView?.player = it
+        }
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
+        player.prepare()
+        player.playWhenReady = true
+        inlineOverlay?.visibility = View.VISIBLE
+    }
+
+    /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
+     *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
+    fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
+        val overlay = inlineOverlay ?: return
+        val density = resources.displayMetrics.density
+        val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
+            ?: FrameLayout.LayoutParams(0, 0)
+        params.width = (width * density).toInt()
+        params.height = (height * density).toInt()
+        params.leftMargin = (left * density).toInt()
+        params.topMargin = (top * density).toInt()
+        overlay.layoutParams = params
+    }
+
+    fun unmountInlinePlayer() {
+        inlineOverlay?.visibility = View.GONE
+        inlinePlayer?.pause()
+    }
+
+    /** Chhote player ke fullscreen icon se poora native PlayerActivity khulta hai,
+     *  wahi position/playing-state ke saath; wapas aane par onActivityResult se sync hota hai. */
+    private fun openFullscreenFromInline() {
+        val pos = inlinePlayer?.currentPosition ?: 0L
+        val wasPlaying = inlinePlayer?.playWhenReady ?: true
+        inlinePlayer?.pause()
+        inlineOverlay?.visibility = View.GONE
+        val intent = Intent(this, PlayerActivity::class.java).apply {
+            putExtra("video_uri", inlineUri)
+            putExtra("video_title", inlineTitle)
+            putExtra("video_qualities_json", inlineQualitiesJson)
+            putExtra("resume_position_ms", pos)
+            putExtra("resume_playing", wasPlaying)
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode == RESULT_OK) {
+            val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
+            val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
+            // Agar background mein rehte hue inline player release ho gaya ho (system ne
+            // memory ke liye kill kiya), use wahi uri/qualities se dobara mount karke resume karo.
+            if (inlinePlayer == null && inlineUri.isNotEmpty()) {
+                mountInlinePlayer(inlineUri, inlineTitle, inlineQualitiesJson)
+            }
+            inlinePlayer?.seekTo(pos)
+            inlinePlayer?.playWhenReady = wasPlaying
+            inlineOverlay?.visibility = View.VISIBLE
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         webView.saveState(outState)
@@ -104,5 +227,11 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onDestroy() {
+        inlinePlayer?.release()
+        inlinePlayer = null
+        super.onDestroy()
     }
 }
