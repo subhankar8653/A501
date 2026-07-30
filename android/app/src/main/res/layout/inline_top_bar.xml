@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Chhote (inline) player ka top bar — ab YouTube jaisa clean: sirf back,
-    title, ek settings (gear) icon aur more. Audio track / subtitle / speed /
-    decoder ab alag-alag icons ki jagah isi gear ke peeche ek chhota menu mein
-    hain (functionality bilkul wahi hai — bas dikhta saaf hai). Purane buttons
-    ko hataya nahi gaya (Kotlin unke ids/click-logic use karta hai), sirf
-    visibility="gone" kar diya hai; settings-menu unhi par performClick()
-    karta hai taaki koi logic dobara likhni na pade.
+    YouTube reference screenshot jaisa top bar: back+title left, seedhe
+    dikhne wale sirf 2 icon right mein — CC (subtitle) aur gear (settings).
+    Audio track / speed / decoder ab gear ke peeche ek chhota menu mein hain.
+    "more" (3-dot) hata diya — wahi kaam neeche wala fullscreen-expand icon
+    already karta hai, do jagah duplicate button rakhne ki zaroorat nahi thi.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/inlineTopBarRoot"
@@ -53,7 +51,19 @@
             android:shadowDy="1"
             android:shadowRadius="4" />
 
-        <!-- YouTube-style: ek hi gear icon ke peeche audio/subtitle/speed/decoder -->
+        <!-- Reference jaisa: CC seedha dikhta hai -->
+        <ImageView
+            android:id="@+id/inlineSubtitleButton"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginStart="4dp"
+            android:padding="5dp"
+            android:src="@drawable/ic_subtitle"
+            android:background="@drawable/bg_icon_circle"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="subtitle" />
+
+        <!-- Reference jaisa: gear seedha dikhta hai -->
         <ImageView
             android:id="@+id/inlineSettingsButton"
             android:layout_width="26dp"
@@ -65,18 +75,7 @@
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="settings" />
 
-        <ImageView
-            android:id="@+id/inlineMoreButton"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="4dp"
-            android:padding="5dp"
-            android:src="@drawable/ic_more_vert"
-            android:background="@drawable/bg_icon_circle"
-            android:foreground="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="more" />
-
-        <!-- Hidden — ab settings-menu ke peeche, lekin id/click-logic wahi purana hai -->
+        <!-- Hidden — gear-menu se performClick() hota hai, logic wahi purana hai -->
         <ImageView
             android:id="@+id/inlineAudioTrackButton"
             android:layout_width="0dp"
@@ -84,14 +83,6 @@
             android:visibility="gone"
             android:src="@drawable/ic_audiotrack"
             android:contentDescription="audio track" />
-
-        <ImageView
-            android:id="@+id/inlineSubtitleButton"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone"
-            android:src="@drawable/ic_subtitle"
-            android:contentDescription="subtitle" />
 
         <TextView
             android:id="@+id/inlineSpeedButton"
