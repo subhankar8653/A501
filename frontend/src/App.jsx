@@ -13,38 +13,30 @@ function RequireConfig({ children }) {
   return children
 }
 
-// The player and title-detail pages get a fullscreen layout — no site header.
-function ChromeForRoute({ children }) {
+function Layout({ children }) {
   const { pathname } = useLocation()
-  const hideChrome = pathname.startsWith('/watch/') || pathname.startsWith('/title/')
+  const isFullscreen = pathname.startsWith('/watch/') || pathname.startsWith('/title/')
+
   return (
-    <>
-      {!hideChrome && <Navbar />}
-      {children}
-    </>
+    <div className="min-h-screen bg-netflix-black">
+      {!isFullscreen && <Navbar />}
+      <main className={!isFullscreen ? 'pt-16' : ''}>
+        {children}
+      </main>
+    </div>
   )
 }
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/setup" element={<Setup />} />
-      <Route
-        path="/*"
-        element={
-          <RequireConfig>
-            <ChromeForRoute>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/search" element={<Search />} />
-                <Route path="/title/:type/:id" element={<Detail />} />
-                <Route path="/watch/:type/:id" element={<Player />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </ChromeForRoute>
-          </RequireConfig>
-        }
-      />
-    </Routes>
+    <Layout>
+      <Routes>
+        <Route path="/setup" element={<Setup />} />
+        <Route path="/" element={<RequireConfig><Home /></RequireConfig>} />
+        <Route path="/search" element={<RequireConfig><Search /></RequireConfig>} />
+        <Route path="/title/:type/:id" element={<RequireConfig><Detail /></RequireConfig>} />
+        <Route path="/watch/:type/:id" element={<RequireConfig><Player /></RequireConfig>} />
+      </Routes>
+    </Layout>
   )
 }
