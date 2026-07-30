@@ -212,7 +212,6 @@ class MainActivity : AppCompatActivity() {
             val audioTrackButton = root.findViewById<ImageView>(R.id.inlineAudioTrackButton)
             val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
             val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
-            val moreButton = root.findViewById<ImageView>(R.id.inlineMoreButton)
             val settingsButton = root.findViewById<ImageView>(R.id.inlineSettingsButton)
             val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
@@ -222,23 +221,26 @@ class MainActivity : AppCompatActivity() {
             val unlockButton = root.findViewById<ImageView>(R.id.inlineUnlockButton)
 
             backButton.setOnClickListener { unmountInlinePlayer() }
-            moreButton.setOnClickListener { openFullscreenFromInline() }
 
-            // YouTube-jaisa ek hi gear icon — audio track / subtitle / speed /
-            // decoder, chaaro purane (ab hidden) buttons par performClick() se,
-            // taaki unki logic dobara likhni na pade.
+            // YouTube-jaisa ek hi gear icon — audio track / speed / decoder /
+            // pip / aspect ratio, sab purane (ab hidden) buttons par
+            // performClick() se, taaki unki logic dobara likhni na pade.
+            // Subtitles (CC) aur fullscreen-expand reference jaisa seedhe hi
+            // apne dedicated icon se kaam karte hain, isliye yahan nahi hain.
             settingsButton.setOnClickListener {
                 val popup = android.widget.PopupMenu(this, settingsButton)
                 popup.menu.add(0, 0, 0, "Audio track")
-                popup.menu.add(0, 1, 1, "Subtitles")
-                popup.menu.add(0, 2, 2, "Playback speed (${speedButton.text})")
-                popup.menu.add(0, 3, 3, "Decoder (${decoderButton.text})")
+                popup.menu.add(0, 1, 1, "Playback speed (${speedButton.text})")
+                popup.menu.add(0, 2, 2, "Decoder (${decoderButton.text})")
+                popup.menu.add(0, 3, 3, "Picture-in-picture")
+                popup.menu.add(0, 4, 4, "Aspect ratio")
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         0 -> audioTrackButton.performClick()
-                        1 -> subtitleButton.performClick()
-                        2 -> speedButton.performClick()
-                        3 -> decoderButton.performClick()
+                        1 -> speedButton.performClick()
+                        2 -> decoderButton.performClick()
+                        3 -> pipButton.performClick()
+                        4 -> aspectButton.performClick()
                     }
                     true
                 }
