@@ -162,6 +162,11 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private lateinit var player: ExoPlayer
+    // Chhote inline player (MainActivity) se handoff hote waqt agar usi ExoPlayer
+    // instance ko reuse kar rahe hain (naya buffer banane se bachne ke liye), to
+    // yeh true hota hai — isse pata chalta hai ki is player ko release() karna hai
+    // ya nahi (shared instance MainActivity ka hai, hum sirf "borrow" kar rahe hain).
+    private var usingSharedPlayer = false
     private lateinit var playerView: PlayerView
     private lateinit var playerContainer: FrameLayout
     // Web frontend se aayi quality list (label -> url) — More menu ke "Quality"
@@ -836,12 +841,30 @@ class PlayerActivity : AppCompatActivity() {
         val resumePositionMs = intent.getLongExtra("resume_position_ms", -1L)
         val resumePlaying = intent.getBooleanExtra("resume_playing", true)
 
-        buildPlayer(
-            DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON,
-            enableFallback = true,
-            resumePositionMs = resumePositionMs,
-            forcePlayWhenReady = if (resumePositionMs >= 0) resumePlaying else null
-        )
+        val sharedPlayer = SharedPlayerHolder.player
+        if (sharedPlayer != null && SharedPlayerHolder.uri == videoUri && resumePositionMs >= 0) {
+            // Bug fix: pehle yahan hamesha ek NAYA ExoPlayer banta tha aur usi resume
+            // position par seekTo() karta tha — matlab network se buffer scratch se
+            // banta tha, isliye position match hone ke bawajood buffering dikhti thi.
+            // Ab agar MainActivity ka player abhi bhi zinda hai aur wahi video chala
+            // raha hai, to usi instance ko seedha yahan le lete hain — kuch bhi rebuild
+            // nahi hota, playback bilkul seamlessly continue hoti hai.
+            usingSharedPlayer = true
+            player = sharedPlayer
+            playerView.player = player
+            playerView.setKeepContentOnPlayerReset(true)
+            player.addListener(playerListener)
+            player.addAnalyticsListener(statsAnalyticsListener)
+            player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+            player.playWhenReady = resumePlaying
+        } else {
+            buildPlayer(
+                DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON,
+                enableFallback = true,
+                resumePositionMs = resumePositionMs,
+                forcePlayWhenReady = if (resumePositionMs >= 0) resumePlaying else null
+            )
+        }
 
         // Chhote inline player ke PiP button se aaye the to yahan aate hi turant
         // real PiP mein chale jaao — isi Activity ka apna, already-working PiP.
@@ -1304,7 +1327,16 @@ class PlayerActivity : AppCompatActivity() {
         if (::player.isInitialized) {
             player.removeListener(playerListener)
             player.removeAnalyticsListener(statsAnalyticsListener)
-            player.release()
+            if (usingSharedPlayer) {
+                // Yeh instance abhi tak MainActivity ke chhote (inline) player ke
+                // saath shared thi — release NAHI karni, warna wapas jaate hi wahan
+                // bhi crash/black screen ho jaata. Bas detach karo; is point ke aage
+                // (decoder switch) PlayerActivity apna exclusive naya player banata hai.
+                if (SharedPlayerHolder.player === player) SharedPlayerHolder.clear()
+                usingSharedPlayer = false
+            } else {
+                player.release()
+            }
             captureAudioFxState()
             releaseAudioFx()
         }
@@ -6071,7 +6103,15 @@ class PlayerActivity : AppCompatActivity() {
         if (::player.isInitialized) {
             player.removeListener(playerListener)
             player.removeAnalyticsListener(statsAnalyticsListener)
-            player.release()
+            if (usingSharedPlayer) {
+                // MainActivity ka inline player hai — release nahi karna, wahi isi
+                // instance ko wapas apne overlay mein istemal karega. Bas playerView
+                // se detach kar do taaki is (ab destroy ho rahi) Activity ka koi
+                // reference player par bacha na rahe.
+                playerView.player = null
+            } else {
+                player.release()
+            }
         }
     }
 }
