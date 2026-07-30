@@ -2,118 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html {
-    scroll-behavior: smooth;
-  }
-
-  body {
-    @apply bg-netflix-black text-white min-h-screen;
-    font-family: 'Inter', system-ui, sans-serif;
-  }
-
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: #0F0F0F;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: #333;
-    border-radius: 4px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #555;
-  }
+html, body, #root {
+  height: 100%;
 }
 
-@layer components {
-  .gradient-overlay {
-    background: linear-gradient(to top, rgba(15,15,15,0.95) 0%, rgba(15,15,15,0.6) 40%, transparent 100%);
-  }
-
-  .card-hover {
-    @apply transition-all duration-300 ease-out;
-  }
-
-  .card-hover:hover {
-    transform: scale(1.05);
-    z-index: 10;
-  }
-
-  .shimmer-bg {
-    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .nav-blur {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
+/* Signature motif: a film-strip sprocket rail. Used sparingly on the
+   nav and section dividers so the "reel" idea shows up structurally,
+   not as decoration slapped on top. */
+.sprocket-rail {
+  height: 10px;
+  background-image: radial-gradient(circle, #0B0B12 2.5px, transparent 2.6px);
+  background-size: 18px 10px;
+  background-repeat: repeat-x;
+  background-position: center;
+  background-color: #E8A33D;
 }
 
-@layer utilities {
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+.sprocket-rail-thin {
+  height: 6px;
+  background-image: radial-gradient(circle, #0B0B12 1.6px, transparent 1.7px);
+  background-size: 12px 6px;
+  background-repeat: repeat-x;
+  background-position: center;
 }
 
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #16151F;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3847;
+  border-radius: 4px;
+}
 
-/* Skip animation fade-out */
-@keyframes fade-out {
-  0% { opacity: 1; transform: translateY(-50%) scale(1); }
-  100% { opacity: 0; transform: translateY(-50%) scale(0.9); }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-.animate-fade-out {
-  animation: fade-out 0.6s ease-out forwards;
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-/* Range input styling for player */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
+/* Skip-pulse pill (double-tap seek feedback in the player) */
+@keyframes skip-pulse {
+  0% { opacity: 0; transform: scale(0.85) translateY(-50%); }
+  18% { opacity: 1; transform: scale(1) translateY(-50%); }
+  100% { opacity: 0; transform: scale(1) translateY(-50%); }
 }
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  background: rgba(255,255,255,0.2);
-  border-radius: 2px;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  margin-top: -4px;
-}
-input[type="range"]::-moz-range-track {
-  height: 4px;
-  background: rgba(255,255,255,0.2);
-  border-radius: 2px;
-}
-input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 50%;
-  border: none;
+.animate-skip-pulse {
+  animation: skip-pulse 0.6s ease-out;
 }

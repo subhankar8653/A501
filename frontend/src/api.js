@@ -1,3 +1,7 @@
+// Thin client around the existing Telegram-Stremio FastAPI backend.
+// The backend already speaks the Stremio addon protocol
+// (manifest / catalog / meta / stream), so we just consume it as JSON.
+
 const STORAGE_KEY = 'suhani-screen:config'
 
 export function getConfig() {
@@ -29,12 +33,9 @@ function base() {
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url, {
-    headers: { 'Accept': 'application/json' }
-  })
+  const res = await fetch(url)
   if (!res.ok) {
-    const err = await res.text().catch(() => '')
-    throw new Error(`Request failed (${res.status}): ${err}`)
+    throw new Error(`Request failed (${res.status})`)
   }
   return res.json()
 }
@@ -46,12 +47,12 @@ export async function getManifest() {
 
 export async function getCatalog(type, id, extra = {}) {
   const { backendUrl, token } = base()
-  const params = new URLSearchParams()
-  Object.entries(extra).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') params.append(k, v)
-  })
-  const suffix = params.toString() ? `?${params.toString()}` : ''
-  const data = await fetchJson(`${backendUrl}/stremio/${token}/catalog/${type}/${id}.json${suffix}`)
+  const parts = Object.entries(extra)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&')
+  const suffix = parts ? `/${parts}.json` : '.json'
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/catalog/${type}/${id}${suffix}`)
   return data.metas || []
 }
 
@@ -67,14 +68,18 @@ export async function getStreams(type, id) {
   return data.streams || []
 }
 
+// Home page content-type tabs, in display order (Anime always first).
 export const HOME_TABS = [
-  { key: 'anime', label: 'Anime', icon: '✦' },
-  { key: 'movie', label: 'Movies', icon: '🎬' },
-  { key: 'kdrama', label: 'K-Drama', icon: '💫' },
-  { key: 'series', label: 'Web Series', icon: '📺' },
-  { key: 'shortdrama', label: 'Short Drama', icon: '⚡' },
+  { key: 'anime', label: 'Anime' },
+  { key: 'movie', label: 'Movies' },
+  { key: 'kdrama', label: 'K-Drama' },
+  { key: 'series', label: 'Web Series' },
+  { key: 'shortdrama', label: 'Short Drama' },
 ]
 
+// Sorts every manifest catalog into one of the home-page tabs, by name
+// first (Anime / K-Drama / Short Drama get their own tab regardless of
+// type) and falls back to the Stremio type (movie/series) otherwise.
 export function groupCatalogsByTab(manifestCatalogs) {
   const tabs = { anime: [], movie: [], kdrama: [], series: [], shortdrama: [] }
   for (const cat of manifestCatalogs || []) {
@@ -89,6 +94,10 @@ export function groupCatalogsByTab(manifestCatalogs) {
   return tabs
 }
 
+// Fetches every catalog for one tab, merges + de-dupes items by id, then
+// groups them by language (an item can land in more than one language
+// group if it's multi-audio). Groups are ordered by item count, so
+// whichever language has the most content shows first.
 export async function loadTabByLanguage(catalogsForTab) {
   const merged = new Map()
   await Promise.all(
@@ -98,15 +107,15 @@ export async function loadTabByLanguage(catalogsForTab) {
         for (const item of metas) {
           if (item && item.id && !merged.has(item.id)) merged.set(item.id, item)
         }
-      } catch (err) {
-        console.warn(`Catalog ${cat.id} failed:`, err.message)
+      } catch {
+        // one catalog failing shouldn't blank out the whole tab
       }
     })
   )
 
   const byLanguage = new Map()
   for (const item of merged.values()) {
-    const languages = item.languages?.length ? item.languages : ['Other']
+    const languages = item.languages && item.languages.length ? item.languages : ['Other']
     for (const lang of languages) {
       if (!byLanguage.has(lang)) byLanguage.set(lang, [])
       byLanguage.get(lang).push(item)
