@@ -29,6 +29,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.suhani.videoplayer.EqualizerAudioProcessor
 import com.suhani.videoplayer.FfmpegRenderersFactory
@@ -95,6 +98,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
 
+    // targetSdk 36 par Android forcibly edge-to-edge draw karta hai, isliye status
+    // bar ke peeche WebView (aur usi ke upar rakha chhota native player) dono status
+    // bar ke "andar" ghus jaate the. Ab is inset ko capture karke: (1) WebView ko
+    // status bar ke neeche se shuru karte hain, (2) inline player ka rect isi offset
+    // ko add karke calculate karte hain, taaki dono screen ke sahi jagah par rahen.
+    private var statusBarInsetPx = 0
+
     // Chhota (inline) native player aur uske controls
     private var inlinePlayer: ExoPlayer? = null
     private var inlineOverlay: FrameLayout? = null
@@ -133,6 +143,18 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         swipeRefresh = findViewById(R.id.swipe_refresh)
+
+        // Edge-to-edge fix: WebView (page content) ko status bar/notch ke neeche se
+        // shuru karo, aur wahi status-bar height baad mein inline player ke rect
+        // calculation mein bhi add karenge (nahi to chhota player status bar ke
+        // andar ghusa dikhta).
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            statusBarInsetPx = bars.top
+            view.setPadding(bars.left, bars.top, bars.right, 0)
+            insets
+        }
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -191,6 +213,7 @@ class MainActivity : AppCompatActivity() {
             val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
             val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
             val moreButton = root.findViewById<ImageView>(R.id.inlineMoreButton)
+            val settingsButton = root.findViewById<ImageView>(R.id.inlineSettingsButton)
             val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
@@ -200,6 +223,27 @@ class MainActivity : AppCompatActivity() {
 
             backButton.setOnClickListener { unmountInlinePlayer() }
             moreButton.setOnClickListener { openFullscreenFromInline() }
+
+            // YouTube-jaisa ek hi gear icon — audio track / subtitle / speed /
+            // decoder, chaaro purane (ab hidden) buttons par performClick() se,
+            // taaki unki logic dobara likhni na pade.
+            settingsButton.setOnClickListener {
+                val popup = android.widget.PopupMenu(this, settingsButton)
+                popup.menu.add(0, 0, 0, "Audio track")
+                popup.menu.add(0, 1, 1, "Subtitles")
+                popup.menu.add(0, 2, 2, "Playback speed (${speedButton.text})")
+                popup.menu.add(0, 3, 3, "Decoder (${decoderButton.text})")
+                popup.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        0 -> audioTrackButton.performClick()
+                        1 -> subtitleButton.performClick()
+                        2 -> speedButton.performClick()
+                        3 -> decoderButton.performClick()
+                    }
+                    true
+                }
+                popup.show()
+            }
             fullscreenButton.setOnClickListener { openFullscreenFromInline() }
 
             // Pehle sirf ek silent on/off toggle tha — ab fullscreen jaisa hi ek
@@ -332,7 +376,7 @@ class MainActivity : AppCompatActivity() {
         params.width = (width * density).toInt()
         params.height = (height * density).toInt()
         params.leftMargin = (left * density).toInt()
-        params.topMargin = (top * density).toInt()
+        params.topMargin = statusBarInsetPx + (top * density).toInt()
         overlay.layoutParams = params
     }
 
