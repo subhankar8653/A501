@@ -4,43 +4,20 @@ export default {
   theme: {
     extend: {
       colors: {
-        netflix: {
-          black: '#0F0F0F',
-          dark: '#1A1A1A',
-          darker: '#141414',
-          red: '#E50914',
-          gray: '#808080',
-          lightgray: '#B3B3B3',
-          white: '#FFFFFF',
-        }
+        reel: {
+          bg: '#0B0B12',
+          surface: '#16151F',
+          surface2: '#1E1D2A',
+          gold: '#E8A33D',
+          rust: '#C1443C',
+          ink: '#F2EFE6',
+          muted: '#8B8798',
+        },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Fraunces"', 'serif'],
+        body: ['"Inter"', 'sans-serif'],
       },
-      animation: {
-        'fade-in': 'fadeIn 0.5s ease-out',
-        'slide-up': 'slideUp 0.4s ease-out',
-        'scale-in': 'scaleIn 0.3s ease-out',
-        'shimmer': 'shimmer 2s infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        scaleIn: {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
-        },
-        shimmer: {
-          '0%': { backgroundPosition: '-200% 0' },
-          '100%': { backgroundPosition: '200% 0' },
-        }
-      }
     },
   },
   plugins: [],
