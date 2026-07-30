@@ -36,6 +36,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.suhani.videoplayer.EqualizerAudioProcessor
 import com.suhani.videoplayer.FfmpegRenderersFactory
 import com.suhani.videoplayer.PlayerActivity
+import com.suhani.videoplayer.SharedPlayerHolder
 
 /**
  * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhote
@@ -366,6 +367,11 @@ class MainActivity : AppCompatActivity() {
         player.prepare()
         player.playWhenReady = true
         inlineOverlay?.visibility = View.VISIBLE
+
+        // PlayerActivity ko bata do ki fullscreen jaate waqt yahi instance
+        // reuse karna hai — naya player mat banao, buffering dobara nahi hogi.
+        SharedPlayerHolder.player = player
+        SharedPlayerHolder.uri = uri
     }
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
@@ -421,12 +427,15 @@ class MainActivity : AppCompatActivity() {
         val previousParams = old.trackSelectionParameters
         old.removeListener(inlineTracksListener)
         old.release()
+        if (SharedPlayerHolder.player === old) SharedPlayerHolder.clear()
 
         val fresh = buildInlineExoPlayer()
         fresh.trackSelectionParameters = previousParams
         fresh.addListener(inlineTracksListener)
         inlinePlayer = fresh
         inlinePlayerView?.player = fresh
+        SharedPlayerHolder.player = fresh
+        SharedPlayerHolder.uri = inlineUri
         fresh.setMediaItem(MediaItem.fromUri(Uri.parse(inlineUri)))
         fresh.prepare()
         fresh.seekTo(pos)
@@ -602,9 +611,15 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode == RESULT_OK) {
             val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
             val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
-            // Agar background mein rehte hue inline player release ho gaya ho (system ne
-            // memory ke liye kill kiya), use wahi uri/qualities se dobara mount karke resume karo.
-            if (inlinePlayer == null && inlineUri.isNotEmpty()) {
+            // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
+            // tha (SharedPlayerHolder ke through) — agar wo abhi bhi zinda hai (decoder
+            // switch waghera se replace nahi hua), to usi ko wapas pakad lo, taaki
+            // koi naya buffer na bane. Sirf tabhi rebuild karo jab wo genuinely
+            // release ho chuka ho (ya system ne background mein kill kar diya ho).
+            if (SharedPlayerHolder.player != null && SharedPlayerHolder.uri == inlineUri) {
+                inlinePlayer = SharedPlayerHolder.player
+                inlinePlayerView?.player = inlinePlayer
+            } else if (inlineUri.isNotEmpty()) {
                 mountInlinePlayer(inlineUri, inlineTitle, inlineQualitiesJson)
             }
             inlinePlayer?.seekTo(pos)
@@ -627,6 +642,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
         inlinePlayer?.release()
         inlinePlayer = null
         super.onDestroy()
