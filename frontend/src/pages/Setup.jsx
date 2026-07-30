@@ -1,134 +1,78 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { saveConfig } from '../api'
-import { Film, Server, Key, ArrowRight, CheckCircle, AlertCircle } from 'lucide-react'
+import { saveConfig, getManifest } from '../api'
 
 export default function Setup() {
+  const navigate = useNavigate()
   const [backendUrl, setBackendUrl] = useState('')
   const [token, setToken] = useState('')
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [checking, setChecking] = useState(false)
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    setLoading(true)
-
+    if (!backendUrl.trim() || !token.trim()) {
+      setError('Dono fields zaroori hain — backend URL aur token.')
+      return
+    }
+    setChecking(true)
+    saveConfig({ backendUrl, token })
     try {
-      const cleanUrl = backendUrl.replace(/\/+$/, '').trim()
-      if (!cleanUrl || !token.trim()) throw new Error('Both fields are required')
-
-      // Test connection
-      const testRes = await fetch(`${cleanUrl}/stremio/${token.trim()}/manifest.json`)
-      if (!testRes.ok) throw new Error('Invalid backend URL or token')
-
-      saveConfig({ backendUrl: cleanUrl, token: token.trim() })
+      await getManifest()
       navigate('/')
-    } catch (err) {
-      setError(err.message || 'Connection failed. Please check your details.')
+    } catch {
+      setError("Backend se connect nahi ho paya. URL aur token check karo — token bot ke /start se milta hai.")
     } finally {
-      setLoading(false)
+      setChecking(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-netflix-dark via-netflix-black to-black">
-      <div className="w-full max-w-md animate-scale-in">
-        {/* Logo */}
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-netflix-red rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-900/30">
-            <Film className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Suhani<span className="text-netflix-red">Screen</span>
-          </h1>
-          <p className="text-netflix-lightgray text-sm">
-            Your personal streaming library
-          </p>
+          <h1 className="font-display text-4xl font-semibold text-reel-gold">Suhani Screen</h1>
+          <p className="text-reel-muted mt-2 text-sm">Your Telegram library, on the big screen.</p>
         </div>
 
-        {/* Form Card */}
-        <div className="bg-netflix-dark/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 sm:p-8 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Backend URL */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-netflix-lightgray mb-2">
-                <Server className="w-4 h-4" />
-                Backend URL
-              </label>
-              <input
-                type="url"
-                required
-                placeholder="https://your-app.railway.app"
-                value={backendUrl}
-                onChange={(e) => setBackendUrl(e.target.value)}
-                className="w-full bg-netflix-black/60 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-netflix-red/60 focus:ring-1 focus:ring-netflix-red/60 transition-all"
-              />
-              <p className="mt-1.5 text-xs text-netflix-gray">
-                Your Railway / VPS deployment URL
-              </p>
-            </div>
-
-            {/* Token */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-netflix-lightgray mb-2">
-                <Key className="w-4 h-4" />
-                Access Token
-              </label>
-              <input
-                type="password"
-                required
-                placeholder="Paste your token here"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                className="w-full bg-netflix-black/60 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-netflix-red/60 focus:ring-1 focus:ring-netflix-red/60 transition-all"
-              />
-              <p className="mt-1.5 text-xs text-netflix-gray">
-                From <code className="bg-white/10 px-1 py-0.5 rounded text-xs">/stremio/&lt;token&gt;/manifest.json</code>
-              </p>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-3">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-netflix-red hover:bg-red-700 disabled:bg-red-900/50 text-white font-semibold py-3 rounded-lg transition-all duration-200 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  Connect Library
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Success hint */}
-          <div className="mt-6 pt-6 border-t border-white/5 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-netflix-gray space-y-1">
-              <p className="text-netflix-lightgray font-medium">How to get your token:</p>
-              <p>1. Open your Telegram bot</p>
-              <p>2. Send <code className="text-white bg-white/10 px-1 rounded">/start</code></p>
-              <p>3. Copy the token from the addon link</p>
-            </div>
+        <form onSubmit={handleSubmit} className="bg-reel-surface rounded-xl p-6 space-y-4 ring-1 ring-white/5">
+          <div>
+            <label className="block text-xs font-medium text-reel-muted mb-1">Backend URL (Railway)</label>
+            <input
+              type="url"
+              placeholder="https://your-app.up.railway.app"
+              value={backendUrl}
+              onChange={(e) => setBackendUrl(e.target.value)}
+              className="w-full bg-reel-surface2 rounded-lg px-3 py-2 text-sm border border-white/5 focus:outline-none focus:ring-2 focus:ring-reel-gold/60"
+            />
           </div>
-        </div>
+          <div>
+            <label className="block text-xs font-medium text-reel-muted mb-1">Access token</label>
+            <input
+              type="text"
+              placeholder="Token bot se /start karke milega"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="w-full bg-reel-surface2 rounded-lg px-3 py-2 text-sm border border-white/5 focus:outline-none focus:ring-2 focus:ring-reel-gold/60"
+            />
+          </div>
 
-        {/* Footer */}
-        <p className="text-center text-xs text-netflix-gray mt-8">
-          Powered by Telegram-Stremio &bull; Self-hosted media server
+          {error ? <p className="text-reel-rust text-xs">{error}</p> : null}
+
+          <button
+            type="submit"
+            disabled={checking}
+            className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-2.5 text-sm hover:brightness-110 transition disabled:opacity-60"
+          >
+            {checking ? 'Connecting…' : 'Continue'}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-reel-muted mt-4">
+          Token wahi hai jo tumhare Telegram-Stremio bot ke addon link mein use hota hai —
+          <br />
+          <code className="text-reel-ink/80">/stremio/&lt;token&gt;/manifest.json</code>
         </p>
       </div>
     </div>

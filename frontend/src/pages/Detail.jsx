@@ -1,190 +1,143 @@
-import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { getMeta } from '../api'
-import { Play, ArrowLeft, Star, Clock, Calendar, Globe, ChevronDown } from 'lucide-react'
 
 export default function Detail() {
   const { type, id } = useParams()
+  const navigate = useNavigate()
   const [meta, setMeta] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [season, setSeason] = useState(null)
   const [error, setError] = useState('')
-  const [expandedSeason, setExpandedSeason] = useState(null)
 
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const data = await getMeta(type, id)
-        if (!cancelled) setMeta(data)
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
+    setMeta(null)
+    setError('')
+    getMeta(type, id)
+      .then((m) => {
+        if (!m || !m.name) {
+          setError('Ye title nahi mila.')
+          return
+        }
+        setMeta(m)
+        if (m.videos && m.videos.length) {
+          setSeason(m.videos[0].season)
+        }
+      })
+      .catch(() => setError('Details load nahi hue.'))
   }, [type, id])
 
-  if (loading) {
+  const seasons = useMemo(() => {
+    if (!meta?.videos) return []
+    const nums = [...new Set(meta.videos.map((v) => v.season))]
+    // Season 0 holds combined/special episodes — show it last, not first.
+    return nums.sort((a, b) => {
+      if (a === 0) return 1
+      if (b === 0) return -1
+      return a - b
+    })
+  }, [meta])
+
+  const episodes = useMemo(() => {
+    if (!meta?.videos) return []
+    return meta.videos.filter((v) => v.season === season)
+  }, [meta, season])
+
+  if (error) {
+    return <p className="text-center text-reel-rust mt-10">{error}</p>
+  }
+
+  if (!meta) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/10 border-t-netflix-red rounded-full animate-spin" />
+      <div className="max-w-4xl mx-auto py-10 px-4 animate-pulse">
+        <div className="h-72 bg-reel-surface2 rounded-xl" />
       </div>
     )
   }
 
-  if (error || !meta) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-400">
-        <p>Failed to load title details</p>
-      </div>
-    )
-  }
-
-  const isSeries = type === 'series' || meta.type === 'series'
-  const seasons = meta.videos?.reduce((acc, video) => {
-    const s = video.season || 1
-    if (!acc[s]) acc[s] = []
-    acc[s].push(video)
-    return acc
-  }, {}) || {}
+  const isSeries = type === 'series'
 
   return (
-    <div className="min-h-screen bg-netflix-black animate-fade-in">
-      {/* Backdrop */}
-      <div className="relative aspect-[21/9] max-h-[50vh]">
-        <img
-          src={meta.background || meta.poster}
-          alt={meta.name}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-netflix-black via-netflix-black/50 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-netflix-black/80 to-transparent" />
-
-        <Link
-          to="/"
-          className="absolute top-4 left-4 p-2 bg-black/40 hover:bg-black/60 rounded-full backdrop-blur-sm transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-32 relative z-10 pb-12">
-        {/* Poster + Info */}
-        <div className="flex flex-col md:flex-row gap-6 mb-8">
-          <img
-            src={meta.poster}
-            alt={meta.name}
-            className="w-32 sm:w-48 rounded-lg shadow-2xl shadow-black/50 flex-shrink-0"
-          />
-          <div className="flex-1">
-            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-3">{meta.name}</h1>
-
-            <div className="flex flex-wrap items-center gap-3 mb-4 text-sm">
-              {meta.year && (
-                <span className="flex items-center gap-1 text-netflix-lightgray">
-                  <Calendar className="w-4 h-4" />
-                  {meta.year}
-                </span>
-              )}
-              {meta.runtime && (
-                <span className="flex items-center gap-1 text-netflix-lightgray">
-                  <Clock className="w-4 h-4" />
-                  {meta.runtime}
-                </span>
-              )}
-              {meta.imdbRating && (
-                <span className="flex items-center gap-1 text-yellow-400">
-                  <Star className="w-4 h-4 fill-yellow-400" />
-                  {meta.imdbRating}
-                </span>
-              )}
-              {meta.language && (
-                <span className="flex items-center gap-1 text-netflix-lightgray">
-                  <Globe className="w-4 h-4" />
-                  {meta.language}
-                </span>
-              )}
-            </div>
-
-            <p className="text-netflix-lightgray leading-relaxed mb-6 max-w-2xl">
-              {meta.description || 'No description available.'}
+    <div>
+      <div
+        className="w-full h-[42vh] sm:h-[52vh] bg-cover bg-center relative"
+        style={{ backgroundImage: `linear-gradient(to top, #0B0B12 5%, rgba(11,11,18,0.4)), url(${meta.background || meta.poster})` }}
+      >
+        <div className="absolute bottom-0 left-0 right-0 max-w-6xl mx-auto px-4 sm:px-6 pb-6 flex items-end gap-5">
+          {meta.poster ? (
+            <img
+              src={meta.poster}
+              alt={meta.name}
+              className="hidden sm:block w-32 rounded-lg ring-1 ring-white/10 shadow-xl shrink-0"
+            />
+          ) : null}
+          <div>
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold">{meta.name}</h1>
+            <p className="text-reel-muted text-sm mt-1">
+              {meta.releaseInfo} {meta.runtime ? `· ${meta.runtime}` : ''} {meta.imdbRating ? `· ★ ${meta.imdbRating}` : ''}
             </p>
-
-            <div className="flex items-center gap-3">
-              <Link
-                to={`/watch/${type}/${encodeURIComponent(id)}`}
-                className="flex items-center gap-2 bg-netflix-red hover:bg-red-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
-              >
-                <Play className="w-5 h-5 fill-white" />
-                Play Now
-              </Link>
-            </div>
-
-            {meta.genres?.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {meta.genres.map(g => (
-                  <span key={g} className="px-3 py-1 bg-white/10 rounded-full text-xs text-netflix-lightgray">
-                    {g}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         </div>
+      </div>
 
-        {/* Episodes / Seasons */}
-        {isSeries && Object.keys(seasons).length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-white mb-4">Episodes</h2>
-            {Object.entries(seasons).map(([seasonNum, episodes]) => (
-              <div key={seasonNum} className="bg-netflix-dark rounded-xl overflow-hidden">
-                <button
-                  onClick={() => setExpandedSeason(expandedSeason === seasonNum ? null : seasonNum)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
-                >
-                  <span className="font-semibold text-white">Season {seasonNum}</span>
-                  <ChevronDown className={`w-5 h-5 text-netflix-gray transition-transform ${
-                    expandedSeason === seasonNum ? 'rotate-180' : ''
-                  }`} />
-                </button>
-
-                {expandedSeason === seasonNum && (
-                  <div className="border-t border-white/5 divide-y divide-white/5">
-                    {episodes.map((ep, idx) => (
-                      <Link
-                        key={ep.id || idx}
-                        to={`/watch/${type}/${encodeURIComponent(ep.id || id)}`}
-                        className="flex items-center gap-4 p-4 hover:bg-white/5 transition-colors group"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-netflix-red/20 transition-colors">
-                          <Play className="w-5 h-5 text-white opacity-60 group-hover:opacity-100" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">
-                            {ep.name || `Episode ${ep.episode || idx + 1}`}
-                          </p>
-                          {ep.description && (
-                            <p className="text-xs text-netflix-gray line-clamp-1 mt-0.5">
-                              {ep.description}
-                            </p>
-                          )}
-                        </div>
-                        {ep.thumbnail && (
-                          <img
-                            src={ep.thumbnail}
-                            alt=""
-                            className="w-20 h-12 rounded object-cover flex-shrink-0"
-                          />
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        {meta.genres?.length ? (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {meta.genres.map((g) => (
+              <span key={g} className="text-xs bg-reel-surface2 text-reel-muted px-2.5 py-1 rounded-full">
+                {g}
+              </span>
             ))}
+          </div>
+        ) : null}
+
+        <p className="text-reel-ink/90 max-w-2xl leading-relaxed">{meta.description}</p>
+
+        {!isSeries ? (
+          <button
+            onClick={() => navigate(`/watch/${type}/${encodeURIComponent(id)}`)}
+            className="mt-6 bg-reel-gold text-reel-bg font-semibold px-6 py-2.5 rounded-lg hover:brightness-110 transition"
+          >
+            ▶ Play
+          </button>
+        ) : (
+          <div className="mt-8">
+            <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar">
+              {seasons.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSeason(s)}
+                  className={`px-4 py-1.5 rounded-full text-sm shrink-0 transition ${
+                    s === season
+                      ? 'bg-reel-gold text-reel-bg font-semibold'
+                      : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
+                  }`}
+                >
+                  {s === 0 ? 'Combined' : `Season ${s}`}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              {episodes.map((ep) => (
+                <button
+                  key={ep.id}
+                  onClick={() => navigate(`/watch/${type}/${encodeURIComponent(ep.id)}`)}
+                  className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 transition rounded-lg p-3 ring-1 ring-white/5"
+                >
+                  <img
+                    src={ep.thumbnail}
+                    alt={ep.title}
+                    className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">
+                      E{ep.episode} · {ep.title}
+                    </p>
+                    <p className="text-xs text-reel-muted mt-1 line-clamp-2">{ep.overview}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

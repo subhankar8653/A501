@@ -1,593 +1,334 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { getMeta, getStreams } from '../api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getStreams, getMeta } from '../api'
+import VideoPlayer from '../components/VideoPlayer'
+import Comments from '../components/Comments'
+import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
 
-// ── Icons (inline SVGs for zero-dependency reliability) ──
-const IconPlay = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-)
-const IconPause = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-)
-const IconBack = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
-)
-const IconVolumeHigh = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-)
-const IconVolumeMute = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
-)
-const IconForward10 = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6v4l5-5-5-5v4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8h-2zm-2.05 1.65L14 13.5V9h-1v5.34l2.45 1.31.5-.9z"/></svg>
-)
-const IconReplay10 = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-2.95 9.65L10 13.5V9h1v5.34l-2.45 1.31-.5-.9z"/></svg>
-)
-const IconFullscreen = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
-)
-const IconFullscreenExit = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
-)
-const IconSettings = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-)
-const IconSpeed = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 4 16.25V19h16v-2.75a10 10 0 0 0 .38-7.68zM12 22a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2z"/></svg>
-)
-const IconNext = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-)
-const IconSpinner = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/>
-    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
-  </svg>
-)
+// Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
+// into a clean filename + list of badge lines.
+function parseStreamMeta(stream) {
+  const lines = (stream?.title || '').split('\n').map((l) => l.trim()).filter(Boolean)
+  let filename = stream?.name || ''
+  const badges = []
+  for (const line of lines) {
+    if (line.startsWith('📁')) filename = line.replace('📁', '').trim()
+    else badges.push(line)
+  }
+  return { filename, badges }
+}
 
-// ── Helpers ──
-const fmtTime = (s) => {
-  if (!isFinite(s) || s < 0) return '0:00'
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  const pad = (n) => n.toString().padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
+// Pulls a short "360p / 480p / 720p / 1080p" style label out of a stream's
+// name or title so the in-player quality menu shows something compact
+// instead of the full filename.
+function qualityLabel(stream) {
+  const hay = `${stream?.name || ''} ${stream?.title || ''}`
+  const res = hay.match(/\b(2160p|4k|1440p|1080p|720p|480p|360p|240p)\b/i)
+  if (res) return res[1].toLowerCase() === '4k' ? '4K' : res[1].toLowerCase()
+  return (stream?.name || 'Auto').split('\n')[0].trim()
 }
 
 export default function Player() {
   const { type, id } = useParams()
   const navigate = useNavigate()
-  const location = useLocation()
-  const videoRef = useRef(null)
-  const containerRef = useRef(null)
-  const controlsTimeout = useRef(null)
-  const skipAnimTimeout = useRef(null)
+  const [streams, setStreams] = useState(null)
+  const [active, setActive] = useState(null)
+  const [error, setError] = useState('')
 
-  // Data
-  const [meta, setMeta] = useState(null)
-  const [streams, setStreams] = useState([])
-  const [activeStreamIdx, setActiveStreamIdx] = useState(0)
-  const [loadingMeta, setLoadingMeta] = useState(true)
+  const isSeries = type === 'series'
+  const [imdbId, seasonStr, episodeStr] = isSeries ? id.split(':') : [id, null, null]
+  const currentSeason = seasonStr !== undefined ? Number(seasonStr) : null
+  const currentEpisode = episodeStr !== undefined ? Number(episodeStr) : null
 
-  // Playback state
-  const [playing, setPlaying] = useState(false)
-  const [buffering, setBuffering] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(() => {
-    const v = parseFloat(localStorage.getItem('ss:volume'))
-    return isNaN(v) ? 1 : v
-  })
-  const [muted, setMuted] = useState(false)
-  const [playbackRate, setPlaybackRate] = useState(1)
-
-  // UI state
-  const [showControls, setShowControls] = useState(true)
-  const [hoveringControls, setHoveringControls] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showSpeedMenu, setShowSpeedMenu] = useState(false)
-  const [showQualityMenu, setShowQualityMenu] = useState(false)
-  const [skipAnim, setSkipAnim] = useState(null) // { dir: 'left'|'right', key: number }
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [ended, setEnded] = useState(false)
-
-  const activeStream = streams[activeStreamIdx]
-
-  // ── Load meta & streams ──
-  useEffect(() => {
-    let cancelled = false
-    async function init() {
-      try {
-        const [m, s] = await Promise.all([getMeta(type, id), getStreams(type, id)])
-        if (cancelled) return
-        setMeta(m)
-        setStreams(s || [])
-      } catch (e) {
-        console.error(e)
-      } finally {
-        if (!cancelled) setLoadingMeta(false)
-      }
+  const [seriesMeta, setSeriesMeta] = useState(null)
+  const [autoplay, setAutoplay] = useState(() => {
+    try {
+      return localStorage.getItem('suhani-screen:autoplay') !== 'off'
+    } catch {
+      return true
     }
-    init()
-    return () => { cancelled = true }
+  })
+
+  function toggleAutoplay() {
+    setAutoplay((a) => {
+      const next = !a
+      try {
+        localStorage.setItem('suhani-screen:autoplay', next ? 'on' : 'off')
+      } catch {
+        // ignore storage failures
+      }
+      return next
+    })
+  }
+
+  const storageKey = `${type}:${id}`
+  const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
+  const { saved, toggle: toggleSaved } = useLocalSaved(`suhani-screen:saved:${storageKey}`)
+
+  const [downloading, setDownloading] = useState(false)
+  const [dlProgress, setDlProgress] = useState(0)
+  // Continuously tracks current playback position so that switching quality
+  // mid-video can resume from the same spot instead of restarting.
+  const resumeAt = useRef(0)
+
+  function switchQuality(stream) {
+    setActive(stream)
+  }
+
+  useEffect(() => {
+    setStreams(null)
+    setActive(null)
+    setError('')
+    resumeAt.current = 0
+    getStreams(type, id)
+      .then((list) => {
+        if (!list.length) {
+          setError('Is title ke liye koi stream nahi mili.')
+          return
+        }
+        setStreams(list)
+        setActive(list[0])
+      })
+      .catch(() => setError('Stream load nahi hui.'))
   }, [type, id])
 
-  // ── Restore volume ──
   useEffect(() => {
-    const v = videoRef.current
-    if (v) {
-      v.volume = volume
-      v.muted = muted
+    if (!isSeries) {
+      setSeriesMeta(null)
+      return
     }
-  }, [volume, muted])
+    let cancelled = false
+    getMeta('series', imdbId)
+      .then((m) => {
+        if (!cancelled) setSeriesMeta(m)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isSeries, imdbId])
 
-  // ── Keyboard shortcuts ──
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.target.tagName === 'INPUT') return
-      const v = videoRef.current
-      if (!v) return
-      switch (e.code) {
-        case 'Space':
-        case 'KeyK':
-          e.preventDefault()
-          togglePlay()
-          break
-        case 'ArrowLeft':
-        case 'KeyJ':
-          e.preventDefault()
-          seek(-10)
-          break
-        case 'ArrowRight':
-        case 'KeyL':
-          e.preventDefault()
-          seek(10)
-          break
-        case 'ArrowUp':
-          e.preventDefault()
-          changeVolume(Math.min(1, volume + 0.1))
-          break
-        case 'ArrowDown':
-          e.preventDefault()
-          changeVolume(Math.max(0, volume - 0.1))
-          break
-        case 'KeyF':
-          e.preventDefault()
-          toggleFullscreen()
-          break
-        case 'KeyM':
-          e.preventDefault()
-          toggleMute()
-          break
-        case 'Home':
-          e.preventDefault()
-          v.currentTime = 0
-          break
-        case 'End':
-          e.preventDefault()
-          v.currentTime = v.duration
-          break
+  const meta = useMemo(() => parseStreamMeta(active), [active])
+
+  const qualities = useMemo(
+    () => (streams || []).map((s) => ({ ...s, label: qualityLabel(s) })),
+    [streams]
+  )
+  const activeQualityObj = useMemo(
+    () => qualities.find((q) => q.url === active?.url) || null,
+    [qualities, active]
+  )
+
+  // Every episode across every season, in watch order.
+  const allEpisodes = useMemo(() => {
+    if (!seriesMeta?.videos) return []
+    return [...seriesMeta.videos].sort((a, b) => a.season - b.season || a.episode - b.episode)
+  }, [seriesMeta])
+
+  // Rest of the current season after this episode — or, once you're on the
+  // season's last episode, the *entire* next season's episode list.
+  const upNext = useMemo(() => {
+    if (!isSeries || !allEpisodes.length || currentSeason == null) {
+      return { label: '', episodes: [] }
+    }
+    const sameSeason = allEpisodes.filter((e) => e.season === currentSeason)
+    const idx = sameSeason.findIndex((e) => e.episode === currentEpisode)
+    let episodes = idx >= 0 ? sameSeason.slice(idx + 1) : []
+    let label = `Season ${currentSeason}`
+    if (!episodes.length) {
+      const nextSeasonNum = [...new Set(allEpisodes.map((e) => e.season))]
+        .filter((s) => s > currentSeason)
+        .sort((a, b) => a - b)[0]
+      if (nextSeasonNum !== undefined) {
+        episodes = allEpisodes.filter((e) => e.season === nextSeasonNum)
+        label = `Season ${nextSeasonNum}`
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [volume, muted])
+    return { label, episodes }
+  }, [isSeries, allEpisodes, currentSeason, currentEpisode])
 
-  // ── Auto-hide controls ──
-  const resetControlsTimeout = useCallback(() => {
-    clearTimeout(controlsTimeout.current)
-    if (!hoveringControls && playing) {
-      controlsTimeout.current = setTimeout(() => setShowControls(false), 3000)
-    }
-  }, [hoveringControls, playing])
-
-  useEffect(() => {
-    resetControlsTimeout()
-    return () => clearTimeout(controlsTimeout.current)
-  }, [resetControlsTimeout])
-
-  // ── Fullscreen listener ──
-  useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement)
-    document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
-  }, [])
-
-  // ── Handlers ──
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current
-    if (!v) return
-    if (v.paused || v.ended) {
-      v.play().catch(() => {})
-      setEnded(false)
-    } else {
-      v.pause()
-    }
-  }, [])
-
-  const seek = useCallback((seconds) => {
-    const v = videoRef.current
-    if (!v || !isFinite(v.duration)) return
-    const wasPlaying = !v.paused
-    const newTime = Math.max(0, Math.min(v.duration, v.currentTime + seconds))
-    v.currentTime = newTime
-    setCurrentTime(newTime)
-    setEnded(false)
-    // Show skip animation
-    const dir = seconds > 0 ? 'right' : 'left'
-    setSkipAnim({ dir, key: Date.now() })
-    clearTimeout(skipAnimTimeout.current)
-    skipAnimTimeout.current = setTimeout(() => setSkipAnim(null), 700)
-    if (wasPlaying) v.play().catch(() => {})
-  }, [])
-
-  const handleSeekBar = (e) => {
-    const v = videoRef.current
-    if (!v || !duration) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    v.currentTime = ratio * duration
-  }
-
-  const changeVolume = (v) => {
-    const clamped = Math.max(0, Math.min(1, v))
-    setVolume(clamped)
-    localStorage.setItem('ss:volume', clamped.toString())
-    if (clamped > 0 && muted) setMuted(false)
-    if (videoRef.current) videoRef.current.volume = clamped
-  }
-
-  const toggleMute = () => {
-    const v = videoRef.current
-    if (!v) return
-    const next = !muted
-    setMuted(next)
-    v.muted = next
-  }
-
-  const toggleFullscreen = () => {
-    const el = containerRef.current
-    if (!el) return
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => {})
-    } else {
-      document.exitFullscreen?.().catch(() => {})
+  function handleEnded() {
+    if (autoplay && isSeries && upNext.episodes[0]) {
+      navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`)
     }
   }
 
-  const changeSpeed = (rate) => {
-    const v = videoRef.current
-    if (v) v.playbackRate = rate
-    setPlaybackRate(rate)
-    setShowSpeedMenu(false)
-  }
-
-  const changeQuality = (idx) => {
-    const v = videoRef.current
-    if (!v) return
-    const wasPlaying = !v.paused
-    const current = v.currentTime
-    setActiveStreamIdx(idx)
-    // After src change, restore time
-    requestAnimationFrame(() => {
-      if (videoRef.current) {
-        videoRef.current.currentTime = current
-        if (wasPlaying) videoRef.current.play().catch(() => {})
+  // Fetches the file as a blob first, then downloads from that in-memory
+  // blob — so no new tab opens and the backend's real URL never shows up
+  // in the address bar. Falls back to opening the direct link only if
+  // the fetch itself fails (e.g. network/CORS issue).
+  async function downloadFile() {
+    if (!active?.url || downloading) return
+    setDownloading(true)
+    setDlProgress(0)
+    try {
+      const res = await fetch(active.url)
+      if (!res.ok || !res.body) throw new Error('bad response')
+      const total = Number(res.headers.get('content-length')) || 0
+      const reader = res.body.getReader()
+      const chunks = []
+      let received = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        received += value.length
+        if (total) setDlProgress(Math.round((received / total) * 100))
       }
-    })
-    setShowQualityMenu(false)
-  }
-
-  // ── Double-tap to seek ──
-  const lastTap = useRef({ time: 0, side: null })
-  const handleVideoClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const side = x < rect.width / 2 ? 'left' : 'right'
-    const now = Date.now()
-    if (lastTap.current.side === side && now - lastTap.current.time < 400) {
-      seek(side === 'left' ? -10 : 10)
-      lastTap.current = { time: 0, side: null }
-    } else {
-      lastTap.current = { time: now, side }
-      // Single tap → toggle play (delayed to allow double-tap detection)
-      setTimeout(() => {
-        if (Date.now() - lastTap.current.time >= 400) togglePlay()
-      }, 400)
+      const blob = new Blob(chunks)
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = meta.filename || 'download'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
+    } catch {
+      window.open(active.url, '_blank', 'noopener,noreferrer')
+    } finally {
+      setDownloading(false)
+      setDlProgress(0)
     }
   }
 
-  // ── Progress bar hover preview ──
-  const [hoverRatio, setHoverRatio] = useState(0)
-  const [isHoveringBar, setIsHoveringBar] = useState(false)
-
-  const progressRatio = duration ? currentTime / duration : 0
-
-  if (loadingMeta) {
-    return (
-      <div className="w-full h-screen bg-black flex items-center justify-center">
-        <IconSpinner className="w-10 h-10 text-white/60 animate-spin" />
-      </div>
-    )
-  }
-
-  if (!activeStream?.url) {
-    return (
-      <div className="w-full h-screen bg-black flex flex-col items-center justify-center text-white gap-4">
-        <p className="text-lg text-white/70">No stream available</p>
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-netflix-red hover:underline">
-          <IconBack className="w-5 h-5" /> Go Back
-        </button>
-      </div>
-    )
+  function shareIt() {
+    if (navigator.share) {
+      navigator.share({ title: meta.filename, url: window.location.href }).catch(() => {})
+    } else {
+      navigator.clipboard?.writeText(window.location.href).catch(() => {})
+    }
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-screen bg-black select-none overflow-hidden"
-      onMouseMove={() => { setShowControls(true); resetControlsTimeout() }}
-    >
-      {/* Video */}
-      <video
-        ref={videoRef}
-        src={activeStream.url}
-        className="w-full h-full object-contain cursor-pointer"
-        onClick={handleVideoClick}
-        onWaiting={() => setBuffering(true)}
-        onPlaying={() => setBuffering(false)}
-        onCanPlay={() => setBuffering(false)}
-        onPlay={() => { setPlaying(true); setEnded(false) }}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={(e) => { setCurrentTime(e.target.currentTime); setDuration(e.target.duration || 0) }}
-        onLoadedMetadata={(e) => setDuration(e.target.duration || 0)}
-        onEnded={() => setEnded(true)}
-        autoPlay
-        playsInline
-      />
-
-      {/* Buffering spinner */}
-      {buffering && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <IconSpinner className="w-12 h-12 text-white/80 animate-spin" />
-        </div>
-      )}
-
-      {/* Skip animation overlay */}
-      {skipAnim && (
-        <div
-          key={skipAnim.key}
-          className={`absolute top-1/2 -translate-y-1/2 pointer-events-none animate-fade-out ${
-            skipAnim.dir === 'left' ? 'left-8' : 'right-8'
-          }`}
-        >
-          <div className="flex flex-col items-center gap-1 bg-black/60 backdrop-blur-md rounded-2xl px-6 py-4">
-            {skipAnim.dir === 'left' ? (
-              <IconReplay10 className="w-10 h-10 text-white" />
-            ) : (
-              <IconForward10 className="w-10 h-10 text-white" />
-            )}
-            <span className="text-white text-sm font-semibold">{skipAnim.dir === 'left' ? '-10' : '+10'}</span>
+    <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6">
+      {error ? (
+        <p className="text-reel-rust">{error}</p>
+      ) : !active ? (
+        <div className="aspect-video bg-reel-surface2 rounded-xl animate-pulse" />
+      ) : (
+        <>
+          <div className="aspect-video bg-black rounded-xl overflow-hidden ring-1 ring-white/10">
+            <VideoPlayer
+              key={active.url}
+              src={active.url}
+              title={meta.filename}
+              qualities={qualities}
+              activeQuality={activeQualityObj}
+              onQualityChange={(q) => switchQuality(q)}
+              startAt={resumeAt.current}
+              onProgressTick={(t) => { resumeAt.current = t }}
+              onEnded={handleEnded}
+            />
           </div>
-        </div>
-      )}
 
-      {/* Center replay button (when ended) */}
-      {ended && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-auto">
-          <button
-            onClick={() => { videoRef.current.currentTime = 0; videoRef.current.play(); setEnded(false) }}
-            className="flex flex-col items-center gap-2 bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-2xl px-8 py-6 transition-colors"
-          >
-            <IconReplay10 className="w-12 h-12 text-white" />
-            <span className="text-white font-medium">Replay</span>
-          </button>
-        </div>
-      )}
-
-      {/* ── Controls Overlay ── */}
-      <div
-        className={`absolute inset-0 flex flex-col justify-between transition-opacity duration-300 ${
-          showControls || !playing || ended ? 'opacity-100' : 'opacity-0'
-        }`}
-        onMouseEnter={() => setHoveringControls(true)}
-        onMouseLeave={() => { setHoveringControls(false); resetControlsTimeout() }}
-      >
-        {/* Top bar */}
-        <div className="bg-gradient-to-b from-black/80 via-black/30 to-transparent px-4 pt-3 pb-8">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 rounded-full hover:bg-white/15 transition-colors"
-            >
-              <IconBack className="w-5 h-5 text-white" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="text-sm font-semibold text-white truncate">{meta?.name || 'Unknown'}</h1>
-              {meta?.year && <p className="text-xs text-white/50">{meta.year}</p>}
+          {/* Title + badges */}
+          <div className="mt-4">
+            <h1 className="font-display text-lg text-reel-ink break-words">{meta.filename}</h1>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {meta.badges.map((b, i) => (
+                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
+                  {b}
+                </span>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* Center play/pause (only when paused, not ended) */}
-        {!playing && !ended && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {/* Reactions / download / share / save row */}
+          <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
             <button
-              onClick={togglePlay}
-              className="pointer-events-auto w-16 h-16 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center transition-transform hover:scale-110"
+              onClick={() => react('like')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+                reactions.mine === 'like' ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
+              }`}
             >
-              <IconPlay className="w-8 h-8 text-white ml-1" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg>
+              {reactions.likes}
             </button>
-          </div>
-        )}
-
-        {/* Bottom controls */}
-        <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-4 pb-4 pt-10">
-          {/* Progress bar */}
-          <div
-            className="relative h-1.5 mb-3 cursor-pointer group"
-            onClick={handleSeekBar}
-            onMouseMove={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect()
-              setHoverRatio(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)))
-            }}
-            onMouseEnter={() => setIsHoveringBar(true)}
-            onMouseLeave={() => setIsHoveringBar(false)}
-          >
-            {/* Background */}
-            <div className="absolute inset-0 bg-white/20 rounded-full" />
-            {/* Buffered */}
-            <div
-              className="absolute inset-y-0 left-0 bg-white/30 rounded-full"
-              style={{ width: `${(videoRef.current?.buffered?.length ? videoRef.current.buffered.end(videoRef.current.buffered.length - 1) / duration : 0) * 100}%` }}
-            />
-            {/* Progress */}
-            <div
-              className="absolute inset-y-0 left-0 bg-netflix-red rounded-full transition-all"
-              style={{ width: `${progressRatio * 100}%` }}
-            />
-            {/* Hover preview */}
-            {isHoveringBar && (
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-white/60"
-                style={{ left: `${hoverRatio * 100}%` }}
-              />
-            )}
-            {/* Thumb */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-netflix-red rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ left: `calc(${progressRatio * 100}% - 6px)` }}
-            />
-            {/* Hover time tooltip */}
-            {isHoveringBar && (
-              <div
-                className="absolute -top-8 bg-black/80 text-white text-xs px-2 py-1 rounded transform -translate-x-1/2"
-                style={{ left: `${hoverRatio * 100}%` }}
-              >
-                {fmtTime(hoverRatio * duration)}
-              </div>
-            )}
-          </div>
-
-          {/* Control buttons row */}
-          <div className="flex items-center justify-between">
-            {/* Left group */}
-            <div className="flex items-center gap-1">
-              {/* Play/Pause */}
-              <button onClick={togglePlay} className="p-2 rounded-full hover:bg-white/15 transition-colors">
-                {playing ? (
-                  <IconPause className="w-6 h-6 text-white" />
-                ) : (
-                  <IconPlay className="w-6 h-6 text-white ml-0.5" />
-                )}
-              </button>
-
-              {/* Skip back */}
-              <button onClick={() => seek(-10)} className="p-2 rounded-full hover:bg-white/15 transition-colors">
-                <IconReplay10 className="w-5 h-5 text-white" />
-              </button>
-
-              {/* Skip forward */}
-              <button onClick={() => seek(10)} className="p-2 rounded-full hover:bg-white/15 transition-colors">
-                <IconForward10 className="w-5 h-5 text-white" />
-              </button>
-
-              {/* Volume */}
-              <div className="flex items-center gap-1 group/vol">
-                <button onClick={toggleMute} className="p-2 rounded-full hover:bg-white/15 transition-colors">
-                  {muted || volume === 0 ? (
-                    <IconVolumeMute className="w-5 h-5 text-white" />
-                  ) : (
-                    <IconVolumeHigh className="w-5 h-5 text-white" />
-                  )}
-                </button>
-                <div className="w-0 overflow-hidden group-hover/vol:w-20 transition-all duration-200">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={muted ? 0 : volume}
-                    onChange={(e) => changeVolume(parseFloat(e.target.value))}
-                    className="w-20 h-1 accent-white cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Time */}
-              <div className="text-xs text-white/80 font-medium ml-2 tabular-nums">
-                {fmtTime(currentTime)} / {fmtTime(duration)}
-              </div>
-            </div>
-
-            {/* Right group */}
-            <div className="flex items-center gap-1">
-              {/* Speed */}
-              <div className="relative">
-                <button
-                  onClick={() => { setShowSpeedMenu(!showSpeedMenu); setShowQualityMenu(false); setShowSettings(false) }}
-                  className="p-2 rounded-full hover:bg-white/15 transition-colors text-xs text-white font-medium"
-                >
-                  {playbackRate}x
-                </button>
-                {showSpeedMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur-md rounded-lg overflow-hidden border border-white/10 min-w-[100px]">
-                    {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => changeSpeed(r)}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                          playbackRate === r ? 'text-netflix-red font-semibold' : 'text-white'
-                        }`}
-                      >
-                        {r === 1 ? 'Normal' : `${r}x`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Quality */}
-              {streams.length > 1 && (
-                <div className="relative">
-                  <button
-                    onClick={() => { setShowQualityMenu(!showQualityMenu); setShowSpeedMenu(false); setShowSettings(false) }}
-                    className="p-2 rounded-full hover:bg-white/15 transition-colors"
-                  >
-                    <IconSettings className="w-5 h-5 text-white" />
-                  </button>
-                  {showQualityMenu && (
-                    <div className="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur-md rounded-lg overflow-hidden border border-white/10 min-w-[140px]">
-                      {streams.map((s, i) => (
-                        <button
-                          key={i}
-                          onClick={() => changeQuality(i)}
-                          className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                            i === activeStreamIdx ? 'text-netflix-red font-semibold' : 'text-white'
-                          }`}
-                        >
-                          {s.title || `Stream ${i + 1}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <button
+              onClick={() => react('dislike')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+                reactions.mine === 'dislike' ? 'bg-reel-rust text-reel-ink font-semibold' : 'bg-reel-surface2 text-reel-muted'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></svg>
+              {reactions.dislikes}
+            </button>
+            <button
+              onClick={downloadFile}
+              disabled={downloading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink disabled:opacity-70"
+              title="Download"
+            >
+              {downloading ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+                  {dlProgress ? `${dlProgress}%` : 'Downloading…'}
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download
+                </>
               )}
-
-              {/* Fullscreen */}
-              <button onClick={toggleFullscreen} className="p-2 rounded-full hover:bg-white/15 transition-colors">
-                {isFullscreen ? (
-                  <IconFullscreenExit className="w-5 h-5 text-white" />
-                ) : (
-                  <IconFullscreen className="w-5 h-5 text-white" />
-                )}
-              </button>
-            </div>
+            </button>
+            <button onClick={shareIt} className="p-2 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink" title="Share">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            </button>
+            <button
+              onClick={toggleSaved}
+              className={`p-2 rounded-full text-xs shrink-0 ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
+              title="Save"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            </button>
           </div>
-        </div>
-      </div>
+
+          {/* Comments */}
+          <div className="mt-6">
+            <Comments storageKey={`suhani-screen:comments:${storageKey}`} />
+          </div>
+
+          {/* Up next — rest of this season, or the next season once you hit its last episode */}
+          {isSeries && upNext.episodes.length > 0 ? (
+            <div className="mt-8 pt-6 border-t border-white/5">
+              <div className="flex items-center justify-between mb-3 gap-3">
+                <h2 className="font-display text-lg text-reel-ink">Up Next · {upNext.label}</h2>
+                <button
+                  onClick={toggleAutoplay}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full shrink-0 transition ${
+                    autoplay ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${autoplay ? 'bg-reel-bg' : 'bg-reel-muted'}`} />
+                  Autoplay {autoplay ? 'On' : 'Off'}
+                </button>
+              </div>
+              <div className="space-y-3">
+                {upNext.episodes.map((ep) => (
+                  <button
+                    key={ep.id}
+                    onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
+                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 transition rounded-lg p-3 ring-1 ring-white/5"
+                  >
+                    <img
+                      src={ep.thumbnail}
+                      alt={ep.title}
+                      className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">
+                        S{ep.season} · E{ep.episode} · {ep.title}
+                      </p>
+                      <p className="text-xs text-reel-muted mt-1 line-clamp-2">{ep.overview}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
