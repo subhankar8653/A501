@@ -997,6 +997,16 @@ class MainActivity : AppCompatActivity() {
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         inlinePlayer?.pause()
+        // Bug fix (black screen with audio-only playing): pehle sirf overlay ko GONE
+        // karte the, lekin inlinePlayerView ka `.player` reference wahi rehta tha —
+        // matlab ExoPlayer ka video-output Surface do PlayerView (yeh inline wala,
+        // aur PlayerActivity ka fullscreen wala) ke beech simultaneously "fight" karta
+        // tha. Jab GONE hua PlayerView apna Surface release karta hai, ExoPlayer ka
+        // render target null ho jaata — result: naya (fullscreen) PlayerView bhi kabhi
+        // kabhi black rehta, audio chalta rehta kyunki wo Surface se independent hai.
+        // Fix: yahin explicitly detach kar do, taaki sirf ek hi PlayerView kisi bhi
+        // waqt is player se juda ho.
+        inlinePlayerView?.player = null
         inlineOverlay?.visibility = View.GONE
         val intent = Intent(this, PlayerActivity::class.java).apply {
             putExtra("video_uri", inlineUri)
@@ -1008,6 +1018,19 @@ class MainActivity : AppCompatActivity() {
         }
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
+        if (enterPipImmediately) {
+            // Bug fix (jhatke wala/gadbad transformation): normal fullscreen-open ke
+            // liye OS ka default open-animation theek lagta hai, lekin jab hum turant
+            // (isi frame ke baad) PiP mein bhi chale jaate hain, to "activity grow
+            // animation" + "PiP shrink animation" dono ek saath overlap ho kar ek
+            // jhatkedaar/double transform dikhte the. Is specific case (PiP button /
+            // swipe-down-to-PiP se aaya ho) mein open-animation hata do — activity
+            // turant (bina apne animation ke) render hoti hai, aur sirf ek hi smooth
+            // shrink-to-PiP animation dikhti hai (PlayerActivity khud enter karta hai,
+            // sourceRectHint ke saath — dekho buildPipParams()).
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
     }
 
     @Suppress("DEPRECATION")
