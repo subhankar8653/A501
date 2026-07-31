@@ -147,11 +147,46 @@ export default function Player() {
     return { label, episodes }
   }, [isSeries, allEpisodes, currentSeason, currentEpisode])
 
+  const nextEpisode = upNext.episodes[0] || null
+
+  // "Up Next" sirf aage dekhta hai — pichla episode nikalne ke liye poori
+  // (sabhi seasons milakar banayi) list mein current se ek pehle wala dhoondo.
+  const prevEpisode = useMemo(() => {
+    if (!isSeries || !allEpisodes.length || currentSeason == null) return null
+    const idx = allEpisodes.findIndex(
+      (e) => e.season === currentSeason && e.episode === currentEpisode
+    )
+    return idx > 0 ? allEpisodes[idx - 1] : null
+  }, [isSeries, allEpisodes, currentSeason, currentEpisode])
+
   function handleEnded() {
     if (autoplay && isSeries && upNext.episodes[0]) {
       navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`)
     }
   }
+
+  // Android app ke chhote (inline) native player ke prev/next button is
+  // page ki normal episode-navigation ka hi istemal karte hain (URL update,
+  // title/comments/Up-Next-list sab isi se sync rehte hain) — native khud
+  // episode ka URL nahi jaanta, bas yeh do window function call karta hai.
+  useEffect(() => {
+    window.__suhaniOnNativeNext = () => {
+      if (nextEpisode) navigate(`/watch/series/${encodeURIComponent(nextEpisode.id)}`)
+    }
+    window.__suhaniOnNativePrev = () => {
+      if (prevEpisode) navigate(`/watch/series/${encodeURIComponent(prevEpisode.id)}`)
+    }
+    return () => {
+      delete window.__suhaniOnNativeNext
+      delete window.__suhaniOnNativePrev
+    }
+  }, [nextEpisode, prevEpisode, navigate])
+
+  // Android ko batao ki agla/pichla episode maujood hai ya nahi, taaki
+  // wahan prev/next button sahi se enable/dim ho.
+  useEffect(() => {
+    window.AndroidPlayer?.setAdjacentEpisodes?.(!!nextEpisode, !!prevEpisode)
+  }, [nextEpisode, prevEpisode])
 
   // Fetches the file as a blob first, then downloads from that in-memory
   // blob — so no new tab opens and the backend's real URL never shows up
