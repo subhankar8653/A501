@@ -136,6 +136,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private var pipSpeedBoosted = false
+    // Bug fix (PiP shrink animation ke shuru mein black frame ka flash): dekho
+    // enterPipWhenFrameReady() ka comment neeche.
+    private var pipEntryFrameListener: Player.Listener? = null
 
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
@@ -831,7 +834,7 @@ class PlayerActivity : AppCompatActivity() {
             // honour zaroor honi chahiye (warna dobara PiP button dabana silently
             // kuch na kare, aisa nahi hona chahiye).
             if (intent.getBooleanExtra("enter_pip_immediately", false)) {
-                playerView.post { tryEnterPipOnBack() }
+                enterPipWhenFrameReady()
             }
             return
         }
@@ -915,8 +918,11 @@ class PlayerActivity : AppCompatActivity() {
 
         // Chhote inline player ke PiP button se aaye the to yahan aate hi turant
         // real PiP mein chale jaao — isi Activity ka apna, already-working PiP.
+        // enterPipWhenFrameReady() pehle frame render hone tak wait karta hai
+        // (dekho uska comment) taaki shrink animation shuru hote hi video already
+        // visible ho, black-frame flash na dikhe.
         if (intent.getBooleanExtra("enter_pip_immediately", false)) {
-            playerView.post { tryEnterPipOnBack() }
+            enterPipWhenFrameReady()
         }
     }
 
@@ -5563,6 +5569,12 @@ class PlayerActivity : AppCompatActivity() {
         if (isLocked) return
         playerView.showController()
         fadeInView(topBar)
+        // BUG FIX: quickActionsScroll (speed/decoder/PiP/aspect/lock icons ki row)
+        // pehle sirf fadeOutView() se GONE hoti thi (hide-timeout par, aur PiP mode
+        // mein jaate waqt) lekin yahan kabhi wapas fadeInView nahi hoti thi — isliye
+        // ek baar hide hone ke baad (ya kisi bhi PiP round-trip ke baad) yeh row
+        // permanently gayab reh jaati thi. Ab topBar jaisa hi wapas fade-in.
+        fadeInView(quickActionsScroll)
         // Side dock hata diya gaya hai (uske icons ab More menu mein hain),
         // isliye ise kabhi VISIBLE nahi karna — permanently hidden rehta hai.
         hideSystemBars()
@@ -6144,6 +6156,55 @@ class PlayerActivity : AppCompatActivity() {
     // pehle jaisa hi normal back/finish hota hai.
     // ---------------------------------------------------------------------
 
+    // Bug fix (PiP shrink animation "smooth" nahi lagti thi — shuru mein ek black
+    // frame flash hota tha): chhote inline player (MainActivity) se seedha yahan
+    // aane par shared ExoPlayer instance is (naye) playerView se abhi-abhi attach
+    // hui hoti hai — uska pehla frame is naye Surface par render hone mein ek-do
+    // vsync (10-30ms) lag sakte hain. Pehle hum bas `playerView.post { }` ke turant
+    // baad hi enterPictureInPictureMode() call kar dete the, jo kabhi-kabhi us
+    // pehle frame se PEHLE hi fire ho jaata tha — result: PiP shrink animation ek
+    // khaali/black rectangle ko shrink karte hue shuru hoti, video 1-2 frame baad
+    // "pop" karta — jhatka-sa/non-premium feel.
+    //
+    // Fix: agar player abhi tak koi frame render nahi kar chuka (onRenderedFirstFrame
+    // fire nahi hua), thoda wait karo (max 150ms timeout safety ke saath, taaki
+    // kisi wajah se listener na fire ho to bhi PiP hamesha ke liye atki na rahe)
+    // — phir hi enterPictureInPictureMode() call karo. Isse shrink animation
+    // shuru hote hi video already visible hota hai, bilkul YouTube jaisa smooth feel.
+    private fun enterPipWhenFrameReady() {
+        if (!::player.isInitialized || !::playerView.isInitialized) return
+        pipEntryFrameListener?.let { player.removeListener(it) }
+        pipEntryFrameListener = null
+
+        if (player.isPlaying) {
+            // Shared player already actively playing tha (MainActivity mein) — naye
+            // Surface par bhi decoder turant hi ek fresh frame push karega, isliye
+            // ek chhota fixed delay hi kaafi hai (koi listener overhead nahi chahiye).
+            playerView.postDelayed({ tryEnterPipOnBack() }, 32L)
+            return
+        }
+
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                pipEntryFrameListener?.let { player.removeListener(it) }
+                pipEntryFrameListener = null
+                playerView.post { tryEnterPipOnBack() }
+            }
+        }
+        pipEntryFrameListener = listener
+        player.addListener(listener)
+        // Safety timeout — agar kisi wajah se onRenderedFirstFrame fire hi na ho
+        // (edge case), PiP request phir bhi honi chahiye, warna button/swipe "kuch
+        // nahi hua" jaisa feel dega.
+        playerView.postDelayed({
+            if (pipEntryFrameListener === listener) {
+                player.removeListener(listener)
+                pipEntryFrameListener = null
+                tryEnterPipOnBack()
+            }
+        }, 150L)
+    }
+
     private fun tryEnterPipOnBack(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
@@ -6300,12 +6361,31 @@ class PlayerActivity : AppCompatActivity() {
             // Bug fix: system PiP window ka "X" (close) button dabane par bhi
             // yehi callback (isInPictureInPictureMode=false) fire hota hai,
             // lekin saath hi Activity finish/destroy bhi ho rahi hoti hai
-            // (isFinishing=true). Us case mein turant audio pause karo — onStop()
-            // ka wait mat karo, warna audio thodi der background mein chalta
-            // reh jaata hai.
+            // (isFinishing=true).
+            //
+            // BUG FIX (audio ata rehta tha + wapas inline player black screen reh
+            // jaata tha): pehle yahan bhi shared-player case mein turant
+            // playWhenReady=false kar dete the. Lekin Activity result callback order
+            // FIXED hai: is Activity ka onPause() -> MainActivity.onActivityResult()
+            // (jo turant playWhenReady = wasPlaying karke wapas play/resume karta
+            // hai) -> tabhi jaakar is Activity ka onStop()/onDestroy(). Matlab agar
+            // hum yahan (ya onPause/onStop mein) shared player ko force-pause karte
+            // hain, to woh MainActivity ke turant baad wale "resume" ko silently
+            // undo kar deta tha — result: ek pal audio sunayi deta (MainActivity ka
+            // resume) phir turant ruk jaata, aur video wahi frozen/black reh jaata
+            // jahan is (ab-destroy ho rahi) Activity ne use pause chhoda tha.
+            //
+            // Fix: agar player MainActivity ka shared/borrowed hai, to uske
+            // playWhenReady ko yahan bilkul mat chhedo — control (aur play/pause
+            // state) ab MainActivity ke onActivityResult() ko de diya gaya hai,
+            // wahi isko sambhalega. Sirf apni foreground service band karo.
             if (isFinishing && ::player.isInitialized) {
-                player.playWhenReady = false
-                BackgroundPlaybackService.stop(this)
+                if (usingSharedPlayer) {
+                    BackgroundPlaybackService.stop(this)
+                } else {
+                    player.playWhenReady = false
+                    BackgroundPlaybackService.stop(this)
+                }
             }
         }
     }
@@ -6364,8 +6444,27 @@ class PlayerActivity : AppCompatActivity() {
         // tha aur player ko pause hi nahi karta tha. Ab isFinishing bhi check
         // karte hain: agar activity finish ho rahi hai to turant pause + service
         // stop, chahe isInPictureInPictureMode abhi bhi true dikha raha ho.
+        //
+        // BUG FIX (audio thodi der ke liye "leak" hoti thi + inline player black
+        // screen reh jaata tha): agar yeh Activity apna shared/borrowed player
+        // MainActivity ko wapas handoff kar rahi hai (usingSharedPlayer &&
+        // isFinishing), to playWhenReady ko yahan CHHEDO MAT. MainActivity ka
+        // onActivityResult() is Activity ke onPause() ke turant baad hi (onStop()
+        // se PEHLE) chalta hai aur khud playWhenReady = wasPlaying set karta hai —
+        // agar hum yahan pehle hi false kar dein, to woh sahi resume state ke
+        // bawajood bhi kabhi-kabhi galat/stale state pe fight karta reh jaata,
+        // aur baad mein aane wala onStop() (isFinishing abhi bhi true) us resume
+        // ko dobara undo kar deta — video wahin frozen/black reh jaata jabki
+        // audio ek pal ke liye already bajj chuka hota (isi wajah se dono bugs
+        // saath dikhte the: "audio aata hai" aur "black screen rehta hai").
+        val handingOffToInline = isFinishing && usingSharedPlayer
         val isPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode && !isFinishing
-        if (!isPip) {
+        if (handingOffToInline) {
+            // Control (aur play/pause state) MainActivity ke onActivityResult()
+            // ko de diya — foreground service ab bhi band kar do (MainActivity
+            // khud foreground hai, isliye notification ki zaroorat nahi).
+            BackgroundPlaybackService.stop(this)
+        } else if (!isPip) {
             player.playWhenReady = false
             if (isFinishing) BackgroundPlaybackService.stop(this)
         } else if (::player.isInitialized) {
@@ -6399,6 +6498,17 @@ class PlayerActivity : AppCompatActivity() {
         // dekho) — PiP "X" close case mein isInPictureInPictureMode abhi bhi
         // true reh sakta hai, isFinishing hi asli signal hai ki activity band
         // ho rahi hai aur audio ab turant rukna chahiye.
+        //
+        // BUG FIX: agar shared player hai aur handoff MainActivity ko ho raha hai,
+        // to yahan bhi (jaise onPause() mein) playWhenReady ko chhedo mat — onStop()
+        // MainActivity ke onActivityResult() ke BAAD chalta hai (jo already resume
+        // kar chuka hota hai), isliye yahan force-pause karna seedha uska resume
+        // undo kar deta tha, aur inline player black/frozen reh jaata tha.
+        val handingOffToInline = isFinishing && usingSharedPlayer
+        if (handingOffToInline) {
+            if (::player.isInitialized) BackgroundPlaybackService.stop(this)
+            return
+        }
         val isPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode && !isFinishing
         if (::player.isInitialized && !isPip) {
             player.playWhenReady = false
@@ -6447,6 +6557,8 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         if (::player.isInitialized) {
+            pipEntryFrameListener?.let { player.removeListener(it) }
+            pipEntryFrameListener = null
             player.removeListener(playerListener)
             player.removeAnalyticsListener(statsAnalyticsListener)
             if (usingSharedPlayer) {
