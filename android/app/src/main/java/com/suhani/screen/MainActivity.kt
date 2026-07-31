@@ -1052,7 +1052,16 @@ class MainActivity : AppCompatActivity() {
             }
             inlinePlayer?.seekTo(pos)
             inlinePlayer?.playWhenReady = wasPlaying
-            inlineOverlay?.visibility = View.VISIBLE
+            // Bug fix / polish: pehle overlay seedha VISIBLE ho jaata tha — ek chhota
+            // fade-in (jaisa swipe-down-to-PiP wapas reset hone par pehle se hai)
+            // smoother/premium feel deta hai, aur reattach ke turant baad wale ek-do
+            // frame ke "settle" hone ko bhi chhupa deta hai.
+            inlineOverlay?.let { overlay ->
+                overlay.animate().cancel()
+                overlay.alpha = 0f
+                overlay.visibility = View.VISIBLE
+                overlay.animate().alpha(1f).setDuration(180).start()
+            }
         }
     }
 
