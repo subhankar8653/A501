@@ -218,7 +218,16 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var bottomPipButton: ImageView
     private lateinit var bottomAspectButton: ImageView
     private lateinit var backButton: ImageView
+    private lateinit var pipChevronButton: ImageView
+    private lateinit var topContainer: LinearLayout
     private lateinit var playerTitleText: TextView
+    // Swipe-down-to-PiP: video ko hold karke neeche push karne se bhi mini
+    // player khulta hai — sirf topContainer (title/icon strip) se track karte
+    // hain taaki poori video-surface par pehle se chal rahe volume/brightness
+    // swipe gestures se koi conflict na ho.
+    private var pipSwipeStartY = 0f
+    private var pipSwipeStartX = 0f
+    private var pipSwipeDragging = false
     private lateinit var gestureDetector: GestureDetector
     private lateinit var videoInfoBadge: TextView
     private lateinit var scrubPreviewContainer: LinearLayout
@@ -683,6 +692,8 @@ class PlayerActivity : AppCompatActivity() {
         lockButton = findViewById(R.id.lockButton)
         unlockButton = findViewById(R.id.unlockButton)
         bottomPipButton = findViewById(R.id.bottomPipButton)
+        pipChevronButton = findViewById(R.id.pipChevronButton)
+        topContainer = findViewById(R.id.topContainer)
         bottomAspectButton = findViewById(R.id.bottomAspectButton)
         backButton = findViewById(R.id.backButton)
         playerTitleText = findViewById(R.id.playerTitleText)
@@ -747,13 +758,7 @@ class PlayerActivity : AppCompatActivity() {
 
         backButton.setOnClickListener { if (!tryEnterPipOnBack()) finish() }
 
-        speedButton.setOnClickListener {
-            speedIndex = (speedIndex + 1) % speedOptions.size
-            val speed = speedOptions[speedIndex]
-            player.playbackParameters = PlaybackParameters(speed)
-            speedButton.text = "${speed}x"
-            showGestureFeedback("Speed ${speed}x")
-        }
+        speedButton.setOnClickListener { showSpeedSheet() }
 
         lockButton.setOnClickListener { setLocked(true) }
         unlockButton.setOnClickListener { setLocked(false) }
@@ -1830,6 +1835,55 @@ class PlayerActivity : AppCompatActivity() {
         bottomPipButton.setOnClickListener {
             if (!tryEnterPipOnBack()) {
                 showGestureFeedback("PiP is not supported on this device")
+            }
+        }
+
+        // Chevron-down icon (top-left) -> same PiP.
+        pipChevronButton.setOnClickListener {
+            if (!tryEnterPipOnBack()) {
+                showGestureFeedback("PiP is not supported on this device")
+            }
+        }
+
+        // Swipe-down gesture -> PiP. Sirf topContainer (title/icon strip)
+        // se — video-surface (playerView) ka apna touch listener pehle se
+        // volume/brightness/seek gestures handle karta hai, wahan add karne
+        // se un sabse conflict hota, isliye yeh alag, safe zone mein hai.
+        topContainer.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    pipSwipeStartY = event.rawY
+                    pipSwipeStartX = event.rawX
+                    pipSwipeDragging = false
+                    false // let child buttons (back/pip/audio/subtitle/etc.) still get their taps
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = event.rawY - pipSwipeStartY
+                    val dx = Math.abs(event.rawX - pipSwipeStartX)
+                    if (dy > 24 && dy > dx) {
+                        pipSwipeDragging = true
+                        // Live shrink+fade feedback while dragging down.
+                        val progress = (dy / 260f).coerceIn(0f, 1f)
+                        v.translationY = dy.coerceAtMost(260f)
+                        v.alpha = 1f - (progress * 0.4f)
+                        v.scaleX = 1f - (progress * 0.06f)
+                        v.scaleY = 1f - (progress * 0.06f)
+                    }
+                    pipSwipeDragging
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val wasDragging = pipSwipeDragging
+                    val dy = event.rawY - pipSwipeStartY
+                    pipSwipeDragging = false
+                    v.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
+                    if (wasDragging && dy > 90) {
+                        if (!tryEnterPipOnBack()) {
+                            showGestureFeedback("PiP is not supported on this device")
+                        }
+                    }
+                    wasDragging
+                }
+                else -> false
             }
         }
 
@@ -2972,6 +3026,170 @@ class PlayerActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
             .show()
+    }
+
+    // ---------------------------------------------------------------------
+    // Playback speed — premium dark bottom sheet (YouTube-style): current
+    // speed badge, -/+ buttons + slider (0.25x steps of granularity via a
+    // fine-grained SeekBar), aur quick preset pills (Normal/1.25x/1.5x/2x/3x).
+    // Purana speedButton "tap to cycle" behavior isi se replace hua hai.
+    // ---------------------------------------------------------------------
+    private val speedSheetPresets = floatArrayOf(1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+    private val SPEED_MIN = 0.25f
+    private val SPEED_MAX = 3.0f
+    private val SPEED_STEP = 0.05f
+
+    private fun formatSpeedLabel(speed: Float): String {
+        val rounded = Math.round(speed * 100) / 100.0
+        return if (rounded == rounded.toLong().toDouble()) "${rounded.toLong()}.00x"
+        else String.format("%.2fx", rounded)
+    }
+
+    private fun showSpeedSheet() {
+        val currentSpeed = try { player.playbackParameters.speed } catch (_: Exception) { 1f }
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_speed_sheet)
+            setPadding(dp(22), dp(14), dp(22), dp(26))
+        }
+
+        // Drag handle
+        root.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(4)).apply {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(18)
+            }
+            background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
+            alpha = 0.5f
+        })
+
+        val speedLabel = TextView(this).apply {
+            text = formatSpeedLabel(currentSpeed)
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(18) }
+        }
+        root.addView(speedLabel)
+
+        val steps = Math.round((SPEED_MAX - SPEED_MIN) / SPEED_STEP)
+
+        val sliderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(20) }
+        }
+
+        val minusBtn = TextView(this).apply {
+            text = "−"
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
+        }
+        val plusBtn = TextView(this).apply {
+            text = "+"
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
+        }
+        val seek = SeekBar(this).apply {
+            max = steps
+            progress = Math.round((currentSpeed.coerceIn(SPEED_MIN, SPEED_MAX) - SPEED_MIN) / SPEED_STEP)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(10)
+                marginEnd = dp(10)
+            }
+            progressTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+            thumbTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+        }
+        sliderRow.addView(minusBtn)
+        sliderRow.addView(seek)
+        sliderRow.addView(plusBtn)
+        root.addView(sliderRow)
+
+        val pillsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val pillViews = mutableListOf<Pair<TextView, Float>>()
+
+        fun refreshPills(selected: Float) {
+            pillViews.forEach { (tv, value) ->
+                val isSel = Math.abs(value - selected) < 0.01f
+                tv.background = ContextCompat.getDrawable(
+                    this@PlayerActivity,
+                    if (isSel) R.drawable.bg_speed_pill_selected else R.drawable.bg_speed_pill
+                )
+                tv.setTextColor(if (isSel) android.graphics.Color.parseColor("#0B0B12") else android.graphics.Color.WHITE)
+            }
+        }
+
+        fun applySpeed(raw: Float, syncSlider: Boolean) {
+            val clamped = raw.coerceIn(SPEED_MIN, SPEED_MAX)
+            val rounded = Math.round(clamped / SPEED_STEP) * SPEED_STEP
+            player.playbackParameters = PlaybackParameters(rounded)
+            speedLabel.text = formatSpeedLabel(rounded)
+            speedButton.text = formatSpeedLabel(rounded).let {
+                // Top-bar chip stays short (e.g. "1.5x" instead of "1.50x")
+                val f = rounded
+                if (f == f.toLong().toFloat()) "${f.toLong()}x" else String.format("%.2fx", f)
+            }
+            if (syncSlider) seek.progress = Math.round((rounded - SPEED_MIN) / SPEED_STEP)
+            refreshPills(rounded)
+        }
+
+        speedSheetPresets.forEach { s ->
+            val tv = TextView(this).apply {
+                text = if (s == 1f) "Normal" else formatSpeedLabel(s).removeSuffix("0x") + "x"
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(11), 0, dp(11))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (s != speedSheetPresets.last()) marginEnd = dp(6)
+                }
+                setOnClickListener { applySpeed(s, syncSlider = true) }
+            }
+            pillViews.add(tv to s)
+            pillsRow.addView(tv)
+        }
+        root.addView(pillsRow)
+        refreshPills(currentSpeed)
+
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                applySpeed(SPEED_MIN + progress * SPEED_STEP, syncSlider = false)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+        minusBtn.setOnClickListener {
+            applySpeed((player.playbackParameters.speed - SPEED_STEP * 5), syncSlider = true)
+        }
+        plusBtn.setOnClickListener {
+            applySpeed((player.playbackParameters.speed + SPEED_STEP * 5), syncSlider = true)
+        }
+
+        sheet.setContentView(root)
+        sheet.setOnShowListener {
+            // Material's BottomSheetDialog wraps our view in its own white
+            // sheet background by default — clear it so only our solid dark
+            // bg_speed_sheet drawable shows (no white edges/corners).
+            val bottomSheet = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
+        sheet.show()
     }
 
     // ---------------------------------------------------------------------
