@@ -38,6 +38,8 @@ import com.suhani.videoplayer.EqualizerAudioProcessor
 import com.suhani.videoplayer.FfmpegRenderersFactory
 import com.suhani.videoplayer.PlayerActivity
 import com.suhani.videoplayer.SharedPlayerHolder
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import org.json.JSONArray
 
 /**
  * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhote
@@ -139,6 +141,7 @@ class MainActivity : AppCompatActivity() {
     private var inlinePrevButtonRef: ImageButton? = null
     private var inlineNextButtonRef: ImageButton? = null
     private var inlinePlayPauseButtonRef: ImageButton? = null
+    private var inlineQualityButtonRef: TextView? = null
 
     // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
     // purane player se hata kar naye player par dobara laga sakein. Bug fix: pehle
@@ -242,42 +245,30 @@ class MainActivity : AppCompatActivity() {
             val subtitleButton = root.findViewById<ImageView>(R.id.inlineSubtitleButton)
             val audioTrackButton = root.findViewById<ImageView>(R.id.inlineAudioTrackButton)
             val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
-            val backButton = root.findViewById<ImageView>(R.id.inlineBackButton)
             val settingsButton = root.findViewById<ImageView>(R.id.inlineSettingsButton)
             val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
+            val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
             val topBarRoot = root.findViewById<View>(R.id.inlineTopBarRoot)
             val unlockButton = root.findViewById<ImageView>(R.id.inlineUnlockButton)
+            inlineQualityButtonRef = qualityButton
 
-            backButton.setOnClickListener { unmountInlinePlayer() }
+            // Back-arrow aur title text hata diye gaye hain (page ka apna back
+            // navigation already hai, redundant tha) — isliye ab yahan backButton
+            // ka koi reference nahi hai.
 
-            // YouTube-jaisa ek hi gear icon — audio track / speed / decoder /
-            // pip / aspect ratio, sab purane (ab hidden) buttons par
-            // performClick() se, taaki unki logic dobara likhni na pade.
-            // Subtitles (CC) aur fullscreen-expand reference jaisa seedhe hi
-            // apne dedicated icon se kaam karte hain, isliye yahan nahi hain.
+            // YouTube jaisa asli bottom-sheet (dekho showInlineSettingsSheet()) —
+            // audio/subtitle ab apne dedicated icon se seedhe kaam karte hain,
+            // isliye settings mein nahi hain.
             settingsButton.setOnClickListener {
-                val popup = android.widget.PopupMenu(this, settingsButton)
-                popup.menu.add(0, 0, 0, "Audio track")
-                popup.menu.add(0, 1, 1, "Playback speed (${speedButton.text})")
-                popup.menu.add(0, 2, 2, "Decoder (${decoderButton.text})")
-                popup.menu.add(0, 3, 3, "Picture-in-picture")
-                popup.menu.add(0, 4, 4, "Aspect ratio")
-                popup.setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        0 -> audioTrackButton.performClick()
-                        1 -> speedButton.performClick()
-                        2 -> decoderButton.performClick()
-                        3 -> pipButton.performClick()
-                        4 -> aspectButton.performClick()
-                    }
-                    true
-                }
-                popup.show()
+                showInlineSettingsSheet(speedButton, decoderButton, pipButton, aspectButton, lockButton)
             }
             fullscreenButton.setOnClickListener { openFullscreenFromInline() }
+
+            qualityButton.text = currentInlineQualityLabel()
+            qualityButton.setOnClickListener { showInlineQualityDialog(qualityButton) }
 
             // Pehle sirf ek silent on/off toggle tha — ab fullscreen jaisa hi ek
             // asli track-picker popup khulta hai (available subtitle tracks + Off).
@@ -432,8 +423,6 @@ class MainActivity : AppCompatActivity() {
             inlineOverlay = overlay
         }
 
-        inlineOverlay?.findViewById<TextView>(R.id.inlineTitleText)?.text = title
-
         val player = inlinePlayer ?: buildInlineExoPlayer().also {
             inlinePlayer = it
             inlinePlayerView?.player = it
@@ -452,6 +441,7 @@ class MainActivity : AppCompatActivity() {
         // reuse karna hai — naya player mat banao, buffering dobara nahi hogi.
         SharedPlayerHolder.player = player
         SharedPlayerHolder.uri = uri
+        inlineQualityButtonRef?.text = currentInlineQualityLabel()
     }
 
     /** Web page (Player.jsx) se aata hai jab bhi current episode ke agal-bagal
@@ -472,6 +462,104 @@ class MainActivity : AppCompatActivity() {
             isEnabled = inlineHasPrevEpisode
             alpha = if (inlineHasPrevEpisode) 1f else 0.35f
         }
+    }
+
+    /** inlineQualitiesJson (website jaisa hi '[{"url":...,"label":"1080p"},...]') ko
+     *  ek simple label→url list mein parse karta hai. Kuch bhi galat/khali ho to
+     *  khali list deta hai (crash nahi karta). */
+    private fun parseInlineQualities(): List<Pair<String, String>> {
+        return try {
+            val arr = JSONArray(inlineQualitiesJson)
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                (obj.optString("label", "Auto")) to obj.getString("url")
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Abhi jo url chal raha hai (inlineUri) usi se match karke uska label dhoondta
+     *  hai — jaise "1080p". Match na mile to "Auto" dikhata hai. */
+    private fun currentInlineQualityLabel(): String {
+        return parseInlineQualities().firstOrNull { it.second == inlineUri }?.first ?: "Auto"
+    }
+
+    private fun showInlineQualityDialog(qualityButton: TextView) {
+        val qualities = parseInlineQualities()
+        if (qualities.isEmpty()) return
+        val labels = qualities.map { it.first }.toTypedArray()
+        val currentIndex = qualities.indexOfFirst { it.second == inlineUri }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Quality")
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                switchInlineQuality(qualities[which].second)
+                qualityButton.text = qualities[which].first
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** Quality (resolution) badalte waqt ExoPlayer instance wahi rehta hai — sirf
+     *  MediaItem badalta hai, aur purani position/playing-state wapas apply hoti
+     *  hai, taaki switch karne par video shuru se na chale. */
+    private fun switchInlineQuality(newUrl: String) {
+        val player = inlinePlayer ?: return
+        val pos = player.currentPosition
+        val wasPlaying = player.playWhenReady
+        inlineUri = newUrl
+        SharedPlayerHolder.uri = newUrl
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(newUrl)))
+        player.prepare()
+        player.seekTo(pos)
+        player.playWhenReady = wasPlaying
+    }
+
+    /** Reference (YouTube) jaisa settings bottom-sheet — gear tap karne par khulta
+     *  hai. Audio track/subtitle ab apne dedicated icon se seedhe kaam karte hain
+     *  isliye yahan nahi hain; quality bhi apna alag button hai (fullscreen ke
+     *  paas), isliye yahan bhi nahi hai. */
+    private fun showInlineSettingsSheet(
+        speedButton: TextView,
+        decoderButton: TextView,
+        pipButton: ImageView,
+        aspectButton: ImageView,
+        lockButton: ImageView
+    ) {
+        val sheetView = LayoutInflater.from(this).inflate(R.layout.inline_settings_sheet, null)
+        val container = sheetView.findViewById<ViewGroup>(R.id.inlineSettingsRowsContainer)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(sheetView)
+
+        fun addRow(iconRes: Int, label: String, value: String, onClick: () -> Unit) {
+            val row = LayoutInflater.from(this).inflate(R.layout.inline_settings_row, container, false)
+            row.findViewById<ImageView>(R.id.settingsRowIcon).setImageResource(iconRes)
+            row.findViewById<TextView>(R.id.settingsRowLabel).text = label
+            row.findViewById<TextView>(R.id.settingsRowValue).text = value
+            row.setOnClickListener {
+                onClick()
+                dialog.dismiss()
+            }
+            container.addView(row)
+        }
+
+        addRow(R.drawable.ic_speed_ramp, "Playback speed", speedButton.text.toString()) {
+            speedButton.performClick()
+        }
+        addRow(R.drawable.ic_settings, "Decoder", decoderButton.text.toString()) {
+            decoderButton.performClick()
+        }
+        addRow(R.drawable.ic_lock, "Lock screen", "") {
+            lockButton.performClick()
+        }
+        addRow(R.drawable.ic_pip, "Picture-in-picture", "") {
+            pipButton.performClick()
+        }
+        addRow(R.drawable.ic_aspect_ratio, "Aspect ratio", "") {
+            aspectButton.performClick()
+        }
+
+        dialog.show()
     }
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
