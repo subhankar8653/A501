@@ -113,6 +113,12 @@ import org.json.JSONArray
  */
 class PlayerActivity : AppCompatActivity() {
 
+    // Bug fix: onNewIntent() ke baar-baar same video ke liye call hone par poora
+    // reload skip karne ke liye (dekho loadVideoFromIntent()) — taaki PiP button
+    // dobara dabane ya singleTask re-entry par "different player khul gaya" jaisa
+    // flash aur duplicate listener registration na ho.
+    private var currentLoadedUri: String? = null
+
     companion object {
         // YouTube jaisa "background/floating mini player" feature: back dabate
         // hi Android ke native Picture-in-Picture (PiP) mode mein video chota
@@ -809,6 +815,28 @@ class PlayerActivity : AppCompatActivity() {
      * PlayerActivity nahi khulta.
      */
     private fun loadVideoFromIntent() {
+        // Bug fix (seekbar idhar-udhar jump + "galat player khul gaya" flash): jab inline
+        // player ke PiP button ko dobara dabaya jaata (ya kabhi Android khud singleTask
+        // reuse ki wajah se onNewIntent() dubara call karta) usi video ke liye jo already
+        // isi Activity mein chal rahi hai, to pehle yeh function unconditionally poora
+        // dobara chalta tha — zoom reset, queue rebuild, aur (sab se bada issue) neeche
+        // wala shared-player branch bina purana listener hataye player.addListener() phir
+        // se call kar deta tha, matlab wahi listener ek hi player par 2-3 baar registered
+        // ho jaata — har position/track/media-item event double-triple fire hota, isse
+        // seekbar/UI thoda "jump" karti dikhti thi. Fix: agar yeh genuinely wahi video hai
+        // jo abhi already load/playing hai, to kuch bhi rebuild na karo — bas turant return.
+        val incomingUri = intent.getStringExtra("video_uri")
+        if (::player.isInitialized && incomingUri != null && incomingUri == currentLoadedUri) {
+            // Reload skip ho raha hai, lekin agar isi tap ne PiP maangi thi to wo
+            // honour zaroor honi chahiye (warna dobara PiP button dabana silently
+            // kuch na kare, aisa nahi hona chahiye).
+            if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+                playerView.post { tryEnterPipOnBack() }
+            }
+            return
+        }
+        currentLoadedUri = incomingUri
+
         // Bug fix: is Activity ke singleTask hone ki wajah se yahi instance baar baar reuse
         // hoti hai (Home se koi bhi naya/alag video khulne par bhi) — isliye pichle video ka
         // pinch-zoom/pan state yahan explicitly reset karna zaroori hai, warna agar kabhi
@@ -866,6 +894,12 @@ class PlayerActivity : AppCompatActivity() {
             player = sharedPlayer
             playerView.player = player
             playerView.setKeepContentOnPlayerReset(true)
+            // Bug fix (duplicate listener -> seekbar jump): agar kisi wajah se yeh
+            // branch dobara isi player instance ke liye hit ho (currentLoadedUri guard
+            // ke bawajood), pehle purana listener hata do taaki wahi listener kabhi
+            // 2x registered na ho — buildPlayer() mein bhi yahi pattern hai.
+            player.removeListener(playerListener)
+            player.removeAnalyticsListener(statsAnalyticsListener)
             player.addListener(playerListener)
             player.addAnalyticsListener(statsAnalyticsListener)
             player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
@@ -6124,6 +6158,22 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun buildPipParams(): PictureInPictureParams.Builder {
         val builder = PictureInPictureParams.Builder()
+        // Bug fix (jhatke wala/gadbad shrink animation): sourceRectHint ke bina Android
+        // ek generic "poori screen se center/corner tak zoom-out" animation deta hai,
+        // jo letterboxed (aspect-fit) video ke saath khaas taur par jhatka-sa/galat
+        // dikhta hai. Yeh hint dene se OS video-surface ke asli on-screen rect (playerView
+        // ke andar jahan actual video content hai, letterbox bars ke bina) se seedha
+        // shrink karta hai — bilkul YouTube jaisa smooth "video hi shrink ho raha hai"
+        // feel deta hai.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && ::playerView.isInitialized) {
+            try {
+                val videoRect = Rect()
+                playerView.getGlobalVisibleRect(videoRect)
+                if (videoRect.width() > 0 && videoRect.height() > 0) {
+                    builder.setSourceRectHint(videoRect)
+                }
+            } catch (_: Exception) {}
+        }
         if (::player.isInitialized) {
             val vw = player.videoSize.width
             val vh = player.videoSize.height
@@ -6269,6 +6319,18 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // Bug fix (black screen on return to inline player): Android ka callback order
+        // hai — is Activity ka onPause() PEHLE chalta hai, uske baad hi MainActivity ka
+        // onActivityResult() (jahan wo apne inline PlayerView ko wapas isi player se
+        // attach karta hai). Pehle hum sirf onDestroy() mein playerView ko detach karte
+        // the — jo onActivityResult() ke KAAFI baad chalta hai, isliye thodi der ke liye
+        // dono PlayerView (fullscreen wala aur inline wala) ek saath same ExoPlayer se
+        // juda rehte the — Surface conflict, black frame. Ab agar hum genuinely finish
+        // ho kar MainActivity ko wapas control de rahe hain (aur shared player istemal
+        // ho raha tha), turant yahin detach kar do.
+        if (isFinishing && usingSharedPlayer && ::player.isInitialized) {
+            playerView.player = null
+        }
         val currentIndex = if (::player.isInitialized) player.currentMediaItemIndex else -1
         val currentItem = queue.getOrNull(currentIndex)
         val currentUri = currentItem?.uriString
