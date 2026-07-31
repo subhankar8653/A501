@@ -309,12 +309,18 @@ class MainActivity : AppCompatActivity() {
             lockButton.setOnClickListener {
                 inlineLocked = true
                 playerView.useController = false
+                playerView.hideController()
                 topBarRoot.visibility = View.GONE
+                // Bug fix: sirf useController=false karne se yeh (khud controller
+                // ke andar wala) lock icon reliably hide nahi ho raha tha — ab
+                // explicitly GONE karte hain, bade wale (fullscreen) player jaisa.
+                lockButton.visibility = View.GONE
                 unlockButton.visibility = View.VISIBLE
             }
             unlockButton.setOnClickListener {
                 inlineLocked = false
                 playerView.useController = true
+                lockButton.visibility = View.VISIBLE
                 topBarRoot.visibility = View.VISIBLE
                 unlockButton.visibility = View.GONE
             }
