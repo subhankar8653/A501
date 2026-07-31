@@ -2,12 +2,16 @@
 <!-- Reference (YouTube) jaisa settings popup — gear tap karne par yeh
      bottom-sheet khulta hai. Rows Kotlin se dynamically add hoti hain
      (inline_settings_row.xml se), taaki current value (jaise "1x" ya
-     "HW+") hamesha up-to-date rahe. -->
+     "HW+") hamesha up-to-date rahe.
+     bg_speed_sheet (near-opaque solid black) use kar rahe hain — pehle
+     bg_more_menu_panel tha jo ~55% opacity ka hai, isliye Material ke
+     BottomSheetDialog ke apne default white background ke saath milkar
+     panel whitish/washed dikh raha tha. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@drawable/bg_more_menu_panel">
+    android:background="@drawable/bg_speed_sheet">
 
     <View
         android:layout_width="36dp"
