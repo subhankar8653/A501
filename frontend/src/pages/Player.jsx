@@ -236,14 +236,14 @@ export default function Player() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4 sm:px-6">
+    <div className="max-w-3xl mx-auto py-6">
       {error ? (
-        <p className="text-reel-rust">{error}</p>
+        <p className="text-reel-rust px-4 sm:px-6">{error}</p>
       ) : !active ? (
-        <div className="aspect-video bg-reel-surface2 rounded-xl animate-pulse" />
+        <div className="aspect-video bg-reel-surface2 animate-pulse" />
       ) : (
         <>
-          <div className="aspect-video bg-black rounded-xl overflow-hidden ring-1 ring-white/10">
+          <div className="aspect-video bg-black overflow-hidden">
             <VideoPlayer
               key={active.url}
               src={active.url}
@@ -257,6 +257,7 @@ export default function Player() {
             />
           </div>
 
+          <div className="px-4 sm:px-6">
           {/* Title + badges */}
           <div className="mt-4">
             <h1 className="font-display text-lg text-reel-ink break-words">{meta.filename}</h1>
@@ -362,6 +363,7 @@ export default function Player() {
               </div>
             </div>
           ) : null}
+          </div>
         </>
       )}
     </div>
