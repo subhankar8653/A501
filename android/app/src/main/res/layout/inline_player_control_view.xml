@@ -18,6 +18,15 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- Bug fix: pehle center row poore box (top-bar ke peeche wale hisse
+         samet) ke hisaab se center hoti thi, isliye visually upar-upar dikhti
+         thi (top bar chhota box mein bada hissa le leta hai). Yeh spacer
+         inline_top_bar.xml ki approx height jitna hai — ab center row sirf
+         top-bar ke NEECHE wale asli-dikhne-wale hisse mein center hoti hai. -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="36dp" />
+
     <!-- Center row: plain icons, no background chip, evenly spread — reference jaisa.
          Bug fix: play/pause pehle DO alag overlapping ImageButtons the (exo_play +
          exo_pause) jinki visibility Media3 khud toggle karta tha — kisi wajah se
@@ -88,7 +97,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="38dp"
             android:layout_marginEnd="6dp"
             android:orientation="vertical">
 
@@ -97,7 +106,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingStart="34dp"
                 android:paddingBottom="2dp">
 
                 <TextView
