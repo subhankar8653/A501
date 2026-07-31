@@ -374,6 +374,14 @@ class PlayerActivity : AppCompatActivity() {
     private var startY = 0f
     private var isSwipingVolume = false
     private var isSwipingBrightness = false
+
+    // Swipe-down-to-PiP seedha video (playerView) par se bhi: pehle sirf
+    // topContainer (top icon strip) se hi PiP trigger hota tha, video ko
+    // hold karke kahin bhi bich mein se niche khinchne se kuch nahi hota
+    // tha. Ab beech ka ek "middle zone" (left/right volume-brightness
+    // swipe zones ke beech, taaki un dono se conflict na ho) isi kaam ke
+    // liye reserved hai.
+    private var isSwipingToPipFromVideo = false
     private var currentVolume = 0f
     private var currentBrightness = 0.5f
     private var isLocked = false
@@ -1875,11 +1883,21 @@ class PlayerActivity : AppCompatActivity() {
                     val wasDragging = pipSwipeDragging
                     val dy = event.rawY - pipSwipeStartY
                     pipSwipeDragging = false
-                    v.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
                     if (wasDragging && dy > 90) {
+                        // Instant reset (not animated) right before the real system
+                        // PiP shrink kicks in — animating back to full size at the
+                        // same time as the system's own shrink animation caused a
+                        // visible snap/flash. See same fix on the video-surface
+                        // swipe handler below for the reasoning.
+                        v.translationY = 0f
+                        v.alpha = 1f
+                        v.scaleX = 1f
+                        v.scaleY = 1f
                         if (!tryEnterPipOnBack()) {
                             showGestureFeedback("PiP is not supported on this device")
                         }
+                    } else {
+                        v.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
                     }
                     wasDragging
                 }
@@ -4067,6 +4085,10 @@ class PlayerActivity : AppCompatActivity() {
         val items = listOf(
             // -- Playback & Queue --
             Triple("Playing Queue", R.drawable.ic_playlist_play, false),
+            // Settings-icon -> "Playback Speed" -> speed panel, YouTube jaisa
+            // flow — badge/topbar wale speedButton se seedha bhi khulta hai,
+            // yeh sirf ussi showSpeedSheet() ka doosra entry-point hai.
+            Triple("Playback Speed", R.drawable.ic_speed_ramp, false),
             Triple("A-B Repeat", R.drawable.ic_ab_repeat, false),
             Triple("Prev Frame", R.drawable.ic_frame_back, false),
             Triple("Next Frame", R.drawable.ic_frame_forward, false),
@@ -4149,6 +4171,7 @@ class PlayerActivity : AppCompatActivity() {
             hideMoreMenu()
             when (label) {
                 "Playing Queue" -> showPlayingQueueDialog()
+                "Playback Speed" -> showSpeedSheet()
                 "Display Settings" -> showDisplaySettingsDialog()
                 "Gesture Settings" -> showGestureSettingsDialog()
                 "Bookmark" -> showBookmarkDialog()
@@ -5767,6 +5790,25 @@ class PlayerActivity : AppCompatActivity() {
                     val deltaY = startY - event.y
                     val deltaX = event.x - startX
 
+                    // Middle-zone downward swipe = shrink-to-PiP, exactly like
+                    // topContainer's gesture but usable from the video itself.
+                    // Sirf beech ke ~40% width mein — left/right zones brightness/
+                    // volume ke liye reserved hi rehte hain, koi conflict nahi.
+                    if (!isSwipingVolume && !isSwipingBrightness) {
+                        val screenWidth = view.width
+                        val inMiddleZone = startX > screenWidth * 0.30f && startX < screenWidth * 0.70f
+                        val downAmount = -deltaY // positive jab neeche ki taraf swipe ho raha ho
+                        if (inMiddleZone && (isSwipingToPipFromVideo || (downAmount > 24 && downAmount > abs(deltaX)))) {
+                            isSwipingToPipFromVideo = true
+                            val progress = (downAmount / 260f).coerceIn(0f, 1f)
+                            playerContainer.translationY = downAmount.coerceIn(0f, 260f)
+                            playerContainer.alpha = 1f - (progress * 0.35f)
+                            playerContainer.scaleX = 1f - (progress * 0.08f)
+                            playerContainer.scaleY = 1f - (progress * 0.08f)
+                            return@setOnTouchListener true
+                        }
+                    }
+
                     if (abs(deltaY) > abs(deltaX) && abs(deltaY) > 20) {
                         val screenWidth = view.width
 
@@ -5806,6 +5848,30 @@ class PlayerActivity : AppCompatActivity() {
                         isLongPressSpeedActive = false
                         player.playbackParameters = PlaybackParameters(speedBeforeLongPress)
                         speedIndicatorBadge.visibility = View.GONE
+                    }
+                    if (isSwipingToPipFromVideo) {
+                        val wasDragging = isSwipingToPipFromVideo
+                        val downAmount = event.y - startY
+                        isSwipingToPipFromVideo = false
+                        if (wasDragging && downAmount > 90) {
+                            // Real system PiP animation le raha hai ab — apna local
+                            // shrink-transform ko ANIMATE karke wapas normal size
+                            // laane ki koshish nahi karte (wo system ke transition
+                            // ke saath collide karke jerky/double-jump dikhta tha).
+                            // Seedha instantly reset karke phir PiP request karo,
+                            // taaki handoff ek hi smooth motion jaisa lage.
+                            playerContainer.translationY = 0f
+                            playerContainer.alpha = 1f
+                            playerContainer.scaleX = 1f
+                            playerContainer.scaleY = 1f
+                            if (!tryEnterPipOnBack()) {
+                                showGestureFeedback("PiP is not supported on this device")
+                            }
+                        } else {
+                            playerContainer.animate()
+                                .translationY(0f).alpha(1f).scaleX(1f).scaleY(1f)
+                                .setDuration(180).start()
+                        }
                     }
                 }
             }
