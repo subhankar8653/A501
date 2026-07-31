@@ -142,6 +142,21 @@
                     android:layout_height="1dp"
                     android:layout_weight="1" />
 
+                <!-- Current quality (jaise "1080p") — tap karke list se badal sakte hain -->
+                <TextView
+                    android:id="@+id/inlineQualityButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="3dp"
+                    android:background="@drawable/bg_icon_circle"
+                    android:foreground="?attr/selectableItemBackgroundBorderless"
+                    android:text="Auto"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
                 <ImageView
                     android:id="@+id/inlineFullscreenButton"
                     android:layout_width="24dp"

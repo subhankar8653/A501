@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    YouTube reference screenshot jaisa top bar: back+title left, seedhe
-    dikhne wale sirf 2 icon right mein — CC (subtitle) aur gear (settings).
-    Audio track / speed / decoder ab gear ke peeche ek chhota menu mein hain.
-    "more" (3-dot) hata diya — wahi kaam neeche wala fullscreen-expand icon
-    already karta hai, do jagah duplicate button rakhne ki zaroorat nahi thi.
+    User ne back-arrow aur title text dono hatane ko kaha — page ka apna back
+    navigation already hai, isliye yeh redundant tha. Audio track ab seedha
+    visible hai (CC ke bagal mein), settings gear se ab neeche wala naya
+    bottom-sheet khulta hai (dekho inline_settings_sheet.xml).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/inlineTopBarRoot"
@@ -17,7 +16,6 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
         android:layout_marginTop="6dp"
         android:layout_marginEnd="6dp"
         android:orientation="horizontal"
@@ -25,33 +23,21 @@
         android:paddingHorizontal="2dp"
         android:paddingVertical="2dp">
 
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
         <ImageView
-            android:id="@+id/inlineBackButton"
+            android:id="@+id/inlineAudioTrackButton"
             android:layout_width="26dp"
             android:layout_height="26dp"
             android:padding="5dp"
-            android:src="@drawable/ic_back"
+            android:src="@drawable/ic_audiotrack"
             android:background="@drawable/bg_icon_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="back" />
+            android:contentDescription="audio track" />
 
-        <TextView
-            android:id="@+id/inlineTitleText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:maxLines="1"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:shadowColor="#CC000000"
-            android:shadowDx="0"
-            android:shadowDy="1"
-            android:shadowRadius="4" />
-
-        <!-- Reference jaisa: CC seedha dikhta hai -->
         <ImageView
             android:id="@+id/inlineSubtitleButton"
             android:layout_width="26dp"
@@ -63,7 +49,6 @@
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="subtitle" />
 
-        <!-- Reference jaisa: gear seedha dikhta hai -->
         <ImageView
             android:id="@+id/inlineSettingsButton"
             android:layout_width="26dp"
@@ -75,15 +60,8 @@
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="settings" />
 
-        <!-- Hidden — gear-menu se performClick() hota hai, logic wahi purana hai -->
-        <ImageView
-            android:id="@+id/inlineAudioTrackButton"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone"
-            android:src="@drawable/ic_audiotrack"
-            android:contentDescription="audio track" />
-
+        <!-- Hidden — settings-sheet ke "Playback speed"/"Decoder" row se
+             performClick() hote hain, logic wahi purana hai -->
         <TextView
             android:id="@+id/inlineSpeedButton"
             android:layout_width="0dp"
