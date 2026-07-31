@@ -1,6 +1,7 @@
 package com.suhani.screen
 
 import android.content.Intent
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.view.GestureDetector
@@ -16,6 +17,8 @@ import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -101,7 +104,6 @@ class MainActivity : AppCompatActivity() {
 
     private val SITE_URL = "https://a501.vercel.app/"
     private val REQUEST_FULLSCREEN_PLAYER = 9001
-    private val SPEEDS = floatArrayOf(0.5f, 1f, 1.25f, 1.5f, 2f)
     private val resizeModes = intArrayOf(
         AspectRatioFrameLayout.RESIZE_MODE_FIT,
         AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH,
@@ -127,11 +129,20 @@ class MainActivity : AppCompatActivity() {
     private var inlineLocked = false
     private var subtitleManuallyDisabled = false
     private var audioManuallyDisabled = false
-    private var speedIndex = 1 // 1.0x default
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
     private var inlineLongPressSpeedActive = false
     private var inlineSpeedBeforeLongPress = 1f
+
+    // Swipe-down-to-PiP on the inline player itself — video ko hold karke
+    // neeche push karne se bhi chevron jaisa hi minimize hota hai.
+    private var inlineSwipeStartX = 0f
+    private var inlineSwipeStartY = 0f
+    private var inlineSwipeDragging = false
+    private val INLINE_DRAG_PIP_THRESHOLD = 90f
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
     private val inlineEqProcessor = EqualizerAudioProcessor()
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
@@ -246,6 +257,7 @@ class MainActivity : AppCompatActivity() {
             val audioTrackButton = root.findViewById<ImageView>(R.id.inlineAudioTrackButton)
             val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
             val settingsButton = root.findViewById<ImageView>(R.id.inlineSettingsButton)
+            val pipChevron = root.findViewById<ImageView>(R.id.inlinePipChevron)
             val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
@@ -275,10 +287,7 @@ class MainActivity : AppCompatActivity() {
             subtitleButton.setOnClickListener { showInlineSubtitleDialog(subtitleButton) }
 
             speedButton.setOnClickListener {
-                speedIndex = (speedIndex + 1) % SPEEDS.size
-                val rate = SPEEDS[speedIndex]
-                inlinePlayer?.playbackParameters = PlaybackParameters(rate)
-                speedButton.text = "${rate}x"
+                showInlineSpeedSheet(speedButton)
             }
 
             audioTrackButton.setOnClickListener { showInlineAudioTrackDialog() }
@@ -296,6 +305,7 @@ class MainActivity : AppCompatActivity() {
             // poori window sirf video hi hai), aur wahi turant real PiP mein chala
             // jaata hai — yahi sahi/kaam karne wala tareeka hai.
             pipButton.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
+            pipChevron.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
 
             lockButton.setOnClickListener {
                 inlineLocked = true
@@ -401,11 +411,49 @@ class MainActivity : AppCompatActivity() {
 
             playerView.setOnTouchListener { _, event ->
                 gestureDetector.onTouchEvent(event)
-                if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-                    if (inlineLongPressSpeedActive) {
-                        inlineLongPressSpeedActive = false
-                        inlinePlayer?.playbackParameters = PlaybackParameters(inlineSpeedBeforeLongPress)
-                        speedBadge.visibility = View.GONE
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        inlineSwipeStartX = event.rawX
+                        inlineSwipeStartY = event.rawY
+                        inlineSwipeDragging = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!inlineLongPressSpeedActive) {
+                            val dy = event.rawY - inlineSwipeStartY
+                            val dx = Math.abs(event.rawX - inlineSwipeStartX)
+                            if (dy > 20 && dy > dx) {
+                                inlineSwipeDragging = true
+                                val progress = (dy / 220f).coerceIn(0f, 1f)
+                                root.translationY = dy.coerceAtMost(220f)
+                                root.alpha = 1f - (progress * 0.35f)
+                                root.scaleX = 1f - (progress * 0.06f)
+                                root.scaleY = 1f - (progress * 0.06f)
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val wasDragging = inlineSwipeDragging
+                        val dy = event.rawY - inlineSwipeStartY
+                        inlineSwipeDragging = false
+                        if (inlineLongPressSpeedActive) {
+                            inlineLongPressSpeedActive = false
+                            inlinePlayer?.playbackParameters = PlaybackParameters(inlineSpeedBeforeLongPress)
+                            speedBadge.visibility = View.GONE
+                        }
+                        if (wasDragging && dy > INLINE_DRAG_PIP_THRESHOLD) {
+                            // Instant reset (not animated) right before handing off to
+                            // the real PiP transition — same reasoning as the fullscreen
+                            // player's swipe fix: animating back to full size at the same
+                            // moment the fullscreen-open + system-PiP shrink kicks in
+                            // caused a visible snap/flash.
+                            root.translationY = 0f
+                            root.alpha = 1f
+                            root.scaleX = 1f
+                            root.scaleY = 1f
+                            openFullscreenFromInline(enterPipImmediately = true)
+                        } else {
+                            root.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
+                        }
                     }
                 }
                 true
@@ -559,7 +607,174 @@ class MainActivity : AppCompatActivity() {
             aspectButton.performClick()
         }
 
+        dialog.setOnShowListener {
+            // Material's BottomSheetDialog wraps our view in its own white
+            // sheet background by default — clear it so only our solid dark
+            // bg_speed_sheet drawable shows (no white edges/corners). This was
+            // the actual reason the panel looked washed-out/whitish before.
+            val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
         dialog.show()
+    }
+
+    // ---------------------------------------------------------------------
+    // Playback speed — same premium dark bottom sheet as the fullscreen
+    // player (current speed badge, -/+ buttons + fine slider, quick preset
+    // pills). Replaces the old "tap the label to cycle" behavior; reached
+    // both directly (tapping the top-bar label) and via the settings sheet's
+    // "Playback speed" row.
+    // ---------------------------------------------------------------------
+    private val inlineSpeedPresets = floatArrayOf(1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+    private val INLINE_SPEED_MIN = 0.25f
+    private val INLINE_SPEED_MAX = 3.0f
+    private val INLINE_SPEED_STEP = 0.05f
+
+    private fun formatInlineSpeedLabel(speed: Float): String {
+        val rounded = Math.round(speed * 100) / 100.0
+        return if (rounded == rounded.toLong().toDouble()) "${rounded.toLong()}.00x"
+        else String.format("%.2fx", rounded)
+    }
+
+    private fun showInlineSpeedSheet(speedButton: TextView) {
+        val player = inlinePlayer ?: return
+        val currentSpeed = try { player.playbackParameters.speed } catch (_: Exception) { 1f }
+        val sheet = BottomSheetDialog(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_speed_sheet)
+            setPadding(dp(22), dp(14), dp(22), dp(26))
+        }
+
+        root.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(4)).apply {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(18)
+            }
+            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_icon_circle)
+            alpha = 0.5f
+        })
+
+        val speedLabel = TextView(this).apply {
+            text = formatInlineSpeedLabel(currentSpeed)
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(18) }
+        }
+        root.addView(speedLabel)
+
+        val steps = Math.round((INLINE_SPEED_MAX - INLINE_SPEED_MIN) / INLINE_SPEED_STEP)
+
+        val sliderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(20) }
+        }
+
+        val minusBtn = TextView(this).apply {
+            text = "−"
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_icon_circle)
+        }
+        val plusBtn = TextView(this).apply {
+            text = "+"
+            textSize = 20f
+            setTextColor(android.graphics.Color.WHITE)
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_icon_circle)
+        }
+        val seek = SeekBar(this).apply {
+            max = steps
+            progress = Math.round((currentSpeed.coerceIn(INLINE_SPEED_MIN, INLINE_SPEED_MAX) - INLINE_SPEED_MIN) / INLINE_SPEED_STEP)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(10)
+                marginEnd = dp(10)
+            }
+            progressTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+            thumbTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+        }
+        sliderRow.addView(minusBtn)
+        sliderRow.addView(seek)
+        sliderRow.addView(plusBtn)
+        root.addView(sliderRow)
+
+        val pillsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val pillViews = mutableListOf<Pair<TextView, Float>>()
+
+        fun refreshPills(selected: Float) {
+            pillViews.forEach { (tv, value) ->
+                val isSel = Math.abs(value - selected) < 0.01f
+                tv.background = androidx.core.content.ContextCompat.getDrawable(
+                    this@MainActivity,
+                    if (isSel) R.drawable.bg_speed_pill_selected else R.drawable.bg_speed_pill
+                )
+                tv.setTextColor(if (isSel) android.graphics.Color.parseColor("#0B0B12") else android.graphics.Color.WHITE)
+            }
+        }
+
+        fun applySpeed(raw: Float, syncSlider: Boolean) {
+            val clamped = raw.coerceIn(INLINE_SPEED_MIN, INLINE_SPEED_MAX)
+            val rounded = Math.round(clamped / INLINE_SPEED_STEP) * INLINE_SPEED_STEP
+            player.playbackParameters = PlaybackParameters(rounded)
+            speedLabel.text = formatInlineSpeedLabel(rounded)
+            speedButton.text = formatInlineSpeedLabel(rounded).let {
+                val f = rounded
+                if (f == f.toLong().toFloat()) "${f.toLong()}x" else String.format("%.2fx", f)
+            }
+            if (syncSlider) seek.progress = Math.round((rounded - INLINE_SPEED_MIN) / INLINE_SPEED_STEP)
+            refreshPills(rounded)
+        }
+
+        inlineSpeedPresets.forEach { s ->
+            val tv = TextView(this).apply {
+                text = if (s == 1f) "Normal" else formatInlineSpeedLabel(s).removeSuffix("0x") + "x"
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(11), 0, dp(11))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (s != inlineSpeedPresets.last()) marginEnd = dp(6)
+                }
+                setOnClickListener { applySpeed(s, syncSlider = true) }
+            }
+            pillViews.add(tv to s)
+            pillsRow.addView(tv)
+        }
+        root.addView(pillsRow)
+        refreshPills(currentSpeed)
+
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                applySpeed(INLINE_SPEED_MIN + progress * INLINE_SPEED_STEP, syncSlider = false)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+        minusBtn.setOnClickListener {
+            applySpeed((player.playbackParameters.speed - INLINE_SPEED_STEP * 5), syncSlider = true)
+        }
+        plusBtn.setOnClickListener {
+            applySpeed((player.playbackParameters.speed + INLINE_SPEED_STEP * 5), syncSlider = true)
+        }
+
+        sheet.setContentView(root)
+        sheet.setOnShowListener {
+            val bottomSheet = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
+        sheet.show()
     }
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
