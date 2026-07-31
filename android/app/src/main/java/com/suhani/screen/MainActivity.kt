@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -81,6 +82,17 @@ class WebAppInterface(private val activity: MainActivity) {
     fun unmount() {
         activity.runOnUiThread { activity.unmountInlinePlayer() }
     }
+
+    // Web page (Player.jsx) yeh call karta hai jab bhi pata chale ki agla/pichla
+    // episode maujood hai ya nahi (series ki Up Next list se) — isse chhote
+    // player ke prev/next button ka enable/dim state sahi rehta hai. Native
+    // khud episode URL nahi jaanta — bas JS ko wapas "next/prev dabaya" bata
+    // deta hai, aur JS apni normal navigate() se episode badal deta hai
+    // (isliye title/Up-Next-list/comments waghera bhi sync rehte hain).
+    @JavascriptInterface
+    fun setAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
+        activity.runOnUiThread { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
+    }
 }
 
 class MainActivity : AppCompatActivity() {
@@ -122,6 +134,24 @@ class MainActivity : AppCompatActivity() {
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
     private var inlineQualitiesJson: String = "[]"
+    private var inlineHasNextEpisode = false
+    private var inlineHasPrevEpisode = false
+    private var inlinePrevButtonRef: ImageButton? = null
+    private var inlineNextButtonRef: ImageButton? = null
+    private var inlinePlayPauseButtonRef: ImageButton? = null
+
+    // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
+    // purane player se hata kar naye player par dobara laga sakein. Bug fix: pehle
+    // do overlapping ImageButtons (exo_play/exo_pause) the jinki visibility Media3
+    // khud toggle karta tha, lekin dono ek saath dikh rahe the — ab sirf ek button
+    // hai aur uska icon yahi listener seedha player ki state se badalta hai.
+    private val inlinePlayPauseListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            inlinePlayPauseButtonRef?.setImageResource(
+                if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow
+            )
+        }
+    }
 
     // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
     // purane player se hata kar naye player par dobara laga sakein.
@@ -289,6 +319,49 @@ class MainActivity : AppCompatActivity() {
                 unlockButton.visibility = View.GONE
             }
 
+            val prevButton = root.findViewById<ImageButton>(R.id.inlinePrevButton)
+            val nextButton = root.findViewById<ImageButton>(R.id.inlineNextButton)
+            val playPauseButton = root.findViewById<ImageButton>(R.id.inlinePlayPauseButton)
+            inlinePrevButtonRef = prevButton
+            inlineNextButtonRef = nextButton
+            inlinePlayPauseButtonRef = playPauseButton
+            applyInlineAdjacentButtonState()
+
+            playPauseButton.setOnClickListener {
+                val p = inlinePlayer ?: return@setOnClickListener
+                if (p.isPlaying) p.pause() else p.play()
+            }
+
+            // Native ko khud episode URL pata nahi hai — bas web page (Player.jsx)
+            // ko bata dete hain "next/prev dabaya", aur wahi apni normal navigate()
+            // se episode badal deta hai. Isse title/comments/Up-Next list sab sync
+            // rehte hain (agar native khud seedha URL switch karta to yeh sab
+            // purane episode ka hi dikhta rehta).
+            prevButton.setOnClickListener {
+                if (inlineHasPrevEpisode) {
+                    webView.evaluateJavascript(
+                        "if (window.__suhaniOnNativePrev) window.__suhaniOnNativePrev();", null
+                    )
+                }
+            }
+            nextButton.setOnClickListener {
+                if (inlineHasNextEpisode) {
+                    webView.evaluateJavascript(
+                        "if (window.__suhaniOnNativeNext) window.__suhaniOnNativeNext();", null
+                    )
+                }
+            }
+
+            // Bottom controls (center row + progress bar) Media3 khud show/hide karta
+            // hai; ab top bar (back/title/CC/gear) ko bhi usi ke saath sync kar dete
+            // hain — pehle yeh alag/independent rehta tha, isliye control-bar hide
+            // hone par bhi upar wali line screen par chipki rehti thi.
+            playerView.setControllerVisibilityListener(
+                PlayerView.ControllerVisibilityListener { visibility ->
+                    if (!inlineLocked) topBarRoot.visibility = visibility
+                }
+            )
+
             // --- Gestures: double-tap ±10s seek, hold-anywhere-for-2x-speed ---
             // Fullscreen ke gestureDetector jaisa hi — bas chhote area ke hisaab
             // se feedback (inlineSeekFeedback pill / inlineSpeedBadge).
@@ -362,6 +435,7 @@ class MainActivity : AppCompatActivity() {
             // ho aur user ne khud-se OFF na kiya ho, to pehla milte hi khud-ba-khud select
             // kar do — warna subtitle button "on" dikhta lekin kuch bhi nahi dikhta.
             it.addListener(inlineTracksListener)
+            it.addListener(inlinePlayPauseListener)
         }
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
         player.prepare()
@@ -372,6 +446,26 @@ class MainActivity : AppCompatActivity() {
         // reuse karna hai — naya player mat banao, buffering dobara nahi hogi.
         SharedPlayerHolder.player = player
         SharedPlayerHolder.uri = uri
+    }
+
+    /** Web page (Player.jsx) se aata hai jab bhi current episode ke agal-bagal
+     *  (Up Next list ke hisaab se) koi episode maujood hai ya nahi — usi se
+     *  chhote player ke prev/next button enable/dim hote hain. */
+    fun updateInlineAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
+        inlineHasNextEpisode = hasNext
+        inlineHasPrevEpisode = hasPrev
+        applyInlineAdjacentButtonState()
+    }
+
+    private fun applyInlineAdjacentButtonState() {
+        inlineNextButtonRef?.apply {
+            isEnabled = inlineHasNextEpisode
+            alpha = if (inlineHasNextEpisode) 1f else 0.35f
+        }
+        inlinePrevButtonRef?.apply {
+            isEnabled = inlineHasPrevEpisode
+            alpha = if (inlineHasPrevEpisode) 1f else 0.35f
+        }
     }
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
@@ -426,12 +520,14 @@ class MainActivity : AppCompatActivity() {
         val wasPlaying = old.playWhenReady
         val previousParams = old.trackSelectionParameters
         old.removeListener(inlineTracksListener)
+        old.removeListener(inlinePlayPauseListener)
         old.release()
         if (SharedPlayerHolder.player === old) SharedPlayerHolder.clear()
 
         val fresh = buildInlineExoPlayer()
         fresh.trackSelectionParameters = previousParams
         fresh.addListener(inlineTracksListener)
+        fresh.addListener(inlinePlayPauseListener)
         inlinePlayer = fresh
         inlinePlayerView?.player = fresh
         SharedPlayerHolder.player = fresh
