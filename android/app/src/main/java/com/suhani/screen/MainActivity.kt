@@ -133,7 +133,6 @@ class MainActivity : AppCompatActivity() {
     private var inlinePlayer: ExoPlayer? = null
     private var inlineOverlay: FrameLayout? = null
     private var inlinePlayerView: PlayerView? = null
-    private var inlineLocked = false
     private var subtitleManuallyDisabled = false
     private var audioManuallyDisabled = false
     private var resizeModeIndex = 0
@@ -344,13 +343,11 @@ class MainActivity : AppCompatActivity() {
             val decoderButton = root.findViewById<TextView>(R.id.inlineDecoderButton)
             val settingsButton = root.findViewById<ImageView>(R.id.inlineSettingsButton)
             val pipChevron = root.findViewById<ImageView>(R.id.inlinePipChevron)
-            val lockButton = playerView.findViewById<ImageView>(R.id.inlineLockButton)
             val pipButton = playerView.findViewById<ImageView>(R.id.inlinePipButton)
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
             val topBarRoot = root.findViewById<View>(R.id.inlineTopBarRoot)
-            val unlockButton = root.findViewById<ImageView>(R.id.inlineUnlockButton)
             inlineQualityButtonRef = qualityButton
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
@@ -361,7 +358,7 @@ class MainActivity : AppCompatActivity() {
             // audio/subtitle ab apne dedicated icon se seedhe kaam karte hain,
             // isliye settings mein nahi hain.
             settingsButton.setOnClickListener {
-                showInlineSettingsSheet(speedButton, decoderButton, pipButton, aspectButton, lockButton)
+                showInlineSettingsSheet(speedButton, decoderButton, pipButton, aspectButton)
             }
             fullscreenButton.setOnClickListener { openFullscreenFromInline() }
 
@@ -392,25 +389,6 @@ class MainActivity : AppCompatActivity() {
             // jaata hai — yahi sahi/kaam karne wala tareeka hai.
             pipButton.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
             pipChevron.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
-
-            lockButton.setOnClickListener {
-                inlineLocked = true
-                playerView.useController = false
-                playerView.hideController()
-                topBarRoot.visibility = View.GONE
-                // Bug fix: sirf useController=false karne se yeh (khud controller
-                // ke andar wala) lock icon reliably hide nahi ho raha tha — ab
-                // explicitly GONE karte hain, bade wale (fullscreen) player jaisa.
-                lockButton.visibility = View.GONE
-                unlockButton.visibility = View.VISIBLE
-            }
-            unlockButton.setOnClickListener {
-                inlineLocked = false
-                playerView.useController = true
-                lockButton.visibility = View.VISIBLE
-                topBarRoot.visibility = View.VISIBLE
-                unlockButton.visibility = View.GONE
-            }
 
             val prevButton = root.findViewById<ImageButton>(R.id.inlinePrevButton)
             val nextButton = root.findViewById<ImageButton>(R.id.inlineNextButton)
@@ -451,7 +429,7 @@ class MainActivity : AppCompatActivity() {
             // hone par bhi upar wali line screen par chipki rehti thi.
             playerView.setControllerVisibilityListener(
                 PlayerView.ControllerVisibilityListener { visibility ->
-                    if (!inlineLocked) topBarRoot.visibility = visibility
+                    topBarRoot.visibility = visibility
                 }
             )
 
@@ -464,7 +442,6 @@ class MainActivity : AppCompatActivity() {
 
             val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
-                    if (inlineLocked) return true
                     val forward = e.x >= playerView.width / 2
                     val p = inlinePlayer ?: return true
                     val max = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
@@ -485,14 +462,12 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (inlineLocked) return true
                     if (playerView.isControllerFullyVisible) playerView.hideController()
                     else playerView.showController()
                     return true
                 }
 
                 override fun onLongPress(e: MotionEvent) {
-                    // Lock mein bhi hold-to-2x allow karte hain, fullscreen jaisa hi.
                     val p = inlinePlayer ?: return
                     inlineLongPressSpeedActive = true
                     inlineSpeedBeforeLongPress = try { p.playbackParameters.speed } catch (_: Exception) { 1f }
@@ -694,8 +669,7 @@ class MainActivity : AppCompatActivity() {
         speedButton: TextView,
         decoderButton: TextView,
         pipButton: ImageView,
-        aspectButton: ImageView,
-        lockButton: ImageView
+        aspectButton: ImageView
     ) {
         val sheetView = LayoutInflater.from(this).inflate(R.layout.inline_settings_sheet, null)
         val container = sheetView.findViewById<ViewGroup>(R.id.inlineSettingsRowsContainer)
@@ -719,9 +693,6 @@ class MainActivity : AppCompatActivity() {
         }
         addRow(R.drawable.ic_settings, "Decoder", decoderButton.text.toString()) {
             decoderButton.performClick()
-        }
-        addRow(R.drawable.ic_lock, "Lock screen", "") {
-            lockButton.performClick()
         }
         addRow(R.drawable.ic_pip, "Picture-in-picture", "") {
             pipButton.performClick()
@@ -1281,7 +1252,7 @@ class MainActivity : AppCompatActivity() {
         super.onUserLeaveHint()
         val overlayVisible = inlineOverlay?.visibility == View.VISIBLE
         val isPlaying = inlinePlayer?.isPlaying == true
-        if (overlayVisible && isPlaying && !inlineLocked) {
+        if (overlayVisible && isPlaying) {
             openFullscreenFromInline(enterPipImmediately = true)
         }
     }
