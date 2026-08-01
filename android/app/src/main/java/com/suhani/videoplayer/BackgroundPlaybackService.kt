@@ -36,6 +36,12 @@ class BackgroundPlaybackService : Service() {
         const val NOTIF_ID = 4821
         const val EXTRA_TITLE = "extra_title"
         const val ACTION_STOP = "com.suhani.videoplayer.action.STOP_BG_PLAYBACK"
+        // Bug fix: pehle "Stop" notification action sirf is service ko background/foreground
+        // se hata deta tha — ExoPlayer ko koi bhi signal nahi jaata tha, isliye video/audio
+        // notification gayab hone ke baad bhi chalta rehta tha (user ko lagta stop ho gaya).
+        // Ab yeh broadcast bhejte hain jise PlayerActivity (jo already ek similar PiP-action
+        // receiver register karta hai) sunkar player ko genuinely pause karega.
+        const val ACTION_PAUSE_PLAYBACK = "com.suhani.videoplayer.action.PAUSE_PLAYBACK_FROM_NOTIFICATION"
 
         fun start(context: Context, title: String) {
             val intent = Intent(context, BackgroundPlaybackService::class.java)
@@ -56,6 +62,8 @@ class BackgroundPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            val pauseIntent = Intent(ACTION_PAUSE_PLAYBACK).setPackage(packageName)
+            sendBroadcast(pauseIntent)
             @Suppress("DEPRECATION")
             stopForeground(true)
             stopSelf()
@@ -96,7 +104,14 @@ class BackgroundPlaybackService : Service() {
             startForeground(NOTIF_ID, notification)
         }
 
-        return START_STICKY
+        // Bug fix: START_STICKY tha — agar OS memory pressure mein is service ko kill
+        // kar de, Android ise thodi der baad khud dobara start karta hai lekin (null
+        // intent ke saath), jisse ek "Background me play ho raha hai" notification
+        // dobara dikh jaati thi jabki actual video/player kabhi ka reset/gone ho chuka
+        // hota — ek "bhoot" notification jo kabhi hatai nahi ja sakti thi. Yeh service
+        // sirf ek zinda Activity/player ka saathi hai, khud se dobara zinda hone ka
+        // koi matlab nahi — isliye START_NOT_STICKY sahi hai.
+        return START_NOT_STICKY
     }
 
     private fun createChannelIfNeeded() {

@@ -160,6 +160,13 @@ class PlayerActivity : AppCompatActivity() {
                     pipSpeedBoosted = !pipSpeedBoosted
                     player.playbackParameters = PlaybackParameters(if (pipSpeedBoosted) 2f else 1f)
                 }
+                // Bug fix: "Background Play" notification ka "Stop" button pehle sirf
+                // notification/service hata deta tha, ExoPlayer chalta rehta tha. Ab
+                // BackgroundPlaybackService yahan yeh broadcast bhejta hai jise sunkar
+                // hum player ko genuinely pause karte hain.
+                BackgroundPlaybackService.ACTION_PAUSE_PLAYBACK -> {
+                    player.playWhenReady = false
+                }
                 else -> return
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -664,6 +671,7 @@ class PlayerActivity : AppCompatActivity() {
             addAction(ACTION_PIP_REWIND)
             addAction(ACTION_PIP_FORWARD)
             addAction(ACTION_PIP_SPEED_TOGGLE)
+            addAction(BackgroundPlaybackService.ACTION_PAUSE_PLAYBACK)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(pipActionReceiver, pipFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -1431,6 +1439,11 @@ class PlayerActivity : AppCompatActivity() {
             )
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
+            // Bug fix: yeh set hi nahi tha, isliye headphone/Bluetooth unplug/disconnect
+            // hone par video/audio turant loud speaker par bajne lagta tha (koi auto-pause
+            // nahi). Ab OS "becoming noisy" broadcast par ExoPlayer khud playWhenReady=false
+            // kar dega.
+            .setHandleAudioBecomingNoisy(true)
             .build()
 
         if (previousTrackSelectionParameters != null) {
