@@ -167,6 +167,15 @@ class PlayerActivity : AppCompatActivity() {
     // tak "yeh genuine PiP close tha" wala fact yaad rakhne ke liye alag,
     // longer-lived flag chahiye.
     private var releasePlayerFullyOnDestroy = false
+    // Jab genuine PiP close (X/swipe) par upar wala fix player ko force-pause
+    // karta hai (background audio-leak rokne ke liye), wahi "playWhenReady"
+    // value niche finish() ke setResult() mein bhi chali jaati thi — matlab
+    // MainActivity ko galat sandesh milta "video pause thi", aur PiP band
+    // karne ke baad wapas app kholne par inline player play hi nahi hota tha
+    // (user maang raha hai: usi duration se play hona chahiye, na ki paused).
+    // Yeh field asli "PiP band hone se pehle video chal rahi thi ya nahi"
+    // yaad rakhta hai, taaki finish() sahi resume_playing value bhej sake.
+    private var resumePlayingIntentOverride: Boolean? = null
 
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
@@ -845,7 +854,22 @@ class PlayerActivity : AppCompatActivity() {
         ).forEach { applyPressScale(it) }
 
         abHandler.post(abRunnable)
-        showAllControls()
+        // Bug fix ("badi wali screen khulti hai fir PiP hoti hai" jhatka, part 2):
+        // pehle yahan hamesha showAllControls() call hota tha — chahe hum turant
+        // (kuch hi ms mein) PiP mein shrink hone hi wale ho (enter_pip_immediately).
+        // Matlab top bar/title/icons ek pal ke liye fade-in hote dikhte the phir
+        // turant PiP shrink ho jaata — isi flash se "pehle bada player khula"
+        // jaisa mehsoos hota tha. Ab is specific case mein controls kabhi dikhaye
+        // hi nahi jaate — sirf raw video frame render hota hai jab tak
+        // enterPipWhenFrameReady() (loadVideoFromIntent() mein) PiP mein le nahi
+        // jaata, taaki koi bhi button/text kabhi ek frame ke liye bhi na dikhe.
+        if (!intent.getBooleanExtra("enter_pip_immediately", false)) {
+            showAllControls()
+        } else {
+            playerView.useController = false
+            topBar.visibility = View.GONE
+            quickActionsScroll.visibility = View.GONE
+        }
 
         featuresHandler.post(ambientGlowRunnable)
         featuresHandler.post(statsForNerdsRunnable)
@@ -6344,7 +6368,14 @@ class PlayerActivity : AppCompatActivity() {
                 RESULT_OK,
                 Intent().apply {
                     putExtra("resume_position_ms", player.currentPosition)
-                    putExtra("resume_playing", player.playWhenReady)
+                    // Bug fix: normally player.playWhenReady abhi ka live state
+                    // reflect karta hai — lekin genuine PiP-close case mein hum
+                    // usse jaan-bujh kar false kar chuke hote hain (background
+                    // audio-leak rokne ke liye). Agar wahi live value yahan bhej
+                    // dete to MainActivity video ko paused hi resume karta —
+                    // isliye agar upar wala override maujood hai (PiP close se
+                    // pehle ka asli intent), usi ko priority do.
+                    putExtra("resume_playing", resumePlayingIntentOverride ?: player.playWhenReady)
                 }
             )
         }
@@ -6434,6 +6465,13 @@ class PlayerActivity : AppCompatActivity() {
                     // stop hoti thi) — player playWhenReady=true hi rehta,
                     // isliye audio chalta rehta tha jabki playerView.player
                     // onDestroy() mein null ho jaane se video black ho jaata.
+                    //
+                    // Lekin niche force-pause karne se pehle asli "chal rahi thi"
+                    // wala intent yaad rakh lo — finish() usi ko MainActivity ko
+                    // bhejega, taaki PiP band karne ke baad jab app dobara khole,
+                    // inline player khud-ba-khud usi jagah se PLAY ho (sirf paused
+                    // position par ruka na rahe) — jaisa maanga gaya hai.
+                    resumePlayingIntentOverride = player.playWhenReady
                     player.playWhenReady = false
                     BackgroundPlaybackService.stop(this)
                     if (SharedPlayerHolder.player === player) {
