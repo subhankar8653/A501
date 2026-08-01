@@ -1,13 +1,105 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/swipe_refresh"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#0B0B0F">
 
-    <WebView
-        android:id="@+id/webview"
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipe_refresh"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent">
 
-</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+        <WebView
+            android:id="@+id/webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Pehla launch / reload ke waqt WebView blank/white dikhta tha jab tak
+         onPageFinished nahi aata — ab tab tak yeh chhota branded loading
+         state dikhta hai (SwipeRefresh ka spinner sirf manual pull-to-refresh
+         par dikhta hai, isliye cold-start ke liye alag se yeh chahiye). -->
+    <LinearLayout
+        android:id="@+id/initialLoadingView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0B0B0F"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="visible">
+
+        <ProgressBar
+            android:id="@+id/initialLoadingSpinner"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:indeterminateTint="#FFFFFF" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:alpha="0.6"
+            android:text="Suhani Screen load ho raha hai…"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+    <!-- Network fail / server down waqt page blank ya browser ka default error
+         dikhta tha, kabhi retry ka koi seedha rasta nahi tha — ab apna dark,
+         branded error state hai jisme ek tap se webView.reload() ho jaata hai. -->
+    <LinearLayout
+        android:id="@+id/loadErrorView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0B0B0F"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚠️"
+            android:textSize="40sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Connect nahi ho paya"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:alpha="0.6"
+            android:gravity="center"
+            android:text="Internet check karke dobara try karein"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/loadErrorRetryButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_retry_button"
+            android:paddingLeft="28dp"
+            android:paddingTop="10dp"
+            android:paddingRight="28dp"
+            android:paddingBottom="10dp"
+            android:text="Retry"
+            android:textAllCaps="false"
+            android:textColor="#0B0B0F"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+
+</FrameLayout>
