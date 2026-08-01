@@ -114,6 +114,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var initialLoadingView: View
+    private lateinit var loadErrorView: View
+    private var hasLoadedOnce = false
 
     // targetSdk 36 par Android forcibly edge-to-edge draw karta hai, isliye status
     // bar ke peeche WebView (aur usi ke upar rakha chhota native player) dono status
@@ -188,6 +191,13 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         swipeRefresh = findViewById(R.id.swipe_refresh)
+        initialLoadingView = findViewById(R.id.initialLoadingView)
+        loadErrorView = findViewById(R.id.loadErrorView)
+        findViewById<View>(R.id.loadErrorRetryButton).setOnClickListener {
+            loadErrorView.visibility = View.GONE
+            initialLoadingView.visibility = View.VISIBLE
+            webView.reload()
+        }
 
         // Edge-to-edge fix: WebView (page content) ko status bar/notch ke neeche se
         // shuru karo, aur wahi status-bar height baad mein inline player ke rect
@@ -209,14 +219,30 @@ class MainActivity : AppCompatActivity() {
         webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                // Reload (retry/pull-to-refresh) par bhi purani error screen turant
+                // hata do, warna spinner ke peeche stale error text dikhta rehta.
+                loadErrorView.visibility = View.GONE
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
+                hasLoadedOnce = true
+                fadeOutLoadingView()
             }
 
             override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
                 super.onReceivedError(view, errorCode, description, failingUrl)
                 swipeRefresh.isRefreshing = false
+                // Pull-to-refresh se aaya error chhota/silent rehne dete hain (user
+                // already jaanta hai wo kya kar raha hai) — sirf pehli/cold load
+                // fail hone par poori-screen branded error+retry dikhate hain.
+                if (!hasLoadedOnce) {
+                    initialLoadingView.visibility = View.GONE
+                    loadErrorView.visibility = View.VISIBLE
+                }
             }
         }
         webView.webChromeClient = WebChromeClient()
@@ -240,6 +266,18 @@ class MainActivity : AppCompatActivity() {
         } else {
             webView.loadUrl(SITE_URL)
         }
+    }
+
+    private fun fadeOutLoadingView() {
+        if (initialLoadingView.visibility != View.VISIBLE) return
+        initialLoadingView.animate()
+            .alpha(0f)
+            .setDuration(220)
+            .withEndAction {
+                initialLoadingView.visibility = View.GONE
+                initialLoadingView.alpha = 1f
+            }
+            .start()
     }
 
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
@@ -483,7 +521,26 @@ class MainActivity : AppCompatActivity() {
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
         player.prepare()
         player.playWhenReady = true
-        inlineOverlay?.visibility = View.VISIBLE
+        // Bug fix / polish: pehle overlay ek jhatke se seedha VISIBLE ho jaata tha
+        // (koi entrance feel nahi thi). Sirf naya mount hone par (already visible
+        // ho to yeh episode-switch hai, wahan animate karne ki zaroorat nahi) ek
+        // chhota scale+fade pop dete hain — same treatment jo fullscreen se wapas
+        // aane par onActivityResult mein already istemal hoti hai, taaki dono
+        // jagah ka feel consistent rahe.
+        inlineOverlay?.let { overlay ->
+            if (overlay.visibility != View.VISIBLE) {
+                overlay.animate().cancel()
+                overlay.alpha = 0f
+                overlay.scaleX = 0.92f
+                overlay.scaleY = 0.92f
+                overlay.visibility = View.VISIBLE
+                overlay.animate()
+                    .alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(200)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
+        }
 
         // PlayerActivity ko bata do ki fullscreen jaate waqt yahi instance
         // reuse karna hai — naya player mat banao, buffering dobara nahi hogi.
@@ -792,8 +849,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun unmountInlinePlayer() {
-        inlineOverlay?.visibility = View.GONE
         inlinePlayer?.pause()
+        inlineOverlay?.let { overlay ->
+            overlay.animate().cancel()
+            overlay.animate()
+                .alpha(0f).scaleX(0.92f).scaleY(0.92f)
+                .setDuration(150)
+                .withEndAction {
+                    overlay.visibility = View.GONE
+                    overlay.alpha = 1f
+                    overlay.scaleX = 1f
+                    overlay.scaleY = 1f
+                }
+                .start()
+        }
     }
 
     /** Fullscreen wale buildPlayer() jaisa hi — FfmpegRenderersFactory (HW/HW+/SW
@@ -1078,10 +1147,45 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    // Bug fix: is Activity mein pehle koi onPause/onResume hi nahi tha. Matlab
+    // agar chhota inline player play ho raha ho aur user Home dabaye ya app
+    // switcher se kahin aur chala jaaye, video/audio background mein chalta
+    // rehta tha (battery/data drain) — aur WebView bhi (JS timers, video decode
+    // waghera) foreground jaisi hi speed se chalta rehta tha. Standard fix:
+    // onPause par dono ko pause karo, onResume par WebView wapas resume karo.
+    override fun onPause() {
+        super.onPause()
+        webView.onPause()
+        inlinePlayer?.pause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.onResume()
+    }
+
+    // Manifest mein MainActivity ke liye android:supportsPictureInPicture="true"
+    // pehle se tha, lekin koi bhi PiP-trigger karne wala code nahi tha — flag
+    // effectively dead thi. Ab agar chhota inline player abhi play ho raha ho
+    // (genuinely video dekhte waqt) aur user Home button dabaye / app switch
+    // kare, to already-built fullscreen+PiP path (jo PiP button/swipe-down se
+    // already kaam karta hai) reuse karke seedha real PiP mein chala jaate hain
+    // — ExoPlayer instance wahi rehta hai (SharedPlayerHolder ke through), koi
+    // naya buffer nahi banta.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val overlayVisible = inlineOverlay?.visibility == View.VISIBLE
+        val isPlaying = inlinePlayer?.isPlaying == true
+        if (overlayVisible && isPlaying && !inlineLocked) {
+            openFullscreenFromInline(enterPipImmediately = true)
+        }
+    }
+
     override fun onDestroy() {
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
         inlinePlayer?.release()
         inlinePlayer = null
+        webView.destroy()
         super.onDestroy()
     }
 }
