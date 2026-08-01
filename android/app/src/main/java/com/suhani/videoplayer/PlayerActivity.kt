@@ -161,6 +161,16 @@ class PlayerActivity : AppCompatActivity() {
     // hui hai (X ya swipe se), isliye chahe usingSharedPlayer ho ya nahi, player
     // ko poori tarah pause + release karo aur SharedPlayerHolder bhi clear karo.
     private var wasInRealPipMode = false
+    // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
+    // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
+    // on-screen rect (pip_src_* extras) yahan store hota hai — pehli hi real PiP
+    // entry ke liye buildPipParams() isi rect ko sourceRectHint banata hai (poori-
+    // screen wale playerView rect ki jagah), taaki system ka shrink animation
+    // seedha usi chhoti jagah se shuru ho jahan video pehle se dikh raha tha. Ek
+    // hi baar consume hota hai — tryEnterPipOnBack() call ke turant baad null kar
+    // diya jaata hai, taaki baad ki (back-button/swipe se) PiP entries hamesha
+    // live fullscreen rect hi use karein.
+    private var pendingImmediatePipSourceRect: Rect? = null
     // onPictureInPictureModeChanged() mein wasInRealPipMode already false ho
     // chuka hota hai jab tak onDestroy() chalta hai (dono alag callbacks hain,
     // life-cycle mein pehla dusre se pehle fire hota hai) — isliye onDestroy()
@@ -899,6 +909,7 @@ class PlayerActivity : AppCompatActivity() {
             // honour zaroor honi chahiye (warna dobara PiP button dabana silently
             // kuch na kare, aisa nahi hona chahiye).
             if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+                pendingImmediatePipSourceRect = readPipSourceRectExtra()
                 enterPipWhenFrameReady()
             }
             return
@@ -987,8 +998,22 @@ class PlayerActivity : AppCompatActivity() {
         // (dekho uska comment) taaki shrink animation shuru hote hi video already
         // visible ho, black-frame flash na dikhe.
         if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+            pendingImmediatePipSourceRect = readPipSourceRectExtra()
             enterPipWhenFrameReady()
         }
+    }
+
+    // MainActivity se aaya chhote inline player ka on-screen rect (agar hai) parse
+    // karta hai — dekho pendingImmediatePipSourceRect field ka comment.
+    private fun readPipSourceRectExtra(): Rect? {
+        val left = intent.getIntExtra("pip_src_left", Int.MIN_VALUE)
+        if (left == Int.MIN_VALUE) return null
+        val top = intent.getIntExtra("pip_src_top", Int.MIN_VALUE)
+        val right = intent.getIntExtra("pip_src_right", Int.MIN_VALUE)
+        val bottom = intent.getIntExtra("pip_src_bottom", Int.MIN_VALUE)
+        if (top == Int.MIN_VALUE || right == Int.MIN_VALUE || bottom == Int.MIN_VALUE) return null
+        if (right <= left || bottom <= top) return null
+        return Rect(left, top, right, bottom)
     }
 
     // Bug fix: PlayerActivity ab manifest mein "singleTask" hai (see AndroidManifest), isliye
@@ -6272,11 +6297,16 @@ class PlayerActivity : AppCompatActivity() {
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
         if (!::player.isInitialized) return false
         if (isInPictureInPictureMode) return false
-        return try {
+        val result = try {
             enterPictureInPictureMode(buildPipParams().build())
         } catch (_: Exception) {
             false
         }
+        // Sirf pehli (direct-from-inline) PiP entry ke liye tha — consume ho gaya,
+        // ab se hamesha live fullscreen rect hi use hona chahiye (dekho field
+        // comment).
+        pendingImmediatePipSourceRect = null
+        return result
     }
 
     private fun buildPipParams(): PictureInPictureParams.Builder {
@@ -6288,14 +6318,27 @@ class PlayerActivity : AppCompatActivity() {
         // ke andar jahan actual video content hai, letterbox bars ke bina) se seedha
         // shrink karta hai — bilkul YouTube jaisa smooth "video hi shrink ho raha hai"
         // feel deta hai.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && ::playerView.isInitialized) {
-            try {
-                val videoRect = Rect()
-                playerView.getGlobalVisibleRect(videoRect)
-                if (videoRect.width() > 0 && videoRect.height() > 0) {
-                    builder.setSourceRectHint(videoRect)
-                }
-            } catch (_: Exception) {}
+        //
+        // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): jab yeh chhote
+        // inline player se turant PiP (enter_pip_immediately) ke through aaya ho, to
+        // is poore-screen wale playerView rect ki jagah ORIGINAL chhote inline player
+        // ka on-screen rect (pendingImmediatePipSourceRect, MainActivity se aaya) use
+        // karo. Isse system ka shrink animation seedha usi chhoti jagah se shuru hota
+        // hai jahan video pehle se dikh raha tha — poori screen kabhi flash nahi hoti,
+        // ek hi continuous "chhota video seedha PiP corner tak shrink" motion dikhta hai.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val immediateRect = pendingImmediatePipSourceRect
+            if (immediateRect != null && immediateRect.width() > 0 && immediateRect.height() > 0) {
+                try { builder.setSourceRectHint(immediateRect) } catch (_: Exception) {}
+            } else if (::playerView.isInitialized) {
+                try {
+                    val videoRect = Rect()
+                    playerView.getGlobalVisibleRect(videoRect)
+                    if (videoRect.width() > 0 && videoRect.height() > 0) {
+                        builder.setSourceRectHint(videoRect)
+                    }
+                } catch (_: Exception) {}
+            }
         }
         if (::player.isInitialized) {
             val vw = player.videoSize.width
