@@ -55,3 +55,40 @@ html, body, #root {
 .animate-skip-pulse {
   animation: skip-pulse 0.6s ease-out;
 }
+
+/* Route change / tab-switch entrance — keeps navigation from feeling like
+   a hard jump-cut. Kept subtle (short + small offset) so it never feels
+   like it's in the way of getting to content. */
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-fade-in {
+  animation: page-fade-in 260ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+/* Poster-card stagger entrance in rails. Each card gets a small
+   animation-delay (set inline per card) so a row fills in left-to-right
+   instead of every poster popping in at once. */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-card-in {
+  animation: card-in 320ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+/* Small feedback toast (e.g. "Link copied") */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-toast-in {
+  animation: toast-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-fade-in, .animate-card-in, .animate-toast-in, .animate-skip-pulse {
+    animation: none !important;
+  }
+}

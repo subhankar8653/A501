@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getConfig } from './api'
 import Navbar from './components/Navbar'
@@ -17,10 +18,23 @@ function RequireConfig({ children }) {
 function ChromeForRoute({ children }) {
   const { pathname } = useLocation()
   const hideChrome = pathname.startsWith('/watch/') || pathname.startsWith('/title/')
+
+  // React Router doesn't reset scroll position on navigation by itself —
+  // without this, going Home (scrolled halfway down a rail) -> a title's
+  // Detail page landed you mid-page on the new page too, looking broken.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
   return (
     <>
       {!hideChrome && <Navbar />}
-      {children}
+      {/* key={pathname} remounts on every route change, which is what
+          drives the page-fade-in entrance below — a plain className alone
+          wouldn't replay since the div itself never actually unmounts. */}
+      <div key={pathname} className="page-fade-in">
+        {children}
+      </div>
     </>
   )
 }
