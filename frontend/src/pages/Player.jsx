@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getStreams, getMeta } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
+import BackButton from '../components/BackButton'
 import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
@@ -67,12 +68,19 @@ export default function Player() {
 
   const [downloading, setDownloading] = useState(false)
   const [dlProgress, setDlProgress] = useState(0)
+  const [retryKey, setRetryKey] = useState(0)
+  const [toast, setToast] = useState('')
   // Continuously tracks current playback position so that switching quality
   // mid-video can resume from the same spot instead of restarting.
   const resumeAt = useRef(0)
 
   function switchQuality(stream) {
     setActive(stream)
+  }
+
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2000)
   }
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function Player() {
         setActive(list[0])
       })
       .catch(() => setError('Stream load nahi hui.'))
-  }, [type, id])
+  }, [type, id, retryKey])
 
   useEffect(() => {
     if (!isSeries) {
@@ -231,14 +239,29 @@ export default function Player() {
     if (navigator.share) {
       navigator.share({ title: meta.filename, url: window.location.href }).catch(() => {})
     } else {
-      navigator.clipboard?.writeText(window.location.href).catch(() => {})
+      navigator.clipboard
+        ?.writeText(window.location.href)
+        .then(() => showToast('Link copied!'))
+        .catch(() => {})
     }
   }
 
   return (
     <div className="max-w-3xl mx-auto py-6">
+      <div className="px-4 sm:px-6 mb-3">
+        <BackButton variant="inline" />
+      </div>
+
       {error ? (
-        <p className="text-reel-rust px-4 sm:px-6">{error}</p>
+        <div className="px-4 sm:px-6">
+          <p className="text-reel-rust mb-3">{error}</p>
+          <button
+            onClick={() => setRetryKey((k) => k + 1)}
+            className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
+          >
+            Retry
+          </button>
+        </div>
       ) : !active ? (
         <div className="aspect-video bg-reel-surface2 animate-pulse" />
       ) : (
@@ -274,7 +297,9 @@ export default function Player() {
           <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
             <button
               onClick={() => react('like')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+              aria-label="Like"
+              aria-pressed={reactions.mine === 'like'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 active:scale-95 transition ${
                 reactions.mine === 'like' ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
               }`}
             >
@@ -283,7 +308,9 @@ export default function Player() {
             </button>
             <button
               onClick={() => react('dislike')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 ${
+              aria-label="Dislike"
+              aria-pressed={reactions.mine === 'dislike'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 active:scale-95 transition ${
                 reactions.mine === 'dislike' ? 'bg-reel-rust text-reel-ink font-semibold' : 'bg-reel-surface2 text-reel-muted'
               }`}
             >
@@ -293,8 +320,9 @@ export default function Player() {
             <button
               onClick={downloadFile}
               disabled={downloading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink disabled:opacity-70"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition disabled:opacity-70"
               title="Download"
+              aria-label="Download"
             >
               {downloading ? (
                 <>
@@ -308,12 +336,21 @@ export default function Player() {
                 </>
               )}
             </button>
-            <button onClick={shareIt} className="p-2 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink" title="Share">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-            </button>
+            <div className="relative shrink-0">
+              <button onClick={shareIt} aria-label="Share" className="p-2 rounded-full text-xs bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition" title="Share">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+              </button>
+              {toast ? (
+                <div className="animate-toast-in absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-reel-ink text-reel-bg font-semibold px-2.5 py-1 rounded-full z-10">
+                  {toast}
+                </div>
+              ) : null}
+            </div>
             <button
               onClick={toggleSaved}
-              className={`p-2 rounded-full text-xs shrink-0 ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
+              aria-label={saved ? 'Remove from saved' : 'Save'}
+              aria-pressed={saved}
+              className={`p-2 rounded-full text-xs shrink-0 active:scale-95 transition ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
               title="Save"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
@@ -332,7 +369,8 @@ export default function Player() {
                 <h2 className="font-display text-lg text-reel-ink">Up Next · {upNext.label}</h2>
                 <button
                   onClick={toggleAutoplay}
-                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full shrink-0 transition ${
+                  aria-pressed={autoplay}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full shrink-0 active:scale-95 transition ${
                     autoplay ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
                   }`}
                 >
@@ -345,11 +383,12 @@ export default function Player() {
                   <button
                     key={ep.id}
                     onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
-                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 transition rounded-lg p-3 ring-1 ring-white/5"
+                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-white/5"
                   >
                     <img
                       src={ep.thumbnail}
                       alt={ep.title}
+                      loading="lazy"
                       className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
                     />
                     <div className="min-w-0">

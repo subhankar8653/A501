@@ -63,7 +63,7 @@ export default function Setup() {
           <button
             type="submit"
             disabled={checking}
-            className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-2.5 text-sm hover:brightness-110 transition disabled:opacity-60"
+            className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-2.5 text-sm hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60"
           >
             {checking ? 'Connecting…' : 'Continue'}
           </button>
