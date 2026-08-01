@@ -140,6 +140,34 @@ class PlayerActivity : AppCompatActivity() {
     // enterPipWhenFrameReady() ka comment neeche.
     private var pipEntryFrameListener: Player.Listener? = null
 
+    // Bug fix (PiP band karne ke baad black screen + audio chalte rehna): pehle
+    // "isFinishing" akela hi signal tha ye decide karne ke liye ki player ko
+    // pause/release karna hai ya nahi — lekin wahi signal do bilkul alag cases
+    // mein aata hai: (1) normal back-navigation jab usingSharedPlayer hai (yahan
+    // MainActivity turant onActivityResult() mein player wapas le leta hai,
+    // isliye yahan chhedna nahi chahiye), aur (2) system PiP window ka "X"/
+    // swipe-away close (yahan koi bhi MainActivity player wapas nahi le raha —
+    // playback poori tarah rukni chahiye). Pehle dono cases ek jaisa treat hote
+    // the, isliye case (2) mein shared player na to pause hota tha na release —
+    // sirf playerView se detach hota tha, jabki playWhenReady=true hi reh jaata
+    // tha. Result: player background mein audio decode/play karta rehta (isliye
+    // audio sunayi deta) lekin kisi surface se attached nahi hota (isliye
+    // black), aur SharedPlayerHolder bhi isi tooti hui instance ko pakde rehta —
+    // isi wajah se wahi video dobara khola jaaye to naya PlayerActivity usi
+    // orphan player ko reuse karne ki koshish karta aur black screen dikhta
+    // rehta.
+    // Fix: track karo ki hum abhi-abhi real PiP mode mein the ya nahi — agar
+    // haan, to "false + isFinishing" callback ka matlab hai PiP genuinely band
+    // hui hai (X ya swipe se), isliye chahe usingSharedPlayer ho ya nahi, player
+    // ko poori tarah pause + release karo aur SharedPlayerHolder bhi clear karo.
+    private var wasInRealPipMode = false
+    // onPictureInPictureModeChanged() mein wasInRealPipMode already false ho
+    // chuka hota hai jab tak onDestroy() chalta hai (dono alag callbacks hain,
+    // life-cycle mein pehla dusre se pehle fire hota hai) — isliye onDestroy()
+    // tak "yeh genuine PiP close tha" wala fact yaad rakhne ke liye alag,
+    // longer-lived flag chahiye.
+    private var releasePlayerFullyOnDestroy = false
+
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -234,7 +262,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var bottomPipButton: ImageView
     private lateinit var bottomAspectButton: ImageView
     private lateinit var backButton: ImageView
-    private lateinit var pipChevronButton: ImageView
+
     private lateinit var topContainer: LinearLayout
     private lateinit var playerTitleText: TextView
     // Swipe-down-to-PiP: video ko hold karke neeche push karne se bhi mini
@@ -717,7 +745,6 @@ class PlayerActivity : AppCompatActivity() {
         lockButton = findViewById(R.id.lockButton)
         unlockButton = findViewById(R.id.unlockButton)
         bottomPipButton = findViewById(R.id.bottomPipButton)
-        pipChevronButton = findViewById(R.id.pipChevronButton)
         topContainer = findViewById(R.id.topContainer)
         bottomAspectButton = findViewById(R.id.bottomAspectButton)
         backButton = findViewById(R.id.backButton)
@@ -781,7 +808,13 @@ class PlayerActivity : AppCompatActivity() {
 
         loadVideoFromIntent()
 
-        backButton.setOnClickListener { if (!tryEnterPipOnBack()) finish() }
+        // Bug fix: top-left corner mein pehle 2 icons the (back arrow +
+        // dedicated chevron), dono hi PiP khol dete the — duplicate tha, ek
+        // hata diya gaya hai (dekho activity_player.xml, pipChevronButton
+        // hata diya). Bacha hua back button ab seedha peeche/wapas jaata hai
+        // (jahan se fullscreen open kiya tha), PiP nahi kholta — PiP ke liye
+        // bottomPipButton ya neeche-swipe gesture use karo.
+        backButton.setOnClickListener { finish() }
 
         speedButton.setOnClickListener { showSpeedSheet() }
 
@@ -1894,13 +1927,6 @@ class PlayerActivity : AppCompatActivity() {
         // dabane par khulta hai.
         bottomPipButton.setImageResource(R.drawable.ic_pip)
         bottomPipButton.setOnClickListener {
-            if (!tryEnterPipOnBack()) {
-                showGestureFeedback("PiP is not supported on this device")
-            }
-        }
-
-        // Chevron-down icon (top-left) -> same PiP.
-        pipChevronButton.setOnClickListener {
             if (!tryEnterPipOnBack()) {
                 showGestureFeedback("PiP is not supported on this device")
             }
@@ -5582,14 +5608,13 @@ class PlayerActivity : AppCompatActivity() {
         if (isLocked) return
         playerView.showController()
         fadeInView(topBar)
-        // BUG FIX: quickActionsScroll (speed/decoder/PiP/aspect/lock icons ki row)
-        // pehle sirf fadeOutView() se GONE hoti thi (hide-timeout par, aur PiP mode
-        // mein jaate waqt) lekin yahan kabhi wapas fadeInView nahi hoti thi — isliye
-        // ek baar hide hone ke baad (ya kisi bhi PiP round-trip ke baad) yeh row
-        // permanently gayab reh jaati thi. Ab topBar jaisa hi wapas fade-in.
-        fadeInView(quickActionsScroll)
-        // Side dock hata diya gaya hai (uske icons ab More menu mein hain),
-        // isliye ise kabhi VISIBLE nahi karna — permanently hidden rehta hai.
+        // Bug fix: side dock (equalizer/screenshot/cast/rotate/aspect icons ki
+        // vertical strip) yahan pehle galti se fadeInView(quickActionsScroll) se
+        // wapas VISIBLE ho jaata tha. Ye poora dock jaan-bujh kar hata diya gaya
+        // tha kyunki iske saare icons ab three-dot (More) menu ke andar duplicate
+        // maujood hain — isliye ise yahan kabhi wapas visible nahi karna,
+        // permanently hidden rehta hai (quickActionsScroll layout mein bhi
+        // visibility="gone" hai).
         hideSystemBars()
         controlsHandler.removeCallbacks(hideControlsRunnable)
         controlsHandler.postDelayed(hideControlsRunnable, currentHideTimeoutMs())
@@ -6354,6 +6379,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (isInPictureInPictureMode) {
+            wasInRealPipMode = true
             // Chhote floating window mein hamara bhaara-bharkam custom UI (top
             // bar, quick actions, gesture overlays) dikhana theek nahi — sab
             // chhupa do, sirf video + system ka apna minimal play/pause chrome.
@@ -6368,6 +6394,12 @@ class PlayerActivity : AppCompatActivity() {
             brightnessSliderContainer.visibility = View.GONE
             playerView.useController = false
         } else {
+            // Ye batata hai ki hum abhi-abhi genuine PiP window se bahar aaye
+            // hain (X ya swipe-away close) — normal back-navigation handoff mein
+            // yeh flag kabhi true nahi hota kyunki wahan PiP mode mein gaye hi
+            // nahi the.
+            val pipWasJustClosed = wasInRealPipMode
+            wasInRealPipMode = false
             // Wapas full-size par aane par controls/controller dobara enable karo.
             playerView.useController = true
             if (::topBar.isInitialized) showAllControls()
@@ -6393,7 +6425,22 @@ class PlayerActivity : AppCompatActivity() {
             // state) ab MainActivity ke onActivityResult() ko de diya gaya hai,
             // wahi isko sambhalega. Sirf apni foreground service band karo.
             if (isFinishing && ::player.isInitialized) {
-                if (usingSharedPlayer) {
+                if (pipWasJustClosed) {
+                    // Genuine PiP close (X button ya swipe-away): koi bhi
+                    // MainActivity is player ko wapas nahi le raha, isliye
+                    // playback poori tarah rukni chahiye — chahe player shared
+                    // ho ya na ho. Bug fix se pehle yahan usingSharedPlayer
+                    // hone par player pause hi nahi hota tha (sirf service
+                    // stop hoti thi) — player playWhenReady=true hi rehta,
+                    // isliye audio chalta rehta tha jabki playerView.player
+                    // onDestroy() mein null ho jaane se video black ho jaata.
+                    player.playWhenReady = false
+                    BackgroundPlaybackService.stop(this)
+                    if (SharedPlayerHolder.player === player) {
+                        SharedPlayerHolder.clear()
+                    }
+                    releasePlayerFullyOnDestroy = true
+                } else if (usingSharedPlayer) {
                     BackgroundPlaybackService.stop(this)
                 } else {
                     player.playWhenReady = false
@@ -6574,13 +6621,21 @@ class PlayerActivity : AppCompatActivity() {
             pipEntryFrameListener = null
             player.removeListener(playerListener)
             player.removeAnalyticsListener(statsAnalyticsListener)
-            if (usingSharedPlayer) {
+            if (usingSharedPlayer && !releasePlayerFullyOnDestroy) {
                 // MainActivity ka inline player hai — release nahi karna, wahi isi
                 // instance ko wapas apne overlay mein istemal karega. Bas playerView
                 // se detach kar do taaki is (ab destroy ho rahi) Activity ka koi
                 // reference player par bacha na rahe.
                 playerView.player = null
             } else {
+                // Bug fix (PiP band karne ke baad black screen + audio chalte
+                // rehna, phir wahi video dobara khola jaaye to bhi black screen):
+                // agar yeh genuine PiP close (X/swipe) hai to shared player hone
+                // ke bawajood ise poori tarah release karo aur SharedPlayerHolder
+                // (upar wale block mein) pehle hi clear ho chuka hai — taaki agli
+                // baar wahi video khulne par ek bilkul fresh player bane, kisi
+                // orphaned/broken instance ko reuse na kiya jaaye.
+                playerView.player = null
                 player.release()
             }
         }
