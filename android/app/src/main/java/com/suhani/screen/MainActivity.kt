@@ -337,6 +337,14 @@ class MainActivity : AppCompatActivity() {
         if (inlineOverlay == null) {
             val root = LayoutInflater.from(this).inflate(R.layout.inline_player_view, null) as FrameLayout
             val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
+            // Bug fix (PiP/fullscreen se wapas aane par ek pal ke liye black frame
+            // flash hota tha): default behavior mein PlayerView player badalte/
+            // reattach hote hi apna last-drawn frame turant clear kar deta hai, chahe
+            // wahi (ya ek naya, sahi position wala) player turant dobara attach ho
+            // raha ho. Isse setKeepContentOnPlayerReset(true) karne se woh last frame
+            // tab tak dikhta rehta hai jab tak naya frame render nahi ho jaata —
+            // koi visible black-flash nahi, seedha smooth continuation.
+            playerView.setKeepContentOnPlayerReset(true)
             val speedButton = root.findViewById<TextView>(R.id.inlineSpeedButton)
             val subtitleButton = root.findViewById<ImageView>(R.id.inlineSubtitleButton)
             val audioTrackButton = root.findViewById<ImageView>(R.id.inlineAudioTrackButton)
