@@ -142,24 +142,19 @@ class PlayerActivity : AppCompatActivity() {
 
     // Bug fix (PiP band karne ke baad black screen + audio chalte rehna): pehle
     // "isFinishing" akela hi signal tha ye decide karne ke liye ki player ko
-    // pause/release karna hai ya nahi — lekin wahi signal do bilkul alag cases
-    // mein aata hai: (1) normal back-navigation jab usingSharedPlayer hai (yahan
+    // pause karna hai ya nahi — lekin wahi signal do bilkul alag cases mein
+    // aata hai: (1) normal back-navigation jab usingSharedPlayer hai (yahan
     // MainActivity turant onActivityResult() mein player wapas le leta hai,
     // isliye yahan chhedna nahi chahiye), aur (2) system PiP window ka "X"/
-    // swipe-away close (yahan koi bhi MainActivity player wapas nahi le raha —
-    // playback poori tarah rukni chahiye). Pehle dono cases ek jaisa treat hote
-    // the, isliye case (2) mein shared player na to pause hota tha na release —
-    // sirf playerView se detach hota tha, jabki playWhenReady=true hi reh jaata
-    // tha. Result: player background mein audio decode/play karta rehta (isliye
-    // audio sunayi deta) lekin kisi surface se attached nahi hota (isliye
-    // black), aur SharedPlayerHolder bhi isi tooti hui instance ko pakde rehta —
-    // isi wajah se wahi video dobara khola jaaye to naya PlayerActivity usi
-    // orphan player ko reuse karne ki koshish karta aur black screen dikhta
-    // rehta.
+    // swipe-away close (yahan bhi MainActivity turant player wapas le lega,
+    // BAS agar app ke bahar / kisi doosre app mein PiP band ki gayi hai to
+    // audio background mein leak na ho, isliye pause zaroor karo).
     // Fix: track karo ki hum abhi-abhi real PiP mode mein the ya nahi — agar
     // haan, to "false + isFinishing" callback ka matlab hai PiP genuinely band
-    // hui hai (X ya swipe se), isliye chahe usingSharedPlayer ho ya nahi, player
-    // ko poori tarah pause + release karo aur SharedPlayerHolder bhi clear karo.
+    // hui hai (X ya swipe se): player ko turant pause karo (audio-leak na ho),
+    // LEKIN release/SharedPlayerHolder-clear MAT karo (dekho niche wala
+    // onPictureInPictureModeChanged() ka comment — release karne se MainActivity
+    // ko naya ExoPlayer banana padta, jisse black-screen/buffering dikhti thi).
     private var wasInRealPipMode = false
     // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
     // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
@@ -6500,27 +6495,27 @@ class PlayerActivity : AppCompatActivity() {
             // wahi isko sambhalega. Sirf apni foreground service band karo.
             if (isFinishing && ::player.isInitialized) {
                 if (pipWasJustClosed) {
-                    // Genuine PiP close (X button ya swipe-away): koi bhi
-                    // MainActivity is player ko wapas nahi le raha, isliye
-                    // playback poori tarah rukni chahiye — chahe player shared
-                    // ho ya na ho. Bug fix se pehle yahan usingSharedPlayer
-                    // hone par player pause hi nahi hota tha (sirf service
-                    // stop hoti thi) — player playWhenReady=true hi rehta,
-                    // isliye audio chalta rehta tha jabki playerView.player
-                    // onDestroy() mein null ho jaane se video black ho jaata.
+                    // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
+                    // kaala/black screen reh jaata hai"): pehle yahan genuine PiP
+                    // close (X/swipe) par SharedPlayerHolder.clear() + poora player
+                    // release() (onDestroy() mein, releasePlayerFullyOnDestroy se) ho
+                    // jaata tha. Iska matlab MainActivity.onActivityResult() ko ab
+                    // wahi zinda instance milta hi nahi (SharedPlayerHolder khaali),
+                    // isliye woh mountInlinePlayer() se ek BILKUL NAYA ExoPlayer
+                    // banata — fresh network buffer/decoder init se shuru — result:
+                    // user ko kuch second (ya poora) black/frozen screen dikhta,
+                    // "video wapas nahi chala" jaisa mehsoos hota.
                     //
-                    // Lekin niche force-pause karne se pehle asli "chal rahi thi"
-                    // wala intent yaad rakh lo — finish() usi ko MainActivity ko
-                    // bhejega, taaki PiP band karne ke baad jab app dobara khole,
-                    // inline player khud-ba-khud usi jagah se PLAY ho (sirf paused
-                    // position par ruka na rahe) — jaisa maanga gaya hai.
+                    // Fix: player ko pause zaroor karo (audio background mein leak
+                    // na ho, purana bug), lekin ise release/clear MAT karo — SharedPlayerHolder
+                    // mein zinda rehne do. MainActivity.onActivityResult() apne
+                    // existing check (SharedPlayerHolder.player != null && uri match)
+                    // se isi already-buffered instance ko turant reuse kar lega —
+                    // koi naya buffer/black-frame nahi, seedha wahi frame jahan
+                    // pause hua tha, instantly resume.
                     resumePlayingIntentOverride = player.playWhenReady
                     player.playWhenReady = false
                     BackgroundPlaybackService.stop(this)
-                    if (SharedPlayerHolder.player === player) {
-                        SharedPlayerHolder.clear()
-                    }
-                    releasePlayerFullyOnDestroy = true
                 } else if (usingSharedPlayer) {
                     BackgroundPlaybackService.stop(this)
                 } else {
