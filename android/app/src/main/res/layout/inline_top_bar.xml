@@ -4,6 +4,12 @@
     navigation already hai, isliye yeh redundant tha. Audio track ab seedha
     visible hai (CC ke bagal mein), settings gear se ab neeche wala naya
     bottom-sheet khulta hai (dekho inline_settings_sheet.xml).
+
+    Bug fix (YouTube ke saamne "ajeeb"/cluttered lagta tha): har icon ke peeche
+    ek chhota gradient+border "chip" (bg_icon_circle) tha — YouTube ka player
+    icons plain rakhta hai, sirf top gradient (bg_top_gradient) se contrast
+    milta hai. Ab chip backgrounds hata diye — sirf icon + borderless ripple,
+    thoda bada size — clean/flat look.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/inlineTopBarRoot"
@@ -17,12 +23,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:layout_marginStart="6dp"
-        android:layout_marginEnd="6dp"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="2dp"
-        android:paddingVertical="2dp">
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="4dp">
 
         <!-- Chevron-down: shrinks the inline player into PiP, matching the
              fullscreen player's dedicated icon. User specifically asked for
@@ -30,11 +36,10 @@
              existed but was hidden, settings-menu-only). -->
         <ImageView
             android:id="@+id/inlinePipChevron"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:padding="5dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
             android:src="@drawable/ic_chevron_down_pip"
-            android:background="@drawable/bg_icon_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="minimize to mini player" />
 
@@ -45,33 +50,28 @@
 
         <ImageView
             android:id="@+id/inlineAudioTrackButton"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:padding="5dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
             android:src="@drawable/ic_audiotrack"
-            android:background="@drawable/bg_icon_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="audio track" />
 
         <ImageView
             android:id="@+id/inlineSubtitleButton"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="4dp"
-            android:padding="5dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
             android:src="@drawable/ic_subtitle"
-            android:background="@drawable/bg_icon_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="subtitle" />
 
         <ImageView
             android:id="@+id/inlineSettingsButton"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="4dp"
-            android:padding="5dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
             android:src="@drawable/ic_settings"
-            android:background="@drawable/bg_icon_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="settings" />
 

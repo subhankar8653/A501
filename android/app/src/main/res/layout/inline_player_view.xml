@@ -51,19 +51,7 @@
         android:textSize="10sp"
         android:visibility="gone" />
 
-    <!-- Lock hone par yahi dikhta hai — baaki sab (top bar/bottom controls)
-         chhup jaate hain, tap karke unlock ho jaata hai. -->
-    <ImageView
-        android:id="@+id/inlineUnlockButton"
-        android:layout_width="30dp"
-        android:layout_height="30dp"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="8dp"
-        android:padding="6dp"
-        android:src="@drawable/ic_lock"
-        android:background="@drawable/bg_icon_circle"
-        android:foreground="?attr/selectableItemBackgroundBorderless"
-        android:visibility="gone"
-        android:contentDescription="unlock" />
+    <!-- Lock feature hata di gayi hai (user ne kaha ki iska icon "ajeeb"
+         lagta tha) — inlineUnlockButton yahan pehle tha. -->
 
 </FrameLayout>

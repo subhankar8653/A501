@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    YouTube reference jaisa bottom area:
+    YouTube reference jaisa clean bottom area:
       - beech mein plain (bina circle-chip ke) prev/play-pause/next, bade aur
         khule spaced — reference screenshot ke exact jaisa
-      - sabse neeche: time text (left) + fullscreen-expand (right) ek line mein,
-        aur uske bilkul niche edge-to-edge patli progress line (bina padding/pill)
-      - Lock bottom-left corner mein, chhota aur subtle
+      - sabse neeche: time text (left) + quality + fullscreen-expand (right)
+        ek line mein, aur uske bilkul niche edge-to-edge patli progress line
+        (bina padding/pill)
+      - Bug fix ("ajeeb"/cluttered lagta tha): quality/fullscreen ab plain
+        icon+text hain — chip-background (bg_icon_circle) hata diya, sirf
+        bottom gradient se contrast milta hai, YouTube jaisa flat look
+      - Lock button poori tarah hata diya gaya hai (user ne khud maanga —
+        iski wajah se UI "ajeeb" lagti thi)
       - Pip/Aspect ab yahan clutter nahi karte — settings (gear) menu mein chale
         gaye hain (reference mein bhi yeh seedhe visible nahi hote)
     exo_progress/exo_position/exo_duration ke ids wahi purane hain (Media3 khud
@@ -75,29 +80,18 @@
 
     </LinearLayout>
 
-    <!-- Bottom strip: lock (bottom-left, subtle), time text + expand icon, then
-         a flush full-width progress line right at the very edge -->
+    <!-- Bottom strip: time text + expand icon, then a flush full-width
+         progress line right at the very edge. Lock button hata diya gaya hai
+         (YouTube reference jaisa clean look ke liye user ne khud maanga). -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_bottom_gradient">
 
-        <ImageView
-            android:id="@+id/inlineLockButton"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_gravity="bottom|start"
-            android:layout_margin="6dp"
-            android:padding="5dp"
-            android:src="@drawable/ic_lock"
-            android:background="@drawable/bg_icon_circle"
-            android:foreground="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="lock" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="38dp"
+            android:layout_marginStart="10dp"
             android:layout_marginEnd="6dp"
             android:orientation="vertical">
 
@@ -113,7 +107,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:shadowColor="#CC000000"
                     android:shadowDx="0"
                     android:shadowDy="1"
@@ -124,14 +118,14 @@
                     android:layout_height="wrap_content"
                     android:text=" / "
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp" />
+                    android:textSize="12sp" />
 
                 <TextView
                     android:id="@id/exo_duration"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:shadowColor="#CC000000"
                     android:shadowDx="0"
                     android:shadowDy="1"
@@ -142,28 +136,31 @@
                     android:layout_height="1dp"
                     android:layout_weight="1" />
 
-                <!-- Current quality (jaise "1080p") — tap karke list se badal sakte hain -->
+                <!-- Current quality (jaise "1080p") — tap karke list se badal sakte hain.
+                     Bug fix: chip-background hataya, ab plain bold text hai — time text
+                     jaisa hi treatment, YouTube reference mein bhi koi box/chip nahi hota. -->
                 <TextView
                     android:id="@+id/inlineQualityButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="3dp"
-                    android:background="@drawable/bg_icon_circle"
+                    android:layout_marginEnd="14dp"
+                    android:padding="4dp"
                     android:foreground="?attr/selectableItemBackgroundBorderless"
                     android:text="Auto"
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:shadowColor="#CC000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="4" />
 
                 <ImageView
                     android:id="@+id/inlineFullscreenButton"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:padding="4dp"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:padding="5dp"
                     android:src="@drawable/ic_fullscreen_expand"
-                    android:background="@drawable/bg_icon_circle"
                     android:foreground="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="fullscreen" />
 
