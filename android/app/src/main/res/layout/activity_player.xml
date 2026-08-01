@@ -151,21 +151,6 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="back" />
 
-            <!-- Dedicated chevron-down button: video ko YouTube-jaisa mini
-                 player (Picture-in-Picture) mein shrink karta hai. Same action
-                 jo back-button/bottomPipButton bhi karte hain, bas ek alag
-                 dikhne wala dedicated icon jaisa maanga gaya tha. -->
-            <ImageView
-                android:id="@+id/pipChevronButton"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="2dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_chevron_down_pip"
-                android:background="@drawable/bg_icon_circle"
-                android:foreground="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="minimize to mini player" />
-
             <TextView
                 android:id="@+id/playerTitleText"
                 android:layout_width="0dp"
