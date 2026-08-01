@@ -41,6 +41,9 @@ import com.suhani.videoplayer.EqualizerAudioProcessor
 import com.suhani.videoplayer.FfmpegRenderersFactory
 import com.suhani.videoplayer.PlayerActivity
 import com.suhani.videoplayer.SharedPlayerHolder
+import com.suhani.videoplayer.HistoryStore
+import com.suhani.videoplayer.HistoryEntry
+import com.suhani.videoplayer.GesturePrefs
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.json.JSONArray
 
@@ -170,6 +173,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Bug fix: chhote (inline) player mein pehle koi onPlayerError handling hi nahi
+    // thi — fullscreen (PlayerActivity) network/decoder/format errors par proper
+    // fallback + message deta hai, lekin yahan stream fail hone par player bas
+    // silently ruk jaata (black/frozen frame), user ko pata hi nahi chalta kyun.
+    // Poora fallback-logic (decoder switch, quality retry waghera) yahan dobara
+    // banana overkill hai — us robust handling ke liye already fullscreen hai —
+    // isliye yahan minimum zaroori cheez: user ko batao, aur poore-screen mein
+    // (jahan asli recovery/fallback hai) khud khulne ka option do.
+    private val inlineErrorListener = object : Player.Listener {
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            android.widget.Toast.makeText(
+                this@MainActivity,
+                "Video play nahi ho paya — fullscreen mein try karein",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
     // purane player se hata kar naye player par dobara laga sakein.
     private val inlineTracksListener = object : Player.Listener {
@@ -278,6 +299,32 @@ class MainActivity : AppCompatActivity() {
                 initialLoadingView.alpha = 1f
             }
             .start()
+    }
+
+    /** Watch progress (position + history) — dono players ab isi ek jagah save
+     *  karte hain, taaki fullscreen aur inline ke beech resume seamlessly kaam kare
+     *  chahe user ne video kisi bhi tareeke se dekhi ho. */
+    private fun saveInlineWatchProgress() {
+        val player = inlinePlayer ?: return
+        if (inlineUri.isEmpty()) return
+        val position = player.currentPosition
+        val duration = player.duration.takeIf { it > 0 } ?: 0L
+        getSharedPreferences("playback_positions", MODE_PRIVATE).edit()
+            .putLong(inlineUri, position)
+            .apply()
+        if (inlineTitle.isNotBlank()) {
+            HistoryStore.addOrUpdate(
+                this,
+                HistoryEntry(
+                    uri = inlineUri,
+                    title = inlineTitle,
+                    isVideo = true,
+                    positionMs = position,
+                    durationMs = duration,
+                    playedAt = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
@@ -420,10 +467,16 @@ class MainActivity : AppCompatActivity() {
                     val forward = e.x >= playerView.width / 2
                     val p = inlinePlayer ?: return true
                     val max = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-                    val target = if (forward) (p.currentPosition + 10_000).coerceAtMost(max)
-                                 else (p.currentPosition - 10_000).coerceAtLeast(0)
+                    // Bug fix: yeh hamesha hardcoded 10s istemal karta tha, chahe user ne
+                    // fullscreen player ke settings mein apna custom seek-duration (5-60s)
+                    // set kiya ho — matlab dono players ka double-tap-seek alag-alag behave
+                    // karta tha. Ab wahi shared GesturePrefs preference yahan bhi use hoti hai.
+                    val seekMs = GesturePrefs.getSeekSeconds(this@MainActivity) * 1000L
+                    val target = if (forward) (p.currentPosition + seekMs).coerceAtMost(max)
+                                 else (p.currentPosition - seekMs).coerceAtLeast(0)
                     p.seekTo(target)
-                    seekFeedback.text = if (forward) "⏩ 10s" else "⏪ 10s"
+                    val seekSecondsLabel = seekMs / 1000L
+                    seekFeedback.text = if (forward) "⏩ ${seekSecondsLabel}s" else "⏪ ${seekSecondsLabel}s"
                     seekFeedback.removeCallbacks(hideInlineSeekFeedback)
                     seekFeedback.visibility = View.VISIBLE
                     seekFeedback.postDelayed(hideInlineSeekFeedback, 600)
@@ -517,9 +570,21 @@ class MainActivity : AppCompatActivity() {
             // kar do — warna subtitle button "on" dikhta lekin kuch bhi nahi dikhta.
             it.addListener(inlineTracksListener)
             it.addListener(inlinePlayPauseListener)
+            it.addListener(inlineErrorListener)
         }
         player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
         player.prepare()
+        // Bug fix: chhota player pehle kabhi resume position check hi nahi karta tha
+        // — na apni (kyunki khud kabhi save hi nahi karta tha, neeche dekho) na
+        // fullscreen wali. Matlab agar fullscreen mein aadhi dekhi video ko dubara
+        // isi (inline) tarike se khola jaaye, wo shuru se chalti thi. Ab dono players
+        // wahi ek "playback_positions" store share karte hain — fullscreen jaisa poora
+        // "Resume?" dialog dikhane ki jagah (chhoti jagah mein jachta nahi), yahan
+        // seedha silently us position se resume kar dete hain.
+        val savedPosition = getSharedPreferences("playback_positions", MODE_PRIVATE).getLong(uri, 0L)
+        if (savedPosition > 5000) {
+            player.seekTo(savedPosition)
+        }
         player.playWhenReady = true
         // Bug fix / polish: pehle overlay ek jhatke se seedha VISIBLE ho jaata tha
         // (koi entrance feel nahi thi). Sirf naya mount hone par (already visible
@@ -849,6 +914,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun unmountInlinePlayer() {
+        saveInlineWatchProgress()
         inlinePlayer?.pause()
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
@@ -885,6 +951,10 @@ class MainActivity : AppCompatActivity() {
                     .build(),
                 /* handleAudioFocus= */ true
             )
+            // Bug fix: fullscreen player jaisa hi — pehle set nahi tha, isliye
+            // headphone/Bluetooth unplug hone par chhota player bhi turant loud
+            // speaker par bajne lagta tha (koi auto-pause nahi).
+            .setHandleAudioBecomingNoisy(true)
             .build()
     }
 
@@ -899,6 +969,7 @@ class MainActivity : AppCompatActivity() {
         val previousParams = old.trackSelectionParameters
         old.removeListener(inlineTracksListener)
         old.removeListener(inlinePlayPauseListener)
+        old.removeListener(inlineErrorListener)
         old.release()
         if (SharedPlayerHolder.player === old) SharedPlayerHolder.clear()
 
@@ -906,6 +977,7 @@ class MainActivity : AppCompatActivity() {
         fresh.trackSelectionParameters = previousParams
         fresh.addListener(inlineTracksListener)
         fresh.addListener(inlinePlayPauseListener)
+        fresh.addListener(inlineErrorListener)
         inlinePlayer = fresh
         inlinePlayerView?.player = fresh
         SharedPlayerHolder.player = fresh
@@ -1156,6 +1228,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         webView.onPause()
+        saveInlineWatchProgress()
         inlinePlayer?.pause()
     }
 
@@ -1182,6 +1255,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        saveInlineWatchProgress()
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
         inlinePlayer?.release()
         inlinePlayer = null
