@@ -147,6 +147,16 @@ class MainActivity : AppCompatActivity() {
     private var inlineSwipeDragging = false
     private val INLINE_DRAG_PIP_THRESHOLD = 90f
 
+    // User ki request: jab chhote inline player se PiP shuru ki jaaye, to WebView
+    // ko is (watch) page se PEECHE (info/Detail page) navigate kar do — taaki PiP
+    // floating window ke peeche wahi "clean" pichli page dikhe, is page ka khaali/
+    // black video-hole nahi. Yeh flag track karta hai ki aisi ek back-navigation
+    // abhi pending hai, taaki PlayerActivity se wapas aane par sahi se decide ho
+    // sake: expand/normal-return par WebView ko usi watch page par FORWARD wapas
+    // le jaana hai (aur video resume karna hai), lekin genuine PiP "X" close par
+    // kuchh bhi nahi karna — na forward navigate, na koi playback background mein.
+    private var didNavigateBackForPip = false
+
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
     private val inlineEqProcessor = EqualizerAudioProcessor()
@@ -1140,6 +1150,16 @@ class MainActivity : AppCompatActivity() {
         // waqt is player se juda ho.
         inlinePlayerView?.player = null
         inlineOverlay?.visibility = View.GONE
+        // User ki request: PiP shuru hote hi is watch page ko poora hata kar
+        // WebView ko peechli (info/Detail) page par le jao, taaki PiP window ke
+        // peeche wahi saaf page dikhe — is page ka khaali video-hole nahi. Sirf
+        // real PiP wale trigger (pip button/chevron/swipe/home-button) ke liye,
+        // plain "fullscreen" button (enterPipImmediately=false) page ko chhedta
+        // nahi — wahan user seedha isi page par wapas aana chahta hai.
+        didNavigateBackForPip = enterPipImmediately && webView.canGoBack()
+        if (didNavigateBackForPip) {
+            webView.goBack()
+        }
         val intent = Intent(this, PlayerActivity::class.java).apply {
             putExtra("video_uri", inlineUri)
             putExtra("video_title", inlineTitle)
@@ -1191,6 +1211,36 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode == RESULT_OK) {
             val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
             val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
+            val pipGenuinelyClosed = data?.getBooleanExtra("pip_closed", false) ?: false
+
+            // User ki request: agar yeh genuinely PiP window ke "X"/swipe-away se
+            // close hua hai (dekho PlayerActivity.finish()'s "pip_closed" extra),
+            // to poora cut kar do — na koi inline player wapas dikhao ya resume
+            // karo, na WebView ko us watch page par forward navigate karo. User
+            // jahan (peeche navigate ki gayi page par) hai, wahi rahe — bilkul
+            // khaali/silent, koi background playback nahi.
+            if (didNavigateBackForPip && pipGenuinelyClosed) {
+                didNavigateBackForPip = false
+                inlinePlayer?.playWhenReady = false
+                inlinePlayer?.pause()
+                if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
+                inlinePlayerView?.player = null
+                inlinePlayer?.release()
+                inlinePlayer = null
+                inlineOverlay?.visibility = View.GONE
+                return
+            }
+
+            // Genuine PiP ko "bada" karke (ya normal fullscreen se seedha) wapas
+            // aana — agar PiP shuru karte waqt WebView ko peeche navigate kiya
+            // gaya tha, to ab usi watch page par FORWARD wapas le jao, taaki
+            // "clear" page dikhe aur video wahi (fullscreen se laayi gayi)
+            // position/playing-state ke saath, YouTube jaisa, resume ho.
+            if (didNavigateBackForPip) {
+                didNavigateBackForPip = false
+                if (webView.canGoForward()) webView.goForward()
+            }
+
             // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
             // tha (SharedPlayerHolder ke through) — agar wo abhi bhi zinda hai (decoder
             // switch waghera se replace nahi hua), to usi ko wapas pakad lo, taaki
