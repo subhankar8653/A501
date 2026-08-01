@@ -28,13 +28,14 @@ export default function Navbar() {
             <input
               name="q"
               type="text"
+              aria-label="Search titles"
               placeholder="Search titles…"
               className="w-full bg-reel-surface2 text-reel-ink placeholder-reel-muted rounded-full px-4 py-2 text-sm border border-white/5 focus:outline-none focus:ring-2 focus:ring-reel-gold/60"
             />
           </form>
           <button
             onClick={handleReset}
-            className="text-xs text-reel-muted hover:text-reel-ink transition-colors shrink-0"
+            className="text-xs text-reel-muted hover:text-reel-ink active:scale-95 transition-colors shrink-0"
           >
             Change source
           </button>

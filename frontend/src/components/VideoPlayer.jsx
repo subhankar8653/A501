@@ -486,6 +486,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
           <>
             <button
               onClick={() => handleZoneTap('center')}
+              aria-label={playing ? 'Pause' : 'Play'}
               className="absolute inset-0 flex items-center justify-center"
             >
               {!playing && (
@@ -496,14 +497,16 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
             </button>
             <button
               onClick={exitPip}
-              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white"
+              aria-label="Close mini player"
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white active:scale-90 transition"
               title="Band karo"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
             <button
               onClick={exitPip}
-              className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white"
+              aria-label="Expand player"
+              className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white active:scale-90 transition"
               title="Bada karo"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
@@ -554,7 +557,8 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
             >
               <button
                 onClick={enterPip}
-                className="w-8 h-8 rounded-full bg-black/45 flex items-center justify-center text-reel-ink"
+                aria-label="Switch to mini player"
+                className="w-8 h-8 rounded-full bg-black/45 flex items-center justify-center text-reel-ink active:scale-90 transition"
                 title="Mini player"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
@@ -582,7 +586,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               </div>
 
               <div className="flex items-center gap-3 mt-1 text-reel-ink">
-                <button onClick={() => handleZoneTap('center')} className="p-1 shrink-0">
+                <button onClick={() => handleZoneTap('center')} aria-label={playing ? 'Pause' : 'Play'} className="p-1 shrink-0 active:scale-90 transition">
                   {playing ? (
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
                   ) : (
@@ -596,7 +600,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
 
                 <div className="flex-1" />
 
-                <button onClick={toggleMute} className="p-1 shrink-0">
+                <button onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'} className="p-1 shrink-0 active:scale-90 transition">
                   {muted ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.45 2.45c.03-.2.05-.43.05-.65zm2.5 0c0 .94-.2 1.82-.54 2.63l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4 9.91 6.09 12 8.18V4z" /></svg>
                   ) : (
@@ -608,7 +612,9 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                   <div className="relative shrink-0">
                     <button
                       onClick={() => { setQualityMenuOpen((s) => !s); setSettingsOpen(false); wake() }}
-                      className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded transition ${
+                      aria-label="Change video quality"
+                      aria-expanded={qualityMenuOpen}
+                      className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded transition active:scale-95 ${
                         qualityMenuOpen ? 'bg-reel-gold text-reel-bg' : 'bg-white/10 text-reel-ink'
                       }`}
                     >
@@ -641,7 +647,9 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                 <div className="relative shrink-0">
                   <button
                     onClick={() => { setSettingsOpen((s) => !s); setQualityMenuOpen(false); wake() }}
-                    className={`p-1.5 rounded-full transition ${settingsOpen ? 'bg-white/15' : ''}`}
+                    aria-label="Settings"
+                    aria-expanded={settingsOpen}
+                    className={`p-1.5 rounded-full transition active:scale-90 ${settingsOpen ? 'bg-white/15' : ''}`}
                     title="Settings"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -666,7 +674,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                   )}
                 </div>
 
-                <button onClick={toggleFullscreen} className="p-1 shrink-0">
+                <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} className="p-1 shrink-0 active:scale-90 transition">
                   {fullscreen ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" /></svg>
                   ) : (
@@ -696,7 +704,8 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
             <div className="flex items-center gap-4 mb-5">
               <button
                 onClick={() => applySpeed(speed - 0.25)}
-                className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-reel-ink text-lg leading-none"
+                aria-label="Decrease speed"
+                className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-reel-ink text-lg leading-none active:scale-90 transition"
               >
                 −
               </button>
@@ -711,7 +720,8 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               />
               <button
                 onClick={() => applySpeed(speed + 0.25)}
-                className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-reel-ink text-lg leading-none"
+                aria-label="Increase speed"
+                className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-reel-ink text-lg leading-none active:scale-90 transition"
               >
                 +
               </button>

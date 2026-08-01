@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom'
+import { useState } from 'react'
 
-export default function MediaCard({ item }) {
+export default function MediaCard({ item, index = 0 }) {
+  const [loaded, setLoaded] = useState(false)
   const year = item.releaseInfo || item.year || ''
   return (
     <Link
       to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-      className="group shrink-0 w-[140px] sm:w-[160px]"
+      className="group shrink-0 w-[140px] sm:w-[160px] animate-card-in active:scale-95 transition-transform"
+      style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
     >
       <div className="relative aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-white/5 group-hover:ring-reel-gold/60 transition">
         {item.poster ? (
@@ -13,7 +16,10 @@ export default function MediaCard({ item }) {
             src={item.poster}
             alt={item.name}
             loading="lazy"
-            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+            onLoad={() => setLoaded(true)}
+            className={`w-full h-full object-cover group-hover:scale-105 transition-[opacity,transform] duration-300 ${
+              loaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-reel-muted text-xs px-2 text-center">
