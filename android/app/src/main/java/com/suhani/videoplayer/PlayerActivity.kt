@@ -6414,6 +6414,15 @@ class PlayerActivity : AppCompatActivity() {
                     // isliye agar upar wala override maujood hai (PiP close se
                     // pehle ka asli intent), usi ko priority do.
                     putExtra("resume_playing", resumePlayingIntentOverride ?: player.playWhenReady)
+                    // User ki request: MainActivity ko batao ki yeh finish() ek
+                    // genuine PiP "X"/swipe-away close ki wajah se ho raha hai (na
+                    // ki expand-to-fullscreen ke baad ka normal back-press) — taaki
+                    // wahan na background mein kuchh resume ho, na WebView wapas us
+                    // watch page par forward jaaye (dekho MainActivity.onActivityResult()).
+                    // wasInRealPipMode abhi bhi true hota hai sirf genuine PiP-close
+                    // ke waqt hi — expand ke baad onPictureInPictureModeChanged() ise
+                    // pehle hi false kar chuka hota hai (dekho uska comment).
+                    putExtra("pip_closed", wasInRealPipMode)
                 }
             )
         }
