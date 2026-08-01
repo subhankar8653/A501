@@ -1140,15 +1140,12 @@ class MainActivity : AppCompatActivity() {
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         inlinePlayer?.pause()
         // Bug fix (PiP button/swipe par "badi wali screen khulti hai fir PiP
-        // hoti hai" jhatka): pehle default OS launch-animation (naya Activity
-        // poora screen bhar ke instantly pop-in) chalti thi, jiske turant baad
-        // hi shrink-to-PiP animation shuru hoti — do alag-alag transform saath
-        // dikhte the, isliye "pehle bada player khula" jaisa mehsoos hota tha.
-        // Ab yahi rect capture karke ActivityOptions.makeScaleUpAnimation() se
-        // naya Activity window seedha isi chhote inline-player ke position/size
-        // se "grow" karta hua khulta hai — do jhatkon ki jagah ab ek hi
-        // continuous zoom motion dikhta hai (inline se seedha PiP corner tak),
-        // kabhi bhi ek poori-screen "flash" jaisa nahi lagta.
+        // hoti hai" jhatka): yahi rect ab do jagah kaam aata hai — (1) niche
+        // activity-launch ko poori tarah invisible/instant banane ke liye, aur
+        // (2) intent extras (pip_src_*) ke through PlayerActivity ko bhejte hain
+        // taaki wahan ka system PiP-shrink animation seedha isi chhote inline-
+        // player ki jagah se shuru ho, poori screen se nahi — dekho niche wala
+        // startActivityForResult() block aur PlayerActivity.buildPipParams().
         val launchRect = Rect()
         if (enterPipImmediately) {
             try { inlinePlayerView?.getGlobalVisibleRect(launchRect) } catch (_: Exception) {}
@@ -1171,32 +1168,41 @@ class MainActivity : AppCompatActivity() {
             putExtra("resume_position_ms", pos)
             putExtra("resume_playing", wasPlaying)
             putExtra("enter_pip_immediately", enterPipImmediately)
+            // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka — asli wajah):
+            // PlayerActivity ko yeh chhote inline player ka EXACT on-screen rect bhi
+            // bhej do, taaki wahan real PiP mein jaate waqt system ka shrink animation
+            // seedha ISI chhoti jagah se shuru ho, poori-screen wale playerView rect se
+            // nahi — dekho PlayerActivity.buildPipParams().
+            if (enterPipImmediately && launchRect.width() > 0 && launchRect.height() > 0) {
+                putExtra("pip_src_left", launchRect.left)
+                putExtra("pip_src_top", launchRect.top)
+                putExtra("pip_src_right", launchRect.right)
+                putExtra("pip_src_bottom", launchRect.bottom)
+            }
         }
         @Suppress("DEPRECATION")
-        if (enterPipImmediately && launchRect.width() > 0 && launchRect.height() > 0) {
-            // Activity window ab inline player ke exact position/size se "grow"
-            // karke khulta hai — instant teleport-to-fullscreen ki jagah, isliye
-            // "bada player achanak khul gaya" wala jhatka nahi lagta, seedha ek
-            // continuous zoom motion dikhta hai jo turant PiP shrink mein
-            // seamlessly continue ho jaata hai.
-            val options = android.app.ActivityOptions.makeScaleUpAnimation(
-                inlinePlayerView, launchRect.left, launchRect.top,
-                launchRect.width(), launchRect.height()
-            )
+        if (enterPipImmediately) {
+            // Bug fix ("bada player khulta hai fir PiP hota hai" — do jhatkon wala
+            // flash): pehle yahan makeScaleUpAnimation() se activity ko chhote inline
+            // rect se POORI SCREEN tak "grow" hote dikhate the, aur uske turant baad
+            // ek ALAG system PiP-shrink animation shuru hoti thi (enterPipWhenFrameReady()
+            // se) — yeh do alag-alag animations back-to-back chalti thi, isliye beech
+            // mein ek pal ke liye poori screen "flash" hoti dikhti thi (pehle grow ho
+            // kar ruk jaata, fir shrink shuru hota) — bilkul "bada player khula fir PiP
+            // hua" jaisa laga, chahe dono animations back-to-back hi kyun na hon.
+            //
+            // Fix: is activity-launch transition ko ab poori tarah invisible/instant kar
+            // do (0ms — koi grow-animation nahi dikhta) — sirf EK hi visible motion honi
+            // chahiye: khud system ka PiP-enter shrink animation, jiska sourceRectHint
+            // (upar bheje gaye pip_src_* extras se, PlayerActivity.buildPipParams() mein)
+            // ab isi launchRect (chhote inline player ki jagah) se seedha shuru hota hai.
+            // Result: chhota inline video seedha turant PiP corner tak "shrink" hote
+            // dikhta hai — koi beech mein full-screen flash nahi, ek hi continuous
+            // motion, YouTube jaisa "direct PiP".
+            val options = android.app.ActivityOptions.makeCustomAnimation(this, 0, 0)
             startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER, options.toBundle())
         } else {
             startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
-        }
-        if (enterPipImmediately) {
-            // Bug fix (jhatke wala/gadbad transformation): normal fullscreen-open ke
-            // liye OS ka default open-animation theek lagta hai, lekin jab hum turant
-            // (isi frame ke baad) PiP mein bhi chale jaate hain, to "activity grow
-            // animation" + "PiP shrink animation" dono ek saath overlap ho kar ek
-            // jhatkedaar/double transform dikhte the. Ab upar wali ActivityOptions
-            // scale-up animation hi launch-transition sambhal rahi hai, isliye yahan
-            // overridePendingTransition() lagana hi nahi chahiye — dono ek saath
-            // lagane se ActivityOptions override ho sakti thi aur wapas purana jhatka
-            // dikh sakta tha.
         }
     }
 
