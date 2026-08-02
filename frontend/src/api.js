@@ -56,6 +56,37 @@ export async function getCatalog(type, id, extra = {}) {
   return data.metas || []
 }
 
+// Backend paginates every catalog (Stremio "skip" protocol, PAGE_SIZE=15 —
+// dekho stremio_routes.py). Ek single getCatalog() call sirf pehla page
+// (15 items) deta hai. Bug fix (user report: "Hindi mein bahut sare anime
+// hain lekin sirf 3 dikh rahe"): loadTabByLanguage() pehle sirf yehi pehla
+// page fetch karke language ke hisaab se split karta tha — poori catalog
+// (jisme sainkdon items ho sakte hain) ka sirf pehla 15-item slice dekha
+// jaata tha, isliye kisi bhi language jiske items us pehle page mein kam
+// the (chahe poori catalog mein bahut zyada ho), woh khaali-jaisa dikhta.
+// Fix: skip=0,15,30... karte hue tab tak page-by-page fetch karo jab tak
+// ek chhota/khaali page na mile (ya safety cap lag jaaye) — taaki poori
+// catalog cover ho, na ki sirf uska pehla hissa.
+const CATALOG_PAGE_SIZE = 15
+const MAX_CATALOG_PAGES = 40 // safety cap: ~600 items/catalog, kabhi infinite loop na bane
+
+export async function getCatalogAllPages(type, id, extra = {}) {
+  const all = []
+  for (let page = 0; page < MAX_CATALOG_PAGES; page++) {
+    const skip = page * CATALOG_PAGE_SIZE
+    let metas
+    try {
+      metas = await getCatalog(type, id, { ...extra, skip: skip || undefined })
+    } catch {
+      break // ek page fail hone se poora load na ruke — jo mil chuka wahi rakho
+    }
+    if (!metas || metas.length === 0) break
+    all.push(...metas)
+    if (metas.length < CATALOG_PAGE_SIZE) break // yehi aakhri page tha
+  }
+  return all
+}
+
 export async function getMeta(type, id) {
   const { backendUrl, token } = base()
   const data = await fetchJson(`${backendUrl}/stremio/${token}/meta/${type}/${id}.json`)
@@ -103,7 +134,7 @@ export async function loadTabByLanguage(catalogsForTab) {
   await Promise.all(
     (catalogsForTab || []).map(async (cat) => {
       try {
-        const metas = await getCatalog(cat.type, cat.id)
+        const metas = await getCatalogAllPages(cat.type, cat.id)
         for (const item of metas) {
           if (item && item.id && !merged.has(item.id)) merged.set(item.id, item)
         }

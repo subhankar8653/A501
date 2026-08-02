@@ -87,8 +87,23 @@ html, body, #root {
   animation: toast-in 180ms ease-out;
 }
 
+/* Poster-loading shimmer sweep (MediaCard) — reads as a premium loading
+   state instead of a flat static pulse block. */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Active tab underline / pill entrance (Home content-type tabs). */
+@keyframes tab-pop-in {
+  from { transform: scale(0.9); opacity: 0.5; }
+  to { transform: scale(1); opacity: 1; }
+}
+.animate-tab-pop-in {
+  animation: tab-pop-in 200ms cubic-bezier(.2,.8,.2,1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .page-fade-in, .animate-card-in, .animate-toast-in, .animate-skip-pulse {
+  .page-fade-in, .animate-card-in, .animate-toast-in, .animate-skip-pulse, .animate-tab-pop-in {
     animation: none !important;
   }
 }
