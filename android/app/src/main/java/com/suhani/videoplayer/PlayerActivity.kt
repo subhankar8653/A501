@@ -202,6 +202,26 @@ class PlayerActivity : AppCompatActivity() {
     // yaad rakhta hai, taaki finish() sahi resume_playing value bhej sake.
     private var resumePlayingIntentOverride: Boolean? = null
 
+    // Bug fix (user report: PiP ke "X" (close) button dabane par PiP window
+    // remove nahi hoti, floating hi reh jaati hai): upar wala poora
+    // close-vs-expand decision system ke apne `isFinishing` flag par depend
+    // karta hai, jo humare control mein nahi hai. Kai devices/OEM builds par
+    // (khaaskar jab PiP session seedha fullscreen se shuru hui ho, inline se
+    // nahi — dekho pipOriginFromInline) "X" dabane ke baad bhi kabhi-kabhi
+    // system `isFinishing` ko turant/kabhi bhi true set nahi karta, isliye
+    // handlePipExitDecision() galti se ise "expand" samajh kar controls wapas
+    // dikha deta hai — Activity kabhi finish() hi nahi hoti aur PiP window
+    // atki reh jaati hai.
+    //
+    // Fix: har real PiP-exit ke baad ek chhota safety-net watchdog laga do —
+    // agar thodi der mein Activity na to finish ho rahi hai na dobara RESUMED
+    // hui hai (yani genuinely expand hoke user ko wapas dikhi), to isko khud
+    // ek genuine "X"/swipe close maan kar force finish() kar do. Genuine
+    // expand hamesha turant (kuch hi ms mein) onResume() la deta hai, isliye
+    // yeh kabhi galti se ek real expand ko cut nahi karta.
+    private var pipExitWatchdogToken: Any? = null
+    private var resumedSincePipExit = false
+
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -6626,6 +6646,28 @@ class PlayerActivity : AppCompatActivity() {
             playerView.post {
                 handlePipExitDecision()
             }
+
+            // Watchdog arm karo (dekho field comment upar). resumedSincePipExit
+            // ko yahin turant false kar do taaki purani koi stale value na bache.
+            resumedSincePipExit = false
+            val token = Any()
+            pipExitWatchdogToken = token
+            playerView.postDelayed({
+                if (pipExitWatchdogToken === token && !isFinishing && !isDestroyed && !resumedSincePipExit) {
+                    // Na finish ho rahi hai, na wapas resume hui — matlab "X"/swipe
+                    // se genuinely band ki gayi thi lekin system ne khud finish()
+                    // trigger nahi kiya. Khud safely band karo: shared player ho to
+                    // pause karo (background audio-leak na ho), phir finish().
+                    try {
+                        if (usingSharedPlayer && ::player.isInitialized) {
+                            resumePlayingIntentOverride = player.playWhenReady
+                            player.playWhenReady = false
+                        }
+                        BackgroundPlaybackService.stop(this)
+                        finish()
+                    } catch (_: Exception) {}
+                }
+            }, 600L)
             return
         }
     }
@@ -6740,6 +6782,11 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // PiP-exit watchdog ko disarm karo — hum genuinely resume ho gaye
+        // (real expand), isliye ab watchdog ko force-finish() nahi karna
+        // chahiye. Dekho pipExitWatchdogToken field ka comment.
+        resumedSincePipExit = true
+        pipExitWatchdogToken = null
         // Wapas app khulte hi background service band kar do — ab notification
         // aur foreground-priority ki zaroorat nahi, Activity khud foreground me hai.
         BackgroundPlaybackService.stop(this)
@@ -6878,6 +6925,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        pipExitWatchdogToken = null
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
             pipReceiverRegistered = false
