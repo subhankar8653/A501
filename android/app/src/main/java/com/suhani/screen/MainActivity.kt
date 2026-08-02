@@ -121,6 +121,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var initialLoadingView: View
     private lateinit var loadErrorView: View
     private var hasLoadedOnce = false
+    // Premium polish: loading label ab static 0.6-alpha text nahi, halka
+    // "breathing" pulse leta hai (0.4 <-> 0.85 alpha loop) jab tak page load
+    // ho rahi hai — static spinner+text ki jagah thoda zyada "alive"/premium
+    // feel deta hai. fadeOutLoadingView() isko cancel kar deta hai.
+    private var loadingLabelPulse: android.animation.ObjectAnimator? = null
 
     // targetSdk 36 par Android forcibly edge-to-edge draw karta hai, isliye status
     // bar ke peeche WebView (aur usi ke upar rakha chhota native player) dono status
@@ -227,8 +232,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.loadErrorRetryButton).setOnClickListener {
             loadErrorView.visibility = View.GONE
             initialLoadingView.visibility = View.VISIBLE
+            startLoadingLabelPulse()
             webView.reload()
         }
+        startLoadingLabelPulse()
 
         // Edge-to-edge fix: WebView (page content) ko status bar/notch ke neeche se
         // shuru karo, aur wahi status-bar height baad mein inline player ke rect
@@ -299,8 +306,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun startLoadingLabelPulse() {
+        loadingLabelPulse?.cancel()
+        val label = findViewById<View>(R.id.initialLoadingLabel) ?: return
+        loadingLabelPulse = android.animation.ObjectAnimator.ofFloat(label, View.ALPHA, 0.4f, 0.85f).apply {
+            duration = 900L
+            repeatMode = android.animation.ValueAnimator.REVERSE
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
     private fun fadeOutLoadingView() {
         if (initialLoadingView.visibility != View.VISIBLE) return
+        loadingLabelPulse?.cancel()
+        loadingLabelPulse = null
         initialLoadingView.animate()
             .alpha(0f)
             .setDuration(220)
@@ -1290,11 +1311,20 @@ class MainActivity : AppCompatActivity() {
             // fade-in (jaisa swipe-down-to-PiP wapas reset hone par pehle se hai)
             // smoother/premium feel deta hai, aur reattach ke turant baad wale ek-do
             // frame ke "settle" hone ko bhi chhupa deta hai.
+            // Premium polish: ab baaki dono jagah (mountInlinePlayer/unmountInlinePlayer)
+            // jaisa hi halka scale bhi hai — teeno jagah ka overlay show/hide motion
+            // ab consistent hai, poore app mein ek hi "material" feel.
             inlineOverlay?.let { overlay ->
                 overlay.animate().cancel()
                 overlay.alpha = 0f
+                overlay.scaleX = 0.96f
+                overlay.scaleY = 0.96f
                 overlay.visibility = View.VISIBLE
-                overlay.animate().alpha(1f).setDuration(180).start()
+                overlay.animate()
+                    .alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(180)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
             }
         }
     }
@@ -1348,6 +1378,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        loadingLabelPulse?.cancel()
         saveInlineWatchProgress()
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
         inlinePlayer?.release()
