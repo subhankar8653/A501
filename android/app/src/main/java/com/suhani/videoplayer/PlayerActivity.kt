@@ -156,6 +156,12 @@ class PlayerActivity : AppCompatActivity() {
     // onPictureInPictureModeChanged() ka comment — release karne se MainActivity
     // ko naya ExoPlayer banana padta, jisse black-screen/buffering dikhti thi).
     private var wasInRealPipMode = false
+    // finish() ke time par read hone wala stable snapshot — dekho
+    // onPictureInPictureModeChanged() ka comment ("X dabane par cut nahi hota").
+    private var pipCloseFlagForResult = false
+    // PiP mein jaate waqt playback state ka snapshot — PiP-se-fullscreen
+    // restore par forcibly re-assert karne ke liye (audio-focus-pause bug fix).
+    private var pipEntryWasPlaying = false
     // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
     // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
     // on-screen rect (pip_src_* extras) yahan store hota hai — pehli hi real PiP
@@ -6503,7 +6509,7 @@ class PlayerActivity : AppCompatActivity() {
                     // wasInRealPipMode abhi bhi true hota hai sirf genuine PiP-close
                     // ke waqt hi — expand ke baad onPictureInPictureModeChanged() ise
                     // pehle hi false kar chuka hota hai (dekho uska comment).
-                    putExtra("pip_closed", wasInRealPipMode)
+                    putExtra("pip_closed", pipCloseFlagForResult)
                 }
             )
         }
@@ -6555,6 +6561,16 @@ class PlayerActivity : AppCompatActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (isInPictureInPictureMode) {
             wasInRealPipMode = true
+            // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
+            // ExoPlayer khud audio-focus handle karta hai (handleAudioFocus=true,
+            // dekho initializePlayer()). PiP <-> fullscreen ke beech window-manager
+            // transition ke dauraan kai devices par ek chhoti transient audio-focus
+            // loss/gain spuriously fire ho jaati hai — ExoPlayer usko genuine focus-
+            // loss maan kar khud hi playWhenReady=false kar deta hai, aur focus-regain
+            // wapas theek se receive na hone par video paused hi reh jaata hai. Yahan
+            // "PiP mein jaate waqt kya chal raha tha" record kar lo, taaki restore ke
+            // waqt (neeche) isko forcibly wapas assert kiya jaa sake.
+            if (::player.isInitialized) pipEntryWasPlaying = player.playWhenReady
             // Chhote floating window mein hamara bhaara-bharkam custom UI (top
             // bar, quick actions, gesture overlays) dikhana theek nahi — sab
             // chhupa do, sirf video + system ka apna minimal play/pause chrome.
@@ -6575,6 +6591,16 @@ class PlayerActivity : AppCompatActivity() {
             // nahi the.
             val pipWasJustClosed = wasInRealPipMode
             wasInRealPipMode = false
+            // Bug fix ("X dabane par bhi cut nahi hota, player wapas khul jaata
+            // hai" — asli wajah): finish()'s "pip_closed" extra seedhe live
+            // `wasInRealPipMode` field ko padhta tha — lekin wo field yahan
+            // (upar wali line) hamesha PEHLE hi false kar diya jaata tha, chahe
+            // X-close ho ya expand-tap — matlab finish() ko kabhi bhi genuine
+            // close ka pata hi nahi chalta tha, MainActivity hamesha "normal
+            // resume" maan kar player dobara khol deta tha. Fix: is EXACT pal
+            // ka sahi value ek alag, stable field mein capture kar lo — finish()
+            // ab isi ko padhega, live (ab-tak-reset-ho-chuki) field ko nahi.
+            pipCloseFlagForResult = pipWasJustClosed
 
             // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
             // (pipOriginFromInline) — isko tap karke "bada" karne par Android
@@ -6588,6 +6614,19 @@ class PlayerActivity : AppCompatActivity() {
             // MainActivity ko control wapas mile aur wahi NORMAL/inline player
             // dobara mount ho — koi fullscreen chrome kabhi flash na ho.
             if (!isFinishing && pipOriginFromInline) {
+                // Bug fix ("PiP se normal player hone mein buffering"): pehle
+                // yahan seedha finish() bulaate the aur Surface/foreground-mode
+                // ka kaam sirf onPause() ke bharose chhod dete the — us dauraan
+                // ek chhota timing-gap ban sakta tha jahan decoder Surface-less
+                // ho kar apne resources reconfigure kar deta (rebuffer/stutter).
+                // Fix: yahi, finish() se PEHLE hi, turant foreground-mode set
+                // karo aur is Activity ke PlayerView ko turant detach kar do —
+                // taaki MainActivity ko control milne tak decoder hamesha
+                // "ready" rahe, koi surface-less reconfigure-gap na bane.
+                if (usingSharedPlayer && ::player.isInitialized) {
+                    player.setForegroundMode(true)
+                    playerView.player = null
+                }
                 finish()
                 return
             }
@@ -6595,6 +6634,19 @@ class PlayerActivity : AppCompatActivity() {
             // Wapas full-size par aane par controls/controller dobara enable karo.
             playerView.useController = true
             if (::topBar.isInitialized) showAllControls()
+            // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
+            // upar record kiya gaya pipEntryWasPlaying ab forcibly assert karo —
+            // agar PiP mein jaate waqt play ho raha tha, to yahan bhi zaroor
+            // playing hona chahiye, chahe beech mein koi transient audio-focus
+            // blip ne ExoPlayer ka internal playWhenReady chupke se false kyun
+            // na kar diya ho. Chhota post-delay isliye taaki us focus-regain
+            // ke "aakhri" event ke baad hi yeh final state jeete, usse pehle nahi.
+            if (::player.isInitialized) {
+                val shouldResume = pipEntryWasPlaying
+                playerView.postDelayed({
+                    if (!isFinishing && ::player.isInitialized) player.playWhenReady = shouldResume
+                }, 150)
+            }
             // Bug fix: system PiP window ka "X" (close) button dabane par bhi
             // yehi callback (isInPictureInPictureMode=false) fire hota hai,
             // lekin saath hi Activity finish/destroy bhi ho rahi hoti hai
