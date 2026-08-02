@@ -991,6 +991,11 @@ class PlayerActivity : AppCompatActivity() {
             player.addAnalyticsListener(statsAnalyticsListener)
             player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
             player.playWhenReady = resumePlaying
+            // MainActivity ne handoff se pehle setForegroundMode(true) kiya tha
+            // (surface-less gap ke dauraan decoder ko zinda/ready rakhne ke
+            // liye) — ab genuinely visible Surface mil chuka hai, normal mode
+            // mein wapas le aao.
+            player.setForegroundMode(false)
         } else {
             buildPlayer(
                 DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON,
@@ -6628,6 +6633,15 @@ class PlayerActivity : AppCompatActivity() {
         // ho kar MainActivity ko wapas control de rahe hain (aur shared player istemal
         // ho raha tha), turant yahin detach kar do.
         if (isFinishing && usingSharedPlayer && ::player.isInitialized) {
+            // Bug fix (premium smoothness / "buffering" feel): MainActivity ko
+            // is instance ka control wapas milne tak ek chhota surface-less gap
+            // hota hai (yeh Activity ka Surface abhi detach ho raha hai, waha
+            // ka PlayerView abhi attach nahi hua) — bina foreground-mode ke,
+            // decoder is gap mein apne resources release/reconfigure kar sakta
+            // hai, jisse naye Surface par turant continue karne ke bajaye ek
+            // chhota rebuffer/stutter dikhta. setForegroundMode(true) decoder ko
+            // is gap ke dauraan bhi "ready" rakhta hai.
+            player.setForegroundMode(true)
             playerView.player = null
         }
         val currentIndex = if (::player.isInitialized) player.currentMediaItemIndex else -1
