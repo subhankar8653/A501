@@ -6705,18 +6705,81 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun handlePipExitDecision() {
+            // BUG FIX (user report: "PiP ka X dabane ke baad bhi PiP gayab nahi
+            // hoti, ulta main/fullscreen video player par chalne lag jaata hai"):
+            // pehle yeh poora "controls dikhao + playback resume karo" wala flow
+            // sirf `pipOriginFromInline` par gated tha — agar session fullscreen
+            // se shuru hui thi (pipOriginFromInline == false), to X-close par bhi
+            // yeh block hamesha chalta tha: playerView.useController = true,
+            // showAllControls(), aur 150ms baad playWhenReady = true assert ho
+            // jaata — sirf NEECHE wala `isFinishing` block hi baad mein ise pause
+            // karta. Kai devices/OEM builds par is exact tick tak isFinishing
+            // settle hoke true nahi hua hota (dekho neeche ka MIUI-race comment),
+            // isliye yeh chhota window kaafi hota controls flash + video resume
+            // dikhane ke liye — bilkul waisa hi jaisa user ne report kiya: PiP
+            // band hone ki jagah, video seedha bade/fullscreen player par chalne
+            // lag jaata.
+            //
+            // Fix: sabse pehle hi check karo ki yeh genuine close hai ya nahi —
+            // `isFinishing` ab poore is function ke top par gate karta hai, na
+            // ki sirf pipOriginFromInline ke andar. Genuine close (isFinishing
+            // == true) par ab controls kabhi show nahi hote, playback kabhi
+            // resume nahi hota — chahe session inline se shuru hui ho ya
+            // fullscreen se. "Tap to expand" wala behaviour (dono cases —
+            // inline-origin bounce-back neeche, aur normal fullscreen expand
+            // uske baad) bilkul pehle jaisa hi hai, sirf ab explicitly
+            // isFinishing == false ke peeche gated hai.
+            if (isFinishing) {
+                if (::player.isInitialized) {
+                    if (pipWasJustClosedField) {
+                        // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
+                        // kaala/black screen reh jaata hai"): pehle yahan genuine PiP
+                        // close (X/swipe) par SharedPlayerHolder.clear() + poora player
+                        // release() (onDestroy() mein, releasePlayerFullyOnDestroy se) ho
+                        // jaata tha. Iska matlab MainActivity.onActivityResult() ko ab
+                        // wahi zinda instance milta hi nahi (SharedPlayerHolder khaali),
+                        // isliye woh mountInlinePlayer() se ek BILKUL NAYA ExoPlayer
+                        // banata — fresh network buffer/decoder init se shuru — result:
+                        // user ko kuch second (ya poora) black/frozen screen dikhta,
+                        // "video wapas nahi chala" jaisa mehsoos hota.
+                        //
+                        // Fix: player ko pause zaroor karo (audio background mein leak
+                        // na ho, purana bug), lekin ise release/clear MAT karo — SharedPlayerHolder
+                        // mein zinda rehne do. MainActivity.onActivityResult() apne
+                        // existing check (SharedPlayerHolder.player != null && uri match)
+                        // se isi already-buffered instance ko turant reuse kar lega —
+                        // koi naya buffer/black-frame nahi, seedha wahi frame jahan
+                        // pause hua tha, instantly resume.
+                        resumePlayingIntentOverride = player.playWhenReady
+                        player.playWhenReady = false
+                        BackgroundPlaybackService.stop(this)
+                    } else if (usingSharedPlayer) {
+                        BackgroundPlaybackService.stop(this)
+                    } else {
+                        player.playWhenReady = false
+                        BackgroundPlaybackService.stop(this)
+                    }
+                }
+                // Safety-net: kabhi-kabhi (OEM race) isFinishing true ho chuka
+                // hota hai lekin Android khud finish() trigger karne mein slow
+                // hota hai — is Activity/fullscreen player ko screen par kabhi
+                // "atka" na chhodo, khud bhi finish() call kar do (already-
+                // finishing Activity par yeh call safe/no-op hai).
+                finish()
+                return
+            }
+
             // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
             // (pipOriginFromInline) — isko tap karke "bada" karne par Android
             // bas is Activity ko wapas fullscreen dikha deta hai, jo galat hai:
             // yeh video kabhi genuinely fullscreen dekhi hi nahi gayi thi. User
             // yahan NORMAL (inline) player hi expect karta hai, fullscreen nahi.
-            // isFinishing abhi false hai (genuine "X"/swipe close ek ALAG case
-            // hai, jahan Android isFinishing already true kar chuka hota hai —
-            // neeche wala block) — matlab yeh ek asli "tap to expand" hai.
+            // isFinishing abhi false hai (genuine "X"/swipe close upar hi handle
+            // ho chuka hai) — matlab yeh ek asli "tap to expand" hai.
             // Fix: turant finish() karo (bilkul normal back jaisa) taaki
             // MainActivity ko control wapas mile aur wahi NORMAL/inline player
             // dobara mount ho — koi fullscreen chrome kabhi flash na ho.
-            if (!isFinishing && pipOriginFromInline) {
+            if (pipOriginFromInline) {
                 // Yehi EK jagah hai jahan hume pakka pata hai ki yeh genuine
                 // expand hai, close nahi — explicitly override karo.
                 pipCloseFlagForResult = false
@@ -6759,57 +6822,9 @@ class PlayerActivity : AppCompatActivity() {
                     if (!isFinishing && ::player.isInitialized) player.playWhenReady = shouldResume
                 }, 150)
             }
-            // Bug fix: system PiP window ka "X" (close) button dabane par bhi
-            // yehi callback (isInPictureInPictureMode=false) fire hota hai,
-            // lekin saath hi Activity finish/destroy bhi ho rahi hoti hai
-            // (isFinishing=true).
-            //
-            // BUG FIX (audio ata rehta tha + wapas inline player black screen reh
-            // jaata tha): pehle yahan bhi shared-player case mein turant
-            // playWhenReady=false kar dete the. Lekin Activity result callback order
-            // FIXED hai: is Activity ka onPause() -> MainActivity.onActivityResult()
-            // (jo turant playWhenReady = wasPlaying karke wapas play/resume karta
-            // hai) -> tabhi jaakar is Activity ka onStop()/onDestroy(). Matlab agar
-            // hum yahan (ya onPause/onStop mein) shared player ko force-pause karte
-            // hain, to woh MainActivity ke turant baad wale "resume" ko silently
-            // undo kar deta tha — result: ek pal audio sunayi deta (MainActivity ka
-            // resume) phir turant ruk jaata, aur video wahi frozen/black reh jaata
-            // jahan is (ab-destroy ho rahi) Activity ne use pause chhoda tha.
-            //
-            // Fix: agar player MainActivity ka shared/borrowed hai, to uske
-            // playWhenReady ko yahan bilkul mat chhedo — control (aur play/pause
-            // state) ab MainActivity ke onActivityResult() ko de diya gaya hai,
-            // wahi isko sambhalega. Sirf apni foreground service band karo.
-            if (isFinishing && ::player.isInitialized) {
-                if (pipWasJustClosedField) {
-                    // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
-                    // kaala/black screen reh jaata hai"): pehle yahan genuine PiP
-                    // close (X/swipe) par SharedPlayerHolder.clear() + poora player
-                    // release() (onDestroy() mein, releasePlayerFullyOnDestroy se) ho
-                    // jaata tha. Iska matlab MainActivity.onActivityResult() ko ab
-                    // wahi zinda instance milta hi nahi (SharedPlayerHolder khaali),
-                    // isliye woh mountInlinePlayer() se ek BILKUL NAYA ExoPlayer
-                    // banata — fresh network buffer/decoder init se shuru — result:
-                    // user ko kuch second (ya poora) black/frozen screen dikhta,
-                    // "video wapas nahi chala" jaisa mehsoos hota.
-                    //
-                    // Fix: player ko pause zaroor karo (audio background mein leak
-                    // na ho, purana bug), lekin ise release/clear MAT karo — SharedPlayerHolder
-                    // mein zinda rehne do. MainActivity.onActivityResult() apne
-                    // existing check (SharedPlayerHolder.player != null && uri match)
-                    // se isi already-buffered instance ko turant reuse kar lega —
-                    // koi naya buffer/black-frame nahi, seedha wahi frame jahan
-                    // pause hua tha, instantly resume.
-                    resumePlayingIntentOverride = player.playWhenReady
-                    player.playWhenReady = false
-                    BackgroundPlaybackService.stop(this)
-                } else if (usingSharedPlayer) {
-                    BackgroundPlaybackService.stop(this)
-                } else {
-                    player.playWhenReady = false
-                    BackgroundPlaybackService.stop(this)
-                }
-            }
+            // Note: genuine "X"/swipe close (isFinishing == true) ab is function
+            // ke top par hi fully handle ho kar return ho chuka hota hai — yahan
+            // tak pahunchna hi matlab hai yeh pakka ek genuine expand tha.
     }
 
     override fun onResume() {
