@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCatalog } from '../api'
+import { getCatalogAllPages } from '../api'
 import MediaCard from '../components/MediaCard'
 
 export default function Search() {
@@ -19,8 +19,8 @@ export default function Search() {
     setResults(null)
     setFailed(false)
     Promise.all([
-      getCatalog('movie', 'top_movies', { search: q }),
-      getCatalog('series', 'top_series', { search: q }),
+      getCatalogAllPages('movie', 'top_movies', { search: q }),
+      getCatalogAllPages('series', 'top_series', { search: q }),
     ])
       .then(([movies, series]) => setResults([...movies, ...series]))
       .catch(() => {
