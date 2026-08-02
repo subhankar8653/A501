@@ -1090,6 +1090,19 @@ class PlayerActivity : AppCompatActivity() {
     // jaisa tactile micro-interaction) — sirf static icon tap na lagkar
     // button responsive/alive feel deta hai.
     private fun applyPressScale(view: View) {
+        // Premium polish: pehle sirf scale-bounce tha, koi ripple nahi — flat
+        // "custom" feel deta tha. Ab har button par ek halka golden Material
+        // ripple bhi lagaya (naya @drawable/ripple_icon_button resource,
+        // foreground ke through), taaki tap karte hi bilkul native Android/
+        // YouTube jaisa ripple-glow + hamara scale-bounce dono ek saath
+        // dikhein. Button ke apne background shape (bg_icon_circle waghera)
+        // ko bilkul bhi chhedte nahi — sirf upar ek transparent ripple
+        // foreground layer add hota hai.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && view.foreground == null) {
+            try {
+                view.foreground = ContextCompat.getDrawable(this, R.drawable.ripple_icon_button)
+            } catch (_: Exception) {}
+        }
         view.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -5742,11 +5755,23 @@ class PlayerActivity : AppCompatActivity() {
     // wahi 250ms fade dete hain taaki sab EK SAATH, EK HI speed se hide/show ho.
     private val controlsFadeDurationMs = 250L
 
+    // Premium polish: pehle yeh sirf flat alpha-fade tha — ab YouTube jaisa
+    // halka "settle" motion bhi saath mein (chhota scale + upward slide),
+    // taaki controls sirf "gayab/pragat" na ho balki thoda organically
+    // ubharte/simatte hue dikhein — zyada premium/tactile feel.
     private fun fadeInView(view: View) {
         view.animate().cancel()
         view.alpha = 0f
+        view.scaleY = 0.94f
+        view.translationY = -dpToPx(6f)
         view.visibility = View.VISIBLE
-        view.animate().alpha(1f).setDuration(controlsFadeDurationMs).start()
+        view.animate()
+            .alpha(1f)
+            .scaleY(1f)
+            .translationY(0f)
+            .setDuration(controlsFadeDurationMs)
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.5f))
+            .start()
     }
 
     private fun fadeOutView(view: View) {
@@ -5754,13 +5779,20 @@ class PlayerActivity : AppCompatActivity() {
         view.animate().cancel()
         view.animate()
             .alpha(0f)
+            .scaleY(0.94f)
+            .translationY(-dpToPx(6f))
             .setDuration(controlsFadeDurationMs)
+            .setInterpolator(android.view.animation.AccelerateInterpolator())
             .withEndAction {
                 view.visibility = View.GONE
                 view.alpha = 1f
+                view.scaleY = 1f
+                view.translationY = 0f
             }
             .start()
     }
+
+    private fun dpToPx(dp: Float): Float = dp * resources.displayMetrics.density
 
     private fun areControlsVisible(): Boolean = topBar.visibility == View.VISIBLE
 
