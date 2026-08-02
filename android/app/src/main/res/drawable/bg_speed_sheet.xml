@@ -4,7 +4,16 @@
      with a faint gold hairline so it reads as a premium YouTube-style sheet. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#F20B0B0E" />
+    <!-- Premium polish: flat solid ki jagah ab halka top-lit gradient
+         (bilkul bg_more_menu_panel/dialog_equalizer_bg jaisa consistent
+         glass-sheen), taaki poore app mein saare panels ek hi premium
+         "material" language follow karein. -->
+    <gradient
+        android:angle="270"
+        android:startColor="#FF16161A"
+        android:centerColor="#F20B0B0E"
+        android:endColor="#F20B0B0E"
+        android:type="linear" />
     <corners
         android:topLeftRadius="20dp"
         android:topRightRadius="20dp"

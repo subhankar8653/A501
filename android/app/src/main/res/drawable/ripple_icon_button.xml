@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium polish (naya file): pehle har icon button par ripple KOTLIN code
+     se (PlayerActivity.applyPressScale()) manually bana ke lagaya jaata tha —
+     ab ek clean, reusable XML resource hai. Isse (1) button ke apne rounded-
+     squircle shape (bg_icon_circle) ke andar hi ripple clip hoti hai, corners
+     ke bahar kabhi "leak" nahi hoti, aur (2) agar future mein kisi layout XML
+     mein seedha android:foreground="@drawable/ripple_icon_button" lagana ho
+     (bina Kotlin code ke), to yeh directly reuse ho sakta hai.
+
+     Halka golden ripple — app ke gold-accent premium theme se match karta hai. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#33FFD700">
+    <item android:id="@android:id/mask" android:drawable="@drawable/bg_icon_circle" />
+</ripple>

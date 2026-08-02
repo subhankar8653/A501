@@ -7,7 +7,8 @@
     android:shape="rectangle">
     <gradient
         android:angle="270"
-        android:startColor="#1E1E1E"
+        android:startColor="#2A2A2A"
+        android:centerColor="#1E1E1E"
         android:endColor="#161616"
         android:type="linear" />
     <corners android:radius="18dp" />
