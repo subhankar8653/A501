@@ -6437,10 +6437,20 @@ class PlayerActivity : AppCompatActivity() {
             hideMoreMenu()
             return
         }
-        // System back button/gesture par bhi wahi behavior — pehle PiP try karo,
-        // agar PiP possible nahi hai (purana Android ya unsupported device) to
-        // normal back/finish ho jaaye.
-        if (tryEnterPipOnBack()) return
+        // FIX (YouTube jaisa predictable back): pehle yahan system back/gesture
+        // par bhi tryEnterPipOnBack() try hota tha — matlab visible back-arrow
+        // (upar backButton.setOnClickListener, jo seedha finish() karta hai) aur
+        // system back button/gesture do ALAG cheezein karte the: ek seedha wapas
+        // MainActivity ke inline mini-player par le jaata, doosra achanak
+        // OS-level floating PiP window khol deta. Yahi asymmetry "khichdi" ka
+        // asli kaaran thi — PiP window expand karke wapas fullscreen aao, phir
+        // back dabao to phir PiP khul jaaye — user kabhi seedhe "normal wapas"
+        // nahi nikal paata tha, ek expand/collapse loop mein fasa reh jaata.
+        //
+        // YouTube ka asli behavior: back = hamesha seedha wapas (in-app
+        // mini-player), PiP sirf Home button/app-switch (onUserLeaveHint, neeche
+        // dekho) ya explicit PiP icon/swipe-down gesture se. Ab back button aur
+        // system back/gesture dono ek hi (consistent) cheez karte hain.
         super.onBackPressed()
         // Opening ke saath match karta hua fade+zoom-out — Home screen par
         // wapas jaate waqt bhi default abrupt slide na ho.
