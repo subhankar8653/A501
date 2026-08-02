@@ -162,6 +162,9 @@ class PlayerActivity : AppCompatActivity() {
     // PiP mein jaate waqt playback state ka snapshot — PiP-se-fullscreen
     // restore par forcibly re-assert karne ke liye (audio-focus-pause bug fix).
     private var pipEntryWasPlaying = false
+    // handlePipExitDecision() ko cross-function state chahiye (dono ab alag
+    // function hain, deferred-post ki wajah se) — isliye field hai, local val nahi.
+    private var pipWasJustClosedField = false
     // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
     // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
     // on-screen rect (pip_src_* extras) yahan store hota hai — pehli hi real PiP
@@ -6590,6 +6593,7 @@ class PlayerActivity : AppCompatActivity() {
             // yeh flag kabhi true nahi hota kyunki wahan PiP mode mein gaye hi
             // nahi the.
             val pipWasJustClosed = wasInRealPipMode
+            pipWasJustClosedField = pipWasJustClosed
             wasInRealPipMode = false
             // Bug fix v2 ("X se cut hua, lekin ab expand-tap bhi gayab ho jaata
             // hai" — pichle fix ka side-effect): `wasInRealPipMode` sirf itna
@@ -6606,6 +6610,27 @@ class PlayerActivity : AppCompatActivity() {
             // hai ki yeh close nahi, ek genuine expand hai.
             pipCloseFlagForResult = pipOriginFromInline
 
+            // Bug fix v3 (MIUI/OEM race — "kabhi X bhi expand jaisa behave
+            // karta hai, kabhi expand bhi X jaisa"): upar wala poora faisla
+            // `isFinishing` ki EXACT is-hi-instant wali value par depend
+            // karta hai. Kai OEM builds (khaaskar MIUI) par is callback ke
+            // fire hone aur system ke apne finish()-trigger (genuine X-close
+            // ke liye) ke beech ka order guaranteed nahi hai — kabhi
+            // isFinishing abhi tak settle nahi hua hota jab yeh callback
+            // chalta hai, isliye X-close bhi galti se "tap-to-expand" jaisa
+            // dikh jaata (ya ulta). Fix: is poore faisle ko agle message-loop
+            // tick tak post kar do — itni si der mein system ka apna
+            // finish()-trigger (agar chal raha ho) apna kaam pura kar chuka
+            // hota hai, taaki jab hum isFinishing padhein, wo hamesha sahi/
+            // final value ho.
+            playerView.post {
+                handlePipExitDecision()
+            }
+            return
+        }
+    }
+
+    private fun handlePipExitDecision() {
             // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
             // (pipOriginFromInline) — isko tap karke "bada" karne par Android
             // bas is Activity ko wapas fullscreen dikha deta hai, jo galat hai:
@@ -6634,6 +6659,12 @@ class PlayerActivity : AppCompatActivity() {
                     player.setForegroundMode(true)
                     playerView.player = null
                 }
+                // Smooth animation: bounce-back bilkul invisible/instant nahi,
+                // ek halka fade — taaki system ke apne PiP-restore animation
+                // ke turant baad yeh doosra "jump" na lage, seedha ek hi
+                // continuous fade-through-black feel de.
+                @Suppress("DEPRECATION")
+                overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
                 finish()
                 return
             }
@@ -6676,7 +6707,7 @@ class PlayerActivity : AppCompatActivity() {
             // state) ab MainActivity ke onActivityResult() ko de diya gaya hai,
             // wahi isko sambhalega. Sirf apni foreground service band karo.
             if (isFinishing && ::player.isInitialized) {
-                if (pipWasJustClosed) {
+                if (pipWasJustClosedField) {
                     // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
                     // kaala/black screen reh jaata hai"): pehle yahan genuine PiP
                     // close (X/swipe) par SharedPlayerHolder.clear() + poora player
@@ -6705,7 +6736,6 @@ class PlayerActivity : AppCompatActivity() {
                     BackgroundPlaybackService.stop(this)
                 }
             }
-        }
     }
 
     override fun onResume() {
