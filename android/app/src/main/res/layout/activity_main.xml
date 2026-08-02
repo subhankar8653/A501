@@ -34,9 +34,10 @@
             android:id="@+id/initialLoadingSpinner"
             android:layout_width="44dp"
             android:layout_height="44dp"
-            android:indeterminateTint="#FFFFFF" />
+            android:indeterminateTint="#FFD700" />
 
         <TextView
+            android:id="@+id/initialLoadingLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
