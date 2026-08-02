@@ -1603,6 +1603,7 @@ class PlayerActivity : AppCompatActivity() {
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
             updateVideoInfoBadge()
             applyOrientationForVideo(videoSize.width, videoSize.height, videoSize.unappliedRotationDegrees)
+            refreshPipParams()
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -6424,7 +6425,35 @@ class PlayerActivity : AppCompatActivity() {
                 )
             )
         }
+        // Bug fix ("sab jagah jhatka-sa lagta hai" — asli wajah): ab tak hum
+        // Home/back-gesture par khud manually onUserLeaveHint() se
+        // enterPictureInPictureMode() bulaate the — yeh hamesha ek REACTION
+        // thi (activity pehle se hi background hone lagi hoti, PHIR hum shrink
+        // shuru karte), isliye system ka apna leave-gesture/animation aur
+        // hamara PiP-shrink do ALAG motions ban jaate — thoda lag/snap jaisa
+        // feel deta, chahe sourceRectHint sahi ho.
+        //
+        // Android 12+ (API 31) par setAutoEnterEnabled(true) ke saath, OS khud
+        // hi back-gesture/Home ke EXACT saath synchronized ek single seamless
+        // shrink animation karta hai (bilkul YouTube jaisa) — hume manually
+        // enterPictureInPictureMode() call karne ki zaroorat hi nahi padti,
+        // isliye koi do-motion jhatka nahi banta. (Dekho onUserLeaveHint() ka
+        // guard neeche, aur refreshPipParams() jo params ko hamesha up-to-date
+        // rakhta hai taaki OS ke paas seamless-enter ke waqt sahi sourceRectHint
+        // /aspect-ratio pehle se maujood ho.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { builder.setAutoEnterEnabled(true) } catch (_: Exception) {}
+        }
         return builder
+    }
+
+    // Params ko hamesha fresh rakhne ke liye (onResume, video-size change, orientation
+    // change par) — taaki setAutoEnterEnabled(true) wala seamless auto-enter hamesha
+    // sahi sourceRectHint/aspect-ratio ke saath fire ho, kabhi stale rect se nahi.
+    private fun refreshPipParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!::player.isInitialized || isInPictureInPictureMode) return
+        try { setPictureInPictureParams(buildPipParams().build()) } catch (_: Exception) {}
     }
 
     private fun buildRemoteAction(iconRes: Int, title: String, action: String): RemoteAction {
@@ -6512,8 +6541,14 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Home button / recent-apps se app chhodte waqt bhi PiP mein chala jaaye.
-        tryEnterPipOnBack()
+        // Android 12+ (API 31) par setAutoEnterEnabled(true) (buildPipParams() dekho)
+        // OS ko khud hi is exact moment par seamless PiP shrink karne deta hai — agar
+        // hum yahan bhi manually enterPictureInPictureMode() bulaate to do transitions
+        // race karke hi jhatka wapas laa dete. Sirf purane devices (< API 31, jahan
+        // auto-enter available hi nahi) ke liye manual fallback chahiye.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            tryEnterPipOnBack()
+        }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -6619,6 +6654,9 @@ class PlayerActivity : AppCompatActivity() {
         // Wapas app khulte hi background service band kar do — ab notification
         // aur foreground-priority ki zaroorat nahi, Activity khud foreground me hai.
         BackgroundPlaybackService.stop(this)
+        // Params ko fresh rakho — taaki agla seamless auto-enter (setAutoEnterEnabled)
+        // hamesha abhi ka sahi playerView rect/aspect use kare.
+        refreshPipParams()
     }
 
     override fun onPause() {
