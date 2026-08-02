@@ -6591,16 +6591,20 @@ class PlayerActivity : AppCompatActivity() {
             // nahi the.
             val pipWasJustClosed = wasInRealPipMode
             wasInRealPipMode = false
-            // Bug fix ("X dabane par bhi cut nahi hota, player wapas khul jaata
-            // hai" — asli wajah): finish()'s "pip_closed" extra seedhe live
-            // `wasInRealPipMode` field ko padhta tha — lekin wo field yahan
-            // (upar wali line) hamesha PEHLE hi false kar diya jaata tha, chahe
-            // X-close ho ya expand-tap — matlab finish() ko kabhi bhi genuine
-            // close ka pata hi nahi chalta tha, MainActivity hamesha "normal
-            // resume" maan kar player dobara khol deta tha. Fix: is EXACT pal
-            // ka sahi value ek alag, stable field mein capture kar lo — finish()
-            // ab isi ko padhega, live (ab-tak-reset-ho-chuki) field ko nahi.
-            pipCloseFlagForResult = pipWasJustClosed
+            // Bug fix v2 ("X se cut hua, lekin ab expand-tap bhi gayab ho jaata
+            // hai" — pichle fix ka side-effect): `wasInRealPipMode` sirf itna
+            // batata hai ki "hum abhi real PiP mode mein THE" — yeh X-close aur
+            // expand-tap DONO ke liye hamesha true hota hai (dono hi PiP se
+            // "bahar" nikalte hain), isliye ise seedha pip_closed maan lena
+            // GALAT signal tha — har expand-tap bhi "close" maan liya jaata,
+            // video gayab ho jaata.
+            //
+            // Sahi signal: default maan lo ki agar yeh session inline se shuru
+            // hui thi (pipOriginFromInline) to close hi hai — SIRF neeche wale
+            // "deliberate tap-to-expand" branch mein hi hum ise explicitly
+            // false karte hain, kyunki wahi EK jagah hai jahan hume pakka pata
+            // hai ki yeh close nahi, ek genuine expand hai.
+            pipCloseFlagForResult = pipOriginFromInline
 
             // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
             // (pipOriginFromInline) — isko tap karke "bada" karne par Android
@@ -6614,6 +6618,9 @@ class PlayerActivity : AppCompatActivity() {
             // MainActivity ko control wapas mile aur wahi NORMAL/inline player
             // dobara mount ho — koi fullscreen chrome kabhi flash na ho.
             if (!isFinishing && pipOriginFromInline) {
+                // Yehi EK jagah hai jahan hume pakka pata hai ki yeh genuine
+                // expand hai, close nahi — explicitly override karo.
+                pipCloseFlagForResult = false
                 // Bug fix ("PiP se normal player hone mein buffering"): pehle
                 // yahan seedha finish() bulaate the aur Surface/foreground-mode
                 // ka kaam sirf onPause() ke bharose chhod dete the — us dauraan
