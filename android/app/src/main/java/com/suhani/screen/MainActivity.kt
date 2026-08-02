@@ -1127,7 +1127,19 @@ class MainActivity : AppCompatActivity() {
     private fun openFullscreenFromInline(enterPipImmediately: Boolean = false) {
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
-        inlinePlayer?.pause()
+        // Bug fix (premium smoothness / "buffering" feel): pehle yahan turant
+        // inlinePlayer?.pause() ho jaata tha, aur PlayerActivity turant hi
+        // resume_playing extra se wapas playWhenReady=true kar deta (usi live
+        // shared decoder par) — ek fauri pause-fir-resume cycle, jo audio/video
+        // sync ko ek pal ke liye todta tha, bilkul "buffer/lag" jaisa mehsoos
+        // hota. Ab pause bilkul nahi karte — same-instance handoff ke dauraan
+        // player continuously chalta rehta hai (bas Surface thodi der ke liye
+        // kisi bhi PlayerView se attach nahi hota), YouTube jaisa gapless feel.
+        // ExoPlayer.setForegroundMode(true) yahan decoder ko is chhoti
+        // surface-less gap ke dauraan zinda/ready rakhta hai, taaki naye
+        // (fullscreen) Surface par attach hote hi bina kisi re-init/rebuffer ke
+        // turant continue ho jaaye.
+        inlinePlayer?.setForegroundMode(true)
         // Bug fix (PiP button/swipe par "badi wali screen khulti hai fir PiP
         // hoti hai" jhatka): yahi rect ab do jagah kaam aata hai — (1) niche
         // activity-launch ko poori tarah invisible/instant banane ke liye, aur
@@ -1246,13 +1258,33 @@ class MainActivity : AppCompatActivity() {
             // switch waghera se replace nahi hua), to usi ko wapas pakad lo, taaki
             // koi naya buffer na bane. Sirf tabhi rebuild karo jab wo genuinely
             // release ho chuka ho (ya system ne background mein kill kar diya ho).
+            // Bug fix (premium smoothness / "buffering" feel — asli root cause):
+            // pehle yahan har case mein (shared instance reuse ho ya fresh build)
+            // seekTo(pos) unconditionally chal jaata tha. "pos" PlayerActivity ke
+            // finish() ke waqt capture hui thi — us aur is line ke beech, agar
+            // shared player continuously chalta raha (jo ab hum karte hain, upar
+            // dekho), current position us "pos" se already AAGE nikal chuki hoti
+            // — seekTo(pos) use jabardasti PEECHE, ek stale/purane timestamp par
+            // ROLLBACK kar deta tha. Yahi asli "jhatka + buffering" ka kaaran
+            // tha: live chal rahi video ko har handoff par thodا peeche seek
+            // karke ExoPlayer ko dubara us position ke aas-paas resync/rebuffer
+            // karna padta.
+            // Fix: jab hum SAME live instance reuse kar rahe hon, koi seek hi
+            // mat karo — wo already sahi (ya usse bhi aage, sahi) position par
+            // hai. Sirf jab genuinely NAYA player banaya gaya ho (mountInlinePlayer
+            // — jiske paas khud ka resume-position logic nahi tha yahan) tabhi
+            // seekTo(pos) chahiye.
             if (SharedPlayerHolder.player != null && SharedPlayerHolder.uri == inlineUri) {
                 inlinePlayer = SharedPlayerHolder.player
                 inlinePlayerView?.player = inlinePlayer
+                // Naya Surface abhi-abhi attach hua — decoder ko normal
+                // (non-foreground-only) mode mein wapas le aao, ab yeh
+                // genuinely visible/foreground surface ke saath chal raha hai.
+                inlinePlayer?.setForegroundMode(false)
             } else if (inlineUri.isNotEmpty()) {
                 mountInlinePlayer(inlineUri, inlineTitle, inlineQualitiesJson)
+                inlinePlayer?.seekTo(pos)
             }
-            inlinePlayer?.seekTo(pos)
             inlinePlayer?.playWhenReady = wasPlaying
             // Bug fix / polish: pehle overlay seedha VISIBLE ho jaata tha — ek chhota
             // fade-in (jaisa swipe-down-to-PiP wapas reset hone par pehle se hai)
