@@ -166,6 +166,17 @@ class PlayerActivity : AppCompatActivity() {
     // diya jaata hai, taaki baad ki (back-button/swipe se) PiP entries hamesha
     // live fullscreen rect hi use karein.
     private var pendingImmediatePipSourceRect: Rect? = null
+    // Bug fix (user report): jab "normal" (inline) player se turant-PiP banaya
+    // gaya ho (enter_pip_immediately), aur user us PiP window ko tap karke
+    // expand kare, to Android bas is Activity ko fullscreen mein wapas la deta
+    // hai — matlab user ko galti se poora FULLSCREEN player dikhta tha, jabki
+    // yeh PiP kabhi genuinely "fullscreen dekhi gayi" video thi hi nahi, sirf
+    // normal/inline player se seedhi PiP mein gayi thi. Yeh flag track karta hai
+    // ki iss session ki PiP inline se aayi thi — expand hote hi (onPictureIn-
+    // PictureModeChanged, isFinishing=false wala case) hum seedha finish() kar
+    // dete hain taaki control MainActivity ko wapas mile aur wahi NORMAL
+    // (inline) player dobara dikhe — bilkul waisi hi jaisi PiP se pehle thi.
+    private var pipOriginFromInline = false
     // onPictureInPictureModeChanged() mein wasInRealPipMode already false ho
     // chuka hota hai jab tak onDestroy() chalta hai (dono alag callbacks hain,
     // life-cycle mein pehla dusre se pehle fire hota hai) — isliye onDestroy()
@@ -904,12 +915,14 @@ class PlayerActivity : AppCompatActivity() {
             // honour zaroor honi chahiye (warna dobara PiP button dabana silently
             // kuch na kare, aisa nahi hona chahiye).
             if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+                pipOriginFromInline = true
                 pendingImmediatePipSourceRect = readPipSourceRectExtra()
                 enterPipWhenFrameReady()
             }
             return
         }
         currentLoadedUri = incomingUri
+        pipOriginFromInline = intent.getBooleanExtra("enter_pip_immediately", false)
 
         // Bug fix: is Activity ke singleTask hone ki wajah se yahi instance baar baar reuse
         // hoti hai (Home se koi bhi naya/alag video khulne par bhi) — isliye pichle video ka
@@ -1839,6 +1852,17 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun applyOrientationForVideo(width: Int, height: Int, unappliedRotationDegrees: Int = 0) {
         if (width <= 0 || height <= 0) return
+        // Bug fix (user report: "PiP se pehle full screen player dikhta hai"):
+        // agar yeh session seedha inline player se PiP mein jaane wala hai, to
+        // yahan requestedOrientation badalna (portrait se landscape, video ke
+        // hisaab se) khud apna ek poora device-rotation animation trigger karta
+        // — jo activity-launch ki 0ms/invisible transition se bilkul alag,
+        // ROKA nahi ja sakta — result: user ko ek pal ke liye poori screen
+        // ghoomti/full-size dikhti, TABHI PiP shrink shuru hoti. PiP window
+        // apna aspect ratio khud (buildPipParams) handle karta hai, isko
+        // Activity ke screen-orientation lock ki zaroorat hi nahi — isliye is
+        // case mein orientation-force poora skip kar do.
+        if (pipOriginFromInline) return
         val rotated = unappliedRotationDegrees == 90 || unappliedRotationDegrees == 270
         val displayWidth = if (rotated) height else width
         val displayHeight = if (rotated) width else height
@@ -6288,8 +6312,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun tryEnterPipOnBack(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
-        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return unsupportedPipFallback()
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return unsupportedPipFallback()
         if (!::player.isInitialized) return false
         if (isInPictureInPictureMode) return false
         val result = try {
@@ -6297,11 +6321,34 @@ class PlayerActivity : AppCompatActivity() {
         } catch (_: Exception) {
             false
         }
+        if (!result) unsupportedPipFallback()
         // Sirf pehli (direct-from-inline) PiP entry ke liye tha — consume ho gaya,
         // ab se hamesha live fullscreen rect hi use hona chahiye (dekho field
         // comment).
         pendingImmediatePipSourceRect = null
         return result
+    }
+
+    // Bug fix: agar device PiP support hi nahi karta (purana Android ya
+    // FEATURE_PICTURE_IN_PICTURE missing) ya enterPictureInPictureMode() kisi
+    // wajah se fail ho jaaye, to inline-origin session hamesha ke liye
+    // orientation-force suppress kiye baithi rehti thi (applyOrientationForVideo
+    // guard dekho) — matlab video kabhi sahi (landscape) orientation mein
+    // dikhta hi nahi, na PiP na hi normal fullscreen. Fix: aisi situation mein
+    // "inline-origin" treatment turant hata do taaki yeh normal fullscreen
+    // player ki tarah hi (sahi orientation ke saath) kaam kare — expand-to-
+    // inline shortcut bhi ab lagu nahi hoga (jo sahi hai, kyunki PiP bani hi
+    // nahi thi).
+    private fun unsupportedPipFallback(): Boolean {
+        if (pipOriginFromInline) {
+            pipOriginFromInline = false
+            if (::player.isInitialized) {
+                val vw = player.videoSize.width
+                val vh = player.videoSize.height
+                if (vw > 0 && vh > 0) applyOrientationForVideo(vw, vh, player.videoSize.unappliedRotationDegrees)
+            }
+        }
+        return false
     }
 
     private fun buildPipParams(): PictureInPictureParams.Builder {
@@ -6488,6 +6535,23 @@ class PlayerActivity : AppCompatActivity() {
             // nahi the.
             val pipWasJustClosed = wasInRealPipMode
             wasInRealPipMode = false
+
+            // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
+            // (pipOriginFromInline) — isko tap karke "bada" karne par Android
+            // bas is Activity ko wapas fullscreen dikha deta hai, jo galat hai:
+            // yeh video kabhi genuinely fullscreen dekhi hi nahi gayi thi. User
+            // yahan NORMAL (inline) player hi expect karta hai, fullscreen nahi.
+            // isFinishing abhi false hai (genuine "X"/swipe close ek ALAG case
+            // hai, jahan Android isFinishing already true kar chuka hota hai —
+            // neeche wala block) — matlab yeh ek asli "tap to expand" hai.
+            // Fix: turant finish() karo (bilkul normal back jaisa) taaki
+            // MainActivity ko control wapas mile aur wahi NORMAL/inline player
+            // dobara mount ho — koi fullscreen chrome kabhi flash na ho.
+            if (!isFinishing && pipOriginFromInline) {
+                finish()
+                return
+            }
+
             // Wapas full-size par aane par controls/controller dobara enable karo.
             playerView.useController = true
             if (::topBar.isInitialized) showAllControls()
