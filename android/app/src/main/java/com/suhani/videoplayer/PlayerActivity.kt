@@ -2124,7 +2124,10 @@ class PlayerActivity : AppCompatActivity() {
 
         // --- Ambient Glow Mode ---
         val featurePrefs = getSharedPreferences("feature_prefs", MODE_PRIVATE)
-        ambientGlowOn = featurePrefs.getBoolean("ambient_glow_on", false)
+        // User request: Ambient Glow ab default-ON hai (YouTube jaisa) — user
+        // jab chaahe usi toggle button se band kar sakta hai, waisa hi jaisa
+        // pehle tha, sirf starting default badla hai.
+        ambientGlowOn = featurePrefs.getBoolean("ambient_glow_on", true)
         ambientGlowView.setGlowEnabled(ambientGlowOn)
         setToggleActive(ambientGlowButton, ambientGlowOn)
         ambientGlowButton.setOnClickListener {
