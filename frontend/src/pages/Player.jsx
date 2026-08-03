@@ -42,6 +42,7 @@ export default function Player() {
   const currentEpisode = episodeStr !== undefined ? Number(episodeStr) : null
 
   const [seriesMeta, setSeriesMeta] = useState(null)
+  const [movieMeta, setMovieMeta] = useState(null)
   const [autoplay, setAutoplay] = useState(() => {
     try {
       return localStorage.getItem('suhani-screen:autoplay') !== 'off'
@@ -116,6 +117,22 @@ export default function Player() {
     }
   }, [isSeries, imdbId])
 
+  useEffect(() => {
+    if (isSeries) {
+      setMovieMeta(null)
+      return
+    }
+    let cancelled = false
+    getMeta('movie', imdbId)
+      .then((m) => {
+        if (!cancelled) setMovieMeta(m)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isSeries, imdbId])
+
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
   const qualities = useMemo(
@@ -132,6 +149,15 @@ export default function Player() {
     if (!seriesMeta?.videos) return []
     return [...seriesMeta.videos].sort((a, b) => a.season - b.season || a.episode - b.episode)
   }, [seriesMeta])
+
+  // Art used to drive the ambient glow bleeding above/below the player.
+  const glowImage = useMemo(() => {
+    if (isSeries) {
+      const ep = allEpisodes.find((e) => e.season === currentSeason && e.episode === currentEpisode)
+      return ep?.thumbnail || seriesMeta?.background || seriesMeta?.poster || null
+    }
+    return movieMeta?.background || movieMeta?.poster || null
+  }, [isSeries, allEpisodes, currentSeason, currentEpisode, seriesMeta, movieMeta])
 
   // Rest of the current season after this episode — or, once you're on the
   // season's last episode, the *entire* next season's episode list.
@@ -266,18 +292,52 @@ export default function Player() {
         <div className="aspect-video bg-reel-surface2 animate-pulse" />
       ) : (
         <>
-          <div className="aspect-video bg-black overflow-hidden">
-            <VideoPlayer
-              key={active.url}
-              src={active.url}
-              title={meta.filename}
-              qualities={qualities}
-              activeQuality={activeQualityObj}
-              onQualityChange={(q) => switchQuality(q)}
-              startAt={resumeAt.current}
-              onProgressTick={(t) => { resumeAt.current = t }}
-              onEnded={handleEnded}
-            />
+          <div className="relative">
+            {glowImage ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-x-0 -top-9 h-14 -z-10 pointer-events-none"
+                >
+                  <img
+                    src={glowImage}
+                    alt=""
+                    className="w-full h-full object-cover blur-2xl scale-125 opacity-35"
+                    style={{
+                      maskImage: 'linear-gradient(to top, black 0%, transparent 90%)',
+                      WebkitMaskImage: 'linear-gradient(to top, black 0%, transparent 90%)',
+                    }}
+                  />
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-x-0 -bottom-9 h-14 -z-10 pointer-events-none"
+                >
+                  <img
+                    src={glowImage}
+                    alt=""
+                    className="w-full h-full object-cover blur-2xl scale-125 opacity-35"
+                    style={{
+                      maskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)',
+                      WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 90%)',
+                    }}
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="relative aspect-video bg-black overflow-hidden">
+              <VideoPlayer
+                key={active.url}
+                src={active.url}
+                title={meta.filename}
+                qualities={qualities}
+                activeQuality={activeQualityObj}
+                onQualityChange={(q) => switchQuality(q)}
+                startAt={resumeAt.current}
+                onProgressTick={(t) => { resumeAt.current = t }}
+                onEnded={handleEnded}
+              />
+            </div>
           </div>
 
           <div className="px-4 sm:px-6">
