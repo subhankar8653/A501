@@ -5,6 +5,16 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- Ambient Glow (same technique as the fullscreen player's AmbientGlowView):
+         sits BEHIND PlayerView so it only shows through the video's own
+         letterbox gutter (if the video's aspect ratio doesn't exactly fill
+         this box) — never tints the actual video pixels. -->
+    <com.suhani.videoplayer.AmbientGlowView
+        android:id="@+id/inlineAmbientGlowView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
     <androidx.media3.ui.PlayerView
         android:id="@+id/inlinePlayerView"
         android:layout_width="match_parent"
