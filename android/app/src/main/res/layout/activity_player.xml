@@ -17,6 +17,30 @@
         android:layout_height="match_parent"
         android:layout_gravity="top|start">
 
+    <!-- Ambient Glow Mode (signature feature): video ke dominant edge-colors se driven
+         soft blurred glow, Philips Ambilight/Chromecast/YouTube ambient jaisa.
+
+         BUG FIX (user report: "Ambient Glow sahi se add nahi hua — jidhar title hai
+         udhar aur video ke upar ke ilaake mein glow nahi hota"): pehle yeh view
+         PlayerView ke UPAR (baad mein) rakha tha, isliye woh video surface ke apne
+         hi pixels ke edges par ek translucent tint overlay kar raha tha — glow kabhi
+         video ke BAHAR (letterbox bars / title-bar ke peeche wali jagah) nahi jaata
+         tha jahan asal mein YouTube-style ambient dikhta hai.
+
+         Fix: is view ko ab PlayerView se PEHLE (isliye z-order mein NEECHE) rakha hai.
+         PlayerView ka andar ka AspectRatioFrameLayout actual video texture ko sirf
+         uske letterboxed content-rect jitna hi size karta hai (poori view jitna nahi)
+         — matlab jahan bhi letterbox/pillarbox gutter hai (ya jahan title-bar ka
+         translucent gradient scrim hai), woh ab is neeche wale glow ko dikhne deta
+         hai; jahan asli video pixels hain wahan opaque video surface hi upar se cover
+         kar leta hai — glow kabhi video content ko khud tint nahi karta, sirf uske
+         CHAARO TARAF/PEECHE bleed hota hai, bilkul YouTube jaisa. -->
+    <com.suhani.videoplayer.AmbientGlowView
+        android:id="@+id/ambientGlowView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
@@ -25,16 +49,6 @@
         app:controller_layout_id="@layout/custom_player_control_view"
         app:show_buffering="when_playing"
         app:surface_type="texture_view" />
-
-    <!-- Ambient Glow Mode (signature feature): video ke dominant edge-colors se driven
-         soft blurred glow, Philips Ambilight/Chromecast ambient jaisa. Controls ke NEECHE
-         z-order mein hai (touch bilkul consume nahi karta), PlayerActivity isko har ~800ms
-         mein naye sampled colors ke saath update karta hai. -->
-    <com.suhani.videoplayer.AmbientGlowView
-        android:id="@+id/ambientGlowView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="invisible" />
 
     <!-- Dual Subtitle: doosri, independent subtitle file (DualSubtitleController.kt se
          driven, ExoPlayer ke apne text-renderer se alag) — screen ke UPAR dikhti hai
