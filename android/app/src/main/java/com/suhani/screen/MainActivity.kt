@@ -991,25 +991,15 @@ class MainActivity : AppCompatActivity() {
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
-    // AmbientGlowView ke bleed ke liye reserved margin — yeh XML
-    // (inline_player_view.xml ke inlineContentFrame ka layout_marginTop/Bottom)
-    // se EXACT match hona chahiye, warna video apni asli jagah se thoda
-    // upar/neeche khisak jaayega.
-    private val INLINE_AMBIENT_GLOW_MARGIN_DP = 40
-
     fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
         val overlay = inlineOverlay ?: return
         val density = resources.displayMetrics.density
         val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(0, 0)
-        val glowMarginPx = (INLINE_AMBIENT_GLOW_MARGIN_DP * density).toInt()
         params.width = (width * density).toInt()
-        // Overlay ko upar+neeche glowMarginPx jitna bada karo — video khud
-        // inlineContentFrame ke andar utne hi margin se inset hai, isliye
-        // uska visible size/position bilkul pehle jaisa hi rehta hai.
-        params.height = (height * density).toInt() + glowMarginPx * 2
+        params.height = (height * density).toInt()
         params.leftMargin = (left * density).toInt()
-        params.topMargin = statusBarInsetPx + (top * density).toInt() - glowMarginPx
+        params.topMargin = statusBarInsetPx + (top * density).toInt()
         overlay.layoutParams = params
     }
 
