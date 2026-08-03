@@ -32,7 +32,7 @@ export default function Setup() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="font-display text-4xl font-semibold text-reel-gold">Suhani Screen</h1>
+          <h1 className="font-display text-4xl font-semibold text-reel-gold">Huka Tube</h1>
           <p className="text-reel-muted mt-2 text-sm">Your Telegram library, on the big screen.</p>
         </div>
 
