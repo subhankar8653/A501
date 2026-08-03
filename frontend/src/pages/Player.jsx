@@ -42,7 +42,6 @@ export default function Player() {
   const currentEpisode = episodeStr !== undefined ? Number(episodeStr) : null
 
   const [seriesMeta, setSeriesMeta] = useState(null)
-  const [movieMeta, setMovieMeta] = useState(null)
   const [autoplay, setAutoplay] = useState(() => {
     try {
       return localStorage.getItem('suhani-screen:autoplay') !== 'off'
@@ -117,22 +116,6 @@ export default function Player() {
     }
   }, [isSeries, imdbId])
 
-  useEffect(() => {
-    if (isSeries) {
-      setMovieMeta(null)
-      return
-    }
-    let cancelled = false
-    getMeta('movie', imdbId)
-      .then((m) => {
-        if (!cancelled) setMovieMeta(m)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [isSeries, imdbId])
-
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
   const qualities = useMemo(
@@ -149,21 +132,6 @@ export default function Player() {
     if (!seriesMeta?.videos) return []
     return [...seriesMeta.videos].sort((a, b) => a.season - b.season || a.episode - b.episode)
   }, [seriesMeta])
-
-  // Art used to drive the ambient glow bleeding above/below the player (see
-  // the wrapper around <VideoPlayer> below). We don't have access to the
-  // native player's live video frame from here (it's a native Android view
-  // mounted on top of this div, not an in-DOM <video> we could sample) — so
-  // this uses the best poster art available instead: the currently-playing
-  // episode's own thumbnail for series (closest to what's actually on
-  // screen), or the movie/series backdrop/poster otherwise.
-  const glowImage = useMemo(() => {
-    if (isSeries) {
-      const ep = allEpisodes.find((e) => e.season === currentSeason && e.episode === currentEpisode)
-      return ep?.thumbnail || seriesMeta?.background || seriesMeta?.poster || null
-    }
-    return movieMeta?.background || movieMeta?.poster || null
-  }, [isSeries, allEpisodes, currentSeason, currentEpisode, seriesMeta, movieMeta])
 
   // Rest of the current season after this episode — or, once you're on the
   // season's last episode, the *entire* next season's episode list.
@@ -298,33 +266,18 @@ export default function Player() {
         <div className="aspect-video bg-reel-surface2 animate-pulse" />
       ) : (
         <>
-          <div className="relative">
-            {glowImage ? (
-              <div
-                aria-hidden="true"
-                className="absolute -inset-x-3 -top-8 -bottom-8 -z-10 overflow-hidden pointer-events-none rounded-2xl"
-              >
-                <img
-                  src={glowImage}
-                  alt=""
-                  className="w-full h-full object-cover scale-110 blur-3xl opacity-50"
-                />
-                <div className="absolute inset-0 bg-reel-bg/35" />
-              </div>
-            ) : null}
-            <div className="aspect-video bg-black overflow-hidden">
-              <VideoPlayer
-                key={active.url}
-                src={active.url}
-                title={meta.filename}
-                qualities={qualities}
-                activeQuality={activeQualityObj}
-                onQualityChange={(q) => switchQuality(q)}
-                startAt={resumeAt.current}
-                onProgressTick={(t) => { resumeAt.current = t }}
-                onEnded={handleEnded}
-              />
-            </div>
+          <div className="aspect-video bg-black overflow-hidden">
+            <VideoPlayer
+              key={active.url}
+              src={active.url}
+              title={meta.filename}
+              qualities={qualities}
+              activeQuality={activeQualityObj}
+              onQualityChange={(q) => switchQuality(q)}
+              startAt={resumeAt.current}
+              onProgressTick={(t) => { resumeAt.current = t }}
+              onEnded={handleEnded}
+            />
           </div>
 
           <div className="px-4 sm:px-6">
