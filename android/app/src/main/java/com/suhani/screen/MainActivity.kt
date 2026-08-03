@@ -45,6 +45,7 @@ import com.suhani.videoplayer.SharedPlayerHolder
 import com.suhani.videoplayer.HistoryStore
 import com.suhani.videoplayer.HistoryEntry
 import com.suhani.videoplayer.GesturePrefs
+import com.suhani.videoplayer.AmbientGlowView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.json.JSONArray
 
@@ -138,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     private var inlinePlayer: ExoPlayer? = null
     private var inlineOverlay: FrameLayout? = null
     private var inlinePlayerView: PlayerView? = null
+    private var inlineAmbientGlowView: AmbientGlowView? = null
     private var subtitleManuallyDisabled = false
     private var audioManuallyDisabled = false
     private var resizeModeIndex = 0
@@ -368,6 +370,15 @@ class MainActivity : AppCompatActivity() {
         if (inlineOverlay == null) {
             val root = LayoutInflater.from(this).inflate(R.layout.inline_player_view, null) as FrameLayout
             val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
+            val ambientGlowView = root.findViewById<AmbientGlowView>(R.id.inlineAmbientGlowView)
+            inlineAmbientGlowView = ambientGlowView
+            // User request: Ambient Glow default-ON hai (fullscreen player jaisa hi
+            // — dono ek hi "feature_prefs"/"ambient_glow_on" setting share karte hain,
+            // isliye ek jagah toggle karne se dono players mein consistent rehta hai).
+            val ambientOn = getSharedPreferences("feature_prefs", MODE_PRIVATE)
+                .getBoolean("ambient_glow_on", true)
+            ambientGlowView.setGlowEnabled(ambientOn)
+            startInlineAmbientGlowLoop(root)
             // Bug fix (PiP/fullscreen se wapas aane par ek pal ke liye black frame
             // flash hota tha): default behavior mein PlayerView player badalte/
             // reattach hote hi apna last-drawn frame turant clear kar deta hai, chahe
@@ -627,6 +638,74 @@ class MainActivity : AppCompatActivity() {
         SharedPlayerHolder.player = player
         SharedPlayerHolder.uri = uri
         inlineQualityButtonRef?.text = currentInlineQualityLabel()
+    }
+
+    // Ek hi baar shuru hoti hai (mountInlinePlayer ke pehli-baar-create wale
+    // block se), phir khud ko har ~800ms mein reschedule karti rehti hai —
+    // isliye ek dusri baar mountInlinePlayer call hone par ise dobara start
+    // karne ki zaroorat nahi.
+    private var inlineAmbientGlowLoopStarted = false
+    private fun startInlineAmbientGlowLoop(anchor: View) {
+        if (inlineAmbientGlowLoopStarted) return
+        inlineAmbientGlowLoopStarted = true
+        val runnable = object : Runnable {
+            override fun run() {
+                if (inlineOverlay?.visibility == View.VISIBLE && inlinePlayer?.isPlaying == true) {
+                    sampleInlineAmbientGlowColors()
+                }
+                anchor.postDelayed(this, 800)
+            }
+        }
+        anchor.postDelayed(runnable, 800)
+    }
+
+    /** sampleAmbientGlowColors() (PlayerActivity.kt) jaisa hi — bas inline
+     *  chhote player ke TextureView par. */
+    private fun sampleInlineAmbientGlowColors() {
+        try {
+            val glowView = inlineAmbientGlowView ?: return
+            val textureView = inlinePlayerView?.videoSurfaceView as? android.view.TextureView ?: return
+            if (!textureView.isAvailable) return
+            val sample = textureView.getBitmap(32, 32) ?: return
+
+            var topR = 0L; var topG = 0L; var topB = 0L
+            var botR = 0L; var botG = 0L; var botB = 0L
+            var leftR = 0L; var leftG = 0L; var leftB = 0L
+            var rightR = 0L; var rightG = 0L; var rightB = 0L
+            val w = sample.width
+            val h = sample.height
+            if (w == 0 || h == 0) { sample.recycle(); return }
+
+            for (x in 0 until w) {
+                val pTop = sample.getPixel(x, 0)
+                topR += android.graphics.Color.red(pTop); topG += android.graphics.Color.green(pTop); topB += android.graphics.Color.blue(pTop)
+                val pBot = sample.getPixel(x, h - 1)
+                botR += android.graphics.Color.red(pBot); botG += android.graphics.Color.green(pBot); botB += android.graphics.Color.blue(pBot)
+            }
+            for (y in 0 until h) {
+                val pLeft = sample.getPixel(0, y)
+                leftR += android.graphics.Color.red(pLeft); leftG += android.graphics.Color.green(pLeft); leftB += android.graphics.Color.blue(pLeft)
+                val pRight = sample.getPixel(w - 1, y)
+                rightR += android.graphics.Color.red(pRight); rightG += android.graphics.Color.green(pRight); rightB += android.graphics.Color.blue(pRight)
+            }
+            sample.recycle()
+
+            fun avgColor(r: Long, g: Long, b: Long, n: Int) = android.graphics.Color.rgb(
+                (r / n).toInt().coerceIn(0, 255),
+                (g / n).toInt().coerceIn(0, 255),
+                (b / n).toInt().coerceIn(0, 255)
+            )
+
+            glowView.updateEdgeColors(
+                avgColor(topR, topG, topB, w),
+                avgColor(botR, botG, botB, w),
+                avgColor(leftR, leftG, leftB, h),
+                avgColor(rightR, rightG, rightB, h)
+            )
+        } catch (_: Exception) {
+            // Surface resize/transition ke beech mein sample fail ho sakta hai —
+            // safe ignore, agla tick (800ms baad) phir try karega.
+        }
     }
 
     /** Web page (Player.jsx) se aata hai jab bhi current episode ke agal-bagal
