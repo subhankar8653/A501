@@ -5,78 +5,75 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Ambient Glow — ab TRUE bias-lighting hai (fullscreen player jaisa hi):
-         MainActivity.updateInlinePlayerRect() overlay ko INLINE_AMBIENT_GLOW_MARGIN_DP
-         jitna upar-neeche extra bada banata hai, aur neeche wale inlineContentFrame
-         ko utne hi margin se andar rakhta hai — matlab asli video ka size/position
-         BILKUL wahi rehta hai jo pehle tha, bas ab uske charo taraf ek real margin
-         band mil gaya hai jahan yeh glow (live-sampled colors se) bleed kar sakta
-         hai — poster-blur wala static patch nahi, asli chalti video ke colors. -->
+    <!-- Ambient Glow (same technique as the fullscreen player's AmbientGlowView):
+         sits BEHIND PlayerView so it only shows through the video's own
+         letterbox gutter (if the video's aspect ratio doesn't exactly fill
+         this box) — never tints the actual video pixels.
+
+         BUG FIX (user report: border-jaisa hard seam + title text aadha
+         overlap ho raha tha): pehle is box ko video ke div se BAHAR (40dp
+         upar-neeche) expand kiya tha taaki glow bleed ho sake — lekin us
+         extra hisse mein native overlay web page ke apne (neeche wale)
+         title text ke upar hi baith jaata tha (dono layers ek hi jagah
+         draw kar rahe the), isliye text aadha dikhta, aadha overlay se
+         dabta — aur glow ka edge ek sharp seam jaisa dikhta tha. Ab yeh
+         box wapas EXACT video-div ke rect jitna hi hai — koi overlap
+         nahi. "Video ke bahar bleed" wala effect ab web layer (Player.jsx)
+         mein CSS se hota hai, jahan spacing/z-index precisely control ho
+         sakta hai bina native ke saath overlap kiye. -->
     <com.suhani.videoplayer.AmbientGlowView
         android:id="@+id/inlineAmbientGlowView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="invisible" />
 
-    <!-- Asli player content — ab isi ek wrapper ke andar hai taaki upar/neeche
-         margin ek hi jagah define ho (INLINE_AMBIENT_GLOW_MARGIN_DP se match
-         karta hona chahiye, MainActivity.kt mein). -->
-    <FrameLayout
-        android:id="@+id/inlineContentFrame"
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/inlinePlayerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="40dp"
-        android:layout_marginBottom="40dp">
+        app:use_controller="true"
+        app:controller_layout_id="@layout/inline_player_control_view"
+        app:show_buffering="when_playing"
+        app:surface_type="texture_view" />
 
-        <androidx.media3.ui.PlayerView
-            android:id="@+id/inlinePlayerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            app:use_controller="true"
-            app:controller_layout_id="@layout/inline_player_control_view"
-            app:show_buffering="when_playing"
-            app:surface_type="texture_view" />
+    <include layout="@layout/inline_top_bar" />
 
-        <include layout="@layout/inline_top_bar" />
+    <!-- Double-tap ±10s seek ka feedback — ab fullscreen ke speedIndicatorBadge
+         jaisa hi ek chhota pill, video ke top border ke paas (center video
+         ko block nahi karta, bilkul fullscreen wale small notification jaisa). -->
+    <TextView
+        android:id="@+id/inlineSeekFeedback"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="38dp"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="9dp"
+        android:paddingVertical="3dp"
+        android:textColor="#0B0B12"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        tools:text="⏩ 10s" />
 
-        <!-- Double-tap ±10s seek ka feedback — ab fullscreen ke speedIndicatorBadge
-             jaisa hi ek chhota pill, video ke top border ke paas (center video
-             ko block nahi karta, bilkul fullscreen wale small notification jaisa). -->
-        <TextView
-            android:id="@+id/inlineSeekFeedback"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|center_horizontal"
-            android:layout_marginTop="38dp"
-            android:background="@drawable/speed_badge_bg"
-            android:paddingHorizontal="9dp"
-            android:paddingVertical="3dp"
-            android:textColor="#0B0B12"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            tools:text="⏩ 10s" />
+    <!-- Hold-to-2x speed badge — fullscreen ke speedIndicatorBadge jaisa hi
+         (chhota pill, video ke top border ke paas). -->
+    <TextView
+        android:id="@+id/inlineSpeedBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="38dp"
+        android:background="@drawable/speed_badge_bg"
+        android:paddingHorizontal="9dp"
+        android:paddingVertical="3dp"
+        android:text="2x"
+        android:textColor="#0B0B12"
+        android:textStyle="bold"
+        android:textSize="10sp"
+        android:visibility="gone" />
 
-        <!-- Hold-to-2x speed badge — fullscreen ke speedIndicatorBadge jaisa hi
-             (chhota pill, video ke top border ke paas). -->
-        <TextView
-            android:id="@+id/inlineSpeedBadge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|center_horizontal"
-            android:layout_marginTop="38dp"
-            android:background="@drawable/speed_badge_bg"
-            android:paddingHorizontal="9dp"
-            android:paddingVertical="3dp"
-            android:text="2x"
-            android:textColor="#0B0B12"
-            android:textStyle="bold"
-            android:textSize="10sp"
-            android:visibility="gone" />
-
-        <!-- Lock feature hata di gayi hai (user ne kaha ki iska icon "ajeeb"
-             lagta tha) — inlineUnlockButton yahan pehle tha. -->
-
-    </FrameLayout>
+    <!-- Lock feature hata di gayi hai (user ne kaha ki iska icon "ajeeb"
+         lagta tha) — inlineUnlockButton yahan pehle tha. -->
 
 </FrameLayout>
