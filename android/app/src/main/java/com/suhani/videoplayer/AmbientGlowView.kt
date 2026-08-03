@@ -13,16 +13,20 @@ import android.view.View
 import android.view.animation.LinearInterpolator
 
 /**
- * Ambient Glow Mode (signature feature) — Philips Ambilight/Chromecast ambient jaisa:
- * video ke current frame ke 4 edges (top/bottom/left/right) ka average color nikaal kar,
- * screen ke us hi edge par ek soft, blurred glow banaya jaata hai. Scene badalte hi glow
- * naye color mein smoothly (crossfade) transition hota hai, isliye kabhi achanak/jhatke se
- * nahi badalta — hamesha ek premium, "ambient" feel deta hai.
+ * Ambient Glow Mode (signature feature) — Philips Ambilight/Chromecast/YouTube ambient
+ * jaisa: video ke current frame ke 4 edges (top/bottom/left/right) ka average color nikaal
+ * kar, video ke CHAARO TARAF/PEECHE (letterbox gutter — jahan bhi video screen ko poora
+ * nahi bharta, jaise top black bar jahan title-bar sit karta hai) ek soft, blurred glow
+ * banaya jaata hai. Scene badalte hi glow naye color mein smoothly (crossfade) transition
+ * hota hai, isliye kabhi achanak/jhatke se nahi badalta — hamesha ek premium, "ambient"
+ * feel deta hai.
  *
- * Yeh view PlayerView ke UPAR (usi FrameLayout ke andar, controls se NEECHE z-order mein)
- * baithta hai, touch bilkul consume nahi karta (isClickable=false, isFocusable=false, aur
- * hitTestable rehte hue bhi neeche wale gestures ko block nahi karta kyunki iske apne koi
- * touch listener set nahi hote).
+ * Yeh view PlayerView ke NEECHE (activity_player.xml mein usi FrameLayout ke andar,
+ * PlayerView se PEHLE) baithta hai — isliye jahan bhi actual (opaque) video pixels hain
+ * wahan yeh khud-ba-khud dikh hi nahi sakta (video upar se cover kar leta hai); sirf
+ * letterbox/pillarbox gutter mein aur title-bar ke translucent gradient scrim ke peeche
+ * se bleed karta hai — bilkul YouTube ke fullscreen ambient mode jaisa. Touch bilkul
+ * consume nahi karta (isClickable=false, isFocusable=false).
  */
 class AmbientGlowView @JvmOverloads constructor(
     context: Context,
@@ -40,8 +44,12 @@ class AmbientGlowView @JvmOverloads constructor(
     private val argbEvaluator = ArgbEvaluator()
     private var transitionAnimator: ValueAnimator? = null
 
-    // Glow strip ki "moti-ai" (kitni dur tak fade hoga) — screen size ke hisaab se scale hota hai.
+    // Glow strip ki "moti-ai" (kitni dur tak fade hoga) — screen size ke hisaab se scale
+    // hota hai. Top ko thoda extra reach diya hai (topExtentPx) taaki title-bar ka poora
+    // zone reliably cover ho jaaye (user report: "jidhar title hai udhar glow nahi ho raha
+    // tha") — bar chahe kisi bhi size ka ho, isse zyada dur tak fade to kabhi nuksaan nahi.
     private var glowExtentPx = 0f
+    private var topExtentPx = 0f
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -92,9 +100,13 @@ class AmbientGlowView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Glow strip: screen ke chhote side ka ~14%, taaki bade tablets par bhi zyada
-        // bhaari na lage aur chhote phone par bhi dikhe.
-        glowExtentPx = (minOf(w, h) * 0.16f).coerceAtLeast(60f)
+        // Glow strip: screen ke chhote side ka ~20%, taaki letterbox gutter + title-bar
+        // zone reliably cover ho (pehle 16% tha aur video ke ANDAR draw hota tha — ab
+        // video ke BAAHAR/letterbox mein draw hota hai isliye thoda zyada reach chahiye).
+        glowExtentPx = (minOf(w, h) * 0.20f).coerceAtLeast(90f)
+        // Top ko extra boost — yehi woh zone hai jahan title-bar (back/title/audio-track/
+        // subtitle/speed/more row) baithta hai, poora us par glow chahiye.
+        topExtentPx = glowExtentPx * 1.35f
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -102,20 +114,21 @@ class AmbientGlowView @JvmOverloads constructor(
         val w = width.toFloat()
         val h = height.toFloat()
         val extent = glowExtentPx
+        val topExtent = topExtentPx
 
         // Alpha thoda boost kar dete hain taaki glow saaf dikhe lekin video content ko
         // andar se overpower na kare — sirf ek "rim light" jaisa feel.
         fun withGlowAlpha(color: Int): Int {
-            val boosted = (Color.alpha(color).coerceAtLeast(160))
+            val boosted = (Color.alpha(color).coerceAtLeast(190))
             return Color.argb(boosted, Color.red(color), Color.green(color), Color.blue(color))
         }
 
-        // Top edge
+        // Top edge — title-bar zone; is edge ko extra extent milta hai (upar dekho).
         paint.shader = LinearGradient(
-            0f, 0f, 0f, extent,
+            0f, 0f, 0f, topExtent,
             withGlowAlpha(topColor), Color.TRANSPARENT, Shader.TileMode.CLAMP
         )
-        canvas.drawRect(0f, 0f, w, extent, paint)
+        canvas.drawRect(0f, 0f, w, topExtent, paint)
 
         // Bottom edge
         paint.shader = LinearGradient(
