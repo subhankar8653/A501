@@ -26,6 +26,40 @@ export function clearConfig() {
   localStorage.removeItem(STORAGE_KEY)
 }
 
+// Search history for the full-screen search overlay (YouTube-style "recent
+// searches" list shown before the user types anything).
+const RECENT_SEARCHES_KEY = 'huka-tube:recent-searches'
+const MAX_RECENT_SEARCHES = 12
+
+export function getRecentSearches() {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_KEY)
+    const list = raw ? JSON.parse(raw) : []
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+export function addRecentSearch(term) {
+  const clean = (term || '').trim()
+  if (!clean) return getRecentSearches()
+  const existing = getRecentSearches().filter((t) => t.toLowerCase() !== clean.toLowerCase())
+  const next = [clean, ...existing].slice(0, MAX_RECENT_SEARCHES)
+  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next))
+  return next
+}
+
+export function removeRecentSearch(term) {
+  const next = getRecentSearches().filter((t) => t !== term)
+  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next))
+  return next
+}
+
+export function clearRecentSearches() {
+  localStorage.removeItem(RECENT_SEARCHES_KEY)
+}
+
 function base() {
   const cfg = getConfig()
   if (!cfg) throw new Error('NOT_CONFIGURED')

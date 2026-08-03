@@ -2,8 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+}
+
 html, body, #root {
   height: 100%;
+}
+
+/* Explicit (non-transparent) colors on every text input — belt-and-braces
+   against Android WebView's algorithmic dark-mode occasionally mis-reading
+   a transparent-background + light-text field and inverting it, which is
+   what made typed search text invisible before. */
+input, textarea {
+  background-color: #1E1D2A;
+  color: #F2EFE6;
 }
 
 /* Signature motif: a film-strip sprocket rail. Used sparingly on the
