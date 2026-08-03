@@ -22,7 +22,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Suhani Screen"
+        android:label="Huka Tube"
         android:theme="@style/Theme.SuhaniScreen"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true">
