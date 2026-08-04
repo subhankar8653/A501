@@ -78,6 +78,7 @@ from Backend.fastapi.routes.api_routes import (
     purge_duplicates_api,
     remove_custom_catalog_item_api,
     resolve_telegram_api,
+    resolve_drive_api,
     resolve_subtitle_api,
     list_subtitle_languages_api,
     list_subtitles_api,
@@ -440,6 +441,10 @@ async def apply_media_rescan(
 @app.post("/api/media/resolve-telegram")
 async def resolve_telegram(payload: dict, _: bool = Depends(require_auth)):
     return await resolve_telegram_api(payload)
+
+@app.post("/api/media/resolve-drive")
+async def resolve_drive(payload: dict, _: bool = Depends(require_auth)):
+    return await resolve_drive_api(payload)
 
 @app.post("/api/media/manual-add")
 async def manual_add_media(payload: dict, _: bool = Depends(require_auth)):
