@@ -9,6 +9,7 @@ from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import RedirectResponse
 from fastapi.responses import Response as PlainResponse
 from fastapi.responses import StreamingResponse
 
@@ -16,6 +17,7 @@ from Backend import db
 from Backend.fastapi.security.tokens import verify_token
 from Backend.helper.custom_dl import ACTIVE_STREAMS, RECENT_STREAMS, ByteStreamer
 from Backend.helper.encrypt import decode_string
+from Backend.helper.gdrive import GDriveError, resolve_stream
 from Backend.helper.utils import track_usage
 from Backend.helper.virtual_dl import resolve_virtual_parts, virtual_stream_generator
 from Backend.logger import LOGGER
@@ -257,6 +259,11 @@ async def subtitle_handler(token: str, id: str, name: str, token_data: dict = De
 async def stream_handler(request: Request, token: str, id: str, name: str, token_data: dict = Depends(verify_token)):
     decoded = await decode_string(id)
 
+    if decoded.get("drive_id"):
+        return await drive_media_streamer(
+            request=request, drive_id=decoded["drive_id"], token=token, token_data=token_data,
+        )
+
     if decoded.get("global"):
         return await global_media_streamer(
             request=request, chat_id=int(decoded["chat_id"]), msg_id=int(decoded["msg_id"]),
@@ -277,6 +284,45 @@ async def stream_handler(request: Request, token: str, id: str, name: str, token
         request=request, chat_id=chat_id, msg_id=int(msg_id),
         token=token, token_data=token_data, stream_id_hash=id,
     )
+
+
+_DRIVE_QUALITY_RANK = {"2160p": 5, "1080p": 4, "720p": 3, "480p": 2, "360p": 1, "240p": 0}
+
+
+#----- Pick the best non-audio quality URL out of the resolver's qualities[] list
+def _pick_drive_url(qualities: list):
+    video_only = [q for q in (qualities or []) if q.get("url") and "audio" not in (q.get("label") or "")]
+    if not video_only:
+        return None
+    video_only.sort(key=lambda q: _DRIVE_QUALITY_RANK.get(q.get("label"), -1), reverse=True)
+    return video_only[0]["url"]
+
+
+#----- Google Drive: no bytes pass through Railway — resolve a fresh googlevideo.com
+#----- URL via the Vercel resolver and 302 redirect straight to it. If extraction
+#----- fails, surface Drive's own preview URL so the client can fall back to it.
+async def drive_media_streamer(request: Request, drive_id: str, token: str, token_data: dict = None):
+    try:
+        data = await resolve_stream(drive_id)
+    except GDriveError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    url = _pick_drive_url(data.get("qualities")) if data.get("extracted") else None
+    if url:
+        asyncio.create_task(track_usage(secrets.token_hex(8), token, token_data))
+        return RedirectResponse(url=url, status_code=302)
+
+    preview_url = data.get("previewUrl")
+    if preview_url:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Direct stream extraction failed for this Drive file.",
+                "fallback": "iframe",
+                "preview_url": preview_url,
+            },
+        )
+    raise HTTPException(status_code=502, detail="Could not resolve this Google Drive file.")
 
 
 #----- Stream a single Telegram file, with optional multi-client parallelism

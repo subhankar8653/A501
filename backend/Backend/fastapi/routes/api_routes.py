@@ -28,6 +28,7 @@ from Backend.helper.auto_catalog import (
 from Backend.helper.backup import export_config, import_config
 from Backend.helper.custom_dl import ByteStreamer, _speed_test_single_client, run_speed_test
 from Backend.helper.encrypt import decode_string, encode_string
+from Backend.helper.gdrive import GDriveError, extract_drive_id, fetch_title as fetch_drive_title
 from Backend.helper.health import run_health_checks
 from Backend.helper.manual_add import resolve_telegram_message, stamp_caption_by_ref
 from Backend.helper.requests_manager import (
@@ -1014,6 +1015,30 @@ async def resolve_telegram_api(payload: dict) -> dict:
     return {"status": "success", "data": data}
 
 
+#----- Manual add: resolve a Google Drive link into a streamable file (title + size)
+async def resolve_drive_api(payload: dict) -> dict:
+    link = str(payload.get("link") or "").strip()
+    if not link:
+        raise HTTPException(status_code=400, detail="Provide a Google Drive link or file ID.")
+    file_id = extract_drive_id(link)
+    if not file_id:
+        raise HTTPException(status_code=400, detail="Could not read that Google Drive link.")
+    try:
+        info = await fetch_drive_title(file_id)
+    except GDriveError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    raw_size = int(info.get("size_bytes") or 0)
+    return {
+        "status": "success",
+        "data": {
+            "id": file_id,
+            "name": info.get("title") or file_id,
+            "raw_size": raw_size,
+            "size": get_readable_file_size(raw_size),
+        },
+    }
+
+
 async def resolve_subtitle_api(payload: dict) -> dict:
     client = _scan_client()
     if client is None:
@@ -1165,33 +1190,52 @@ async def manual_add_media_api(payload: dict) -> dict:
     if not quality:
         raise HTTPException(status_code=400, detail="A quality label (e.g. 1080p) is required.")
 
-    #----- One source = single file, multiple sources = split file parts (in order)
-    part_sources = stream.get("parts")
-    if not isinstance(part_sources, list) or not part_sources:
-        part_sources = [{"url": stream.get("url"), "chat_id": stream.get("chat_id"), "msg_id": stream.get("msg_id")}]
-    part_sources = [p for p in part_sources if p and (p.get("url") or (p.get("chat_id") and p.get("msg_id")))]
-    if not part_sources:
-        raise HTTPException(status_code=400, detail="Provide at least one Telegram message link.")
+    #----- Google Drive: a single link, no Telegram client involved
+    drive_link = str(stream.get("drive_link") or "").strip()
+    is_drive = bool(drive_link)
 
-    client = _scan_client()
-    if client is None:
-        raise HTTPException(status_code=503, detail="No Telegram client is connected yet.")
-
+    client = None
     resolved_parts = []
-    for src in part_sources:
+    if is_drive:
+        drive_file_id = extract_drive_id(drive_link)
+        if not drive_file_id:
+            raise HTTPException(status_code=400, detail="Could not read that Google Drive link.")
         try:
-            resolved_parts.append(await resolve_telegram_message(
-                client, url=src.get("url"), chat_id=src.get("chat_id"), msg_id=src.get("msg_id"),
-            ))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Could not read that message: {exc}")
+            drive_info = await fetch_drive_title(drive_file_id)
+        except GDriveError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        raw_size = int(drive_info.get("size_bytes") or 0)
+        primary = {"upload_year": 0}
+        is_split = False
+        raw_name = (stream.get("name") or drive_info.get("title") or drive_file_id).strip()
+        name = raw_name
+    else:
+        #----- One source = single file, multiple sources = split file parts (in order)
+        part_sources = stream.get("parts")
+        if not isinstance(part_sources, list) or not part_sources:
+            part_sources = [{"url": stream.get("url"), "chat_id": stream.get("chat_id"), "msg_id": stream.get("msg_id")}]
+        part_sources = [p for p in part_sources if p and (p.get("url") or (p.get("chat_id") and p.get("msg_id")))]
+        if not part_sources:
+            raise HTTPException(status_code=400, detail="Provide at least one Telegram message link.")
 
-    primary = resolved_parts[0]
-    is_split = len(resolved_parts) > 1
-    raw_name = (stream.get("name") or primary["name"]).strip()
-    name = strip_part_suffix(raw_name) if is_split else raw_name
+        client = _scan_client()
+        if client is None:
+            raise HTTPException(status_code=503, detail="No Telegram client is connected yet.")
+
+        for src in part_sources:
+            try:
+                resolved_parts.append(await resolve_telegram_message(
+                    client, url=src.get("url"), chat_id=src.get("chat_id"), msg_id=src.get("msg_id"),
+                ))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Could not read that message: {exc}")
+
+        primary = resolved_parts[0]
+        is_split = len(resolved_parts) > 1
+        raw_name = (stream.get("name") or primary["name"]).strip()
+        name = strip_part_suffix(raw_name) if is_split else raw_name
 
     #----- Resolve the title-level metadata: existing doc, TMDB/IMDb pick, or manual entry
     tmdb_id = payload.get("tmdb_id")
@@ -1227,12 +1271,13 @@ async def manual_add_media_api(payload: dict) -> dict:
     _fill_placeholder_metadata(base)
 
     #----- Store the file thumbnail as a base-relative path so it survives base_url changes
+    #----- (Drive entries have no Telegram thumbnail to pull, so this stays empty for them)
     thumb_url = ""
     if primary.get("has_thumb"):
         thumb_enc = await encode_string({"chat_id": int(primary["chat_id"]), "msg_id": int(primary["msg_id"])})
         thumb_url = f"/thumb/{thumb_enc}"
 
-    #----- Split parts share one quality entry via a common group key
+    #----- Split parts share one quality entry via a common group key (Drive never splits)
     group_key = f"manual:{primary['chat_id']}:{quality}:{secrets.token_hex(6)}" if is_split else None
 
     tv_extra = {}
@@ -1251,27 +1296,50 @@ async def manual_add_media_api(payload: dict) -> dict:
             "episode_released": payload.get("episode_released") or "",
         }
 
-    for index, part in enumerate(resolved_parts, start=1):
-        p_channel = int(part["chat_id"])
-        p_msg = int(part["msg_id"])
-        encoded = await encode_string({"chat_id": p_channel, "msg_id": p_msg})
+    if is_drive:
+        encoded = await encode_string({"drive_id": drive_file_id})
         metadata_info = dict(base)
         metadata_info.update({
             "media_type": media_type,
             "quality": quality,
             "encoded_string": encoded,
-            "group_key": group_key,
-            "part_number": index if is_split else None,
+            "group_key": None,
+            "part_number": None,
             "is_anime": False,
+            "source": "drive",
+            "drive_id": drive_file_id,
         })
         metadata_info.update(tv_extra)
         updated_id = await db.insert_media(
-            metadata_info, channel=p_channel, msg_id=p_msg,
-            size=part["size"], name=name, raw_size=int(part.get("raw_size") or 0),
+            metadata_info, channel=0, msg_id=0,
+            size=get_readable_file_size(raw_size), name=name, raw_size=raw_size,
         )
         if not updated_id:
             raise HTTPException(status_code=500, detail="Failed to add media (validation error).")
-        await stamp_caption_by_ref(client, p_channel, p_msg, metadata_info)
+    else:
+        for index, part in enumerate(resolved_parts, start=1):
+            p_channel = int(part["chat_id"])
+            p_msg = int(part["msg_id"])
+            encoded = await encode_string({"chat_id": p_channel, "msg_id": p_msg})
+            metadata_info = dict(base)
+            metadata_info.update({
+                "media_type": media_type,
+                "quality": quality,
+                "encoded_string": encoded,
+                "group_key": group_key,
+                "part_number": index if is_split else None,
+                "is_anime": False,
+                "source": "telegram",
+                "drive_id": None,
+            })
+            metadata_info.update(tv_extra)
+            updated_id = await db.insert_media(
+                metadata_info, channel=p_channel, msg_id=p_msg,
+                size=part["size"], name=name, raw_size=int(part.get("raw_size") or 0),
+            )
+            if not updated_id:
+                raise HTTPException(status_code=500, detail="Failed to add media (validation error).")
+            await stamp_caption_by_ref(client, p_channel, p_msg, metadata_info)
 
     result_tmdb_id = base["tmdb_id"]
     location = await db.find_media_doc(media_type, result_tmdb_id)
