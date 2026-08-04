@@ -19,6 +19,9 @@ class QualityDetail(BaseModel):
     size: str
     group_key: Optional[str] = None
     parts: Optional[List[QualityPart]] = None
+    #----- "telegram" (default, existing data) or "drive" for a Google Drive-backed stream
+    source: Optional[str] = "telegram"
+    drive_id: Optional[str] = None
 
 
 #----- Episode schema

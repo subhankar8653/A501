@@ -1251,6 +1251,8 @@ class Database:
                 id=metadata_info['encoded_string'],
                 name=name,
                 size=size,
+                source=metadata_info.get('source', 'telegram'),
+                drive_id=metadata_info.get('drive_id'),
             )
 
         if metadata_info['media_type'] == "movie":
