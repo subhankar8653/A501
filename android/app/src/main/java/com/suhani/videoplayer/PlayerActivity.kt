@@ -85,6 +85,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -1565,8 +1566,17 @@ class PlayerActivity : AppCompatActivity() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        // Bug fix (buffering slow): pehle koi custom DataSource nahi tha, matlab bilkul
+        // default 8s HTTP timeout, cross-protocol redirect band, aur koi disk cache nahi —
+        // seek peeche karo ya video dubara kholo, har baar poora dubara download hota tha.
+        // PlayerNetwork ab tuned timeouts + cache-backed DataSource deta hai (dekho
+        // PlayerNetwork.kt), jo fullscreen aur inline/mini player dono share karte hain.
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(PlayerNetwork.dataSourceFactory(this))
+
         player = ExoPlayer.Builder(this, renderersFactory)
             .setLoadControl(loadControl)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
