@@ -928,8 +928,26 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'Could not resolve link');
             const d = data.data || {};
-            if (!document.getElementById('ma-name').value.trim()) {
-                document.getElementById('ma-name').value = d.name || '';
+            document.getElementById('ma-name').value = d.name || '';
+            if (d.quality) {
+                const sel = document.getElementById('ma-quality');
+                const custom = document.getElementById('ma-quality-custom');
+                const opt = [...sel.options].find(o => o.value.toLowerCase() === String(d.quality).toLowerCase());
+                if (opt) {
+                    sel.value = opt.value;
+                    custom.classList.add('hidden');
+                } else {
+                    sel.value = '__custom';
+                    custom.value = d.quality;
+                    custom.classList.remove('hidden');
+                }
+            }
+            if (maType === 'tv') {
+                if (d.season != null && !document.getElementById('ma-season').value) document.getElementById('ma-season').value = d.season;
+                if (d.episode != null && !document.getElementById('ma-episode').value) document.getElementById('ma-episode').value = d.episode;
+            }
+            if (!document.getElementById('ma-m-title').value.trim() && d.name) {
+                document.getElementById('ma-m-title').value = d.name.replace(/\.[a-zA-Z0-9]{2,4}$/, '').replace(/[._]/g, ' ').trim();
             }
             state.textContent = `Found: ${d.name || 'file'} (${d.size || '—'})`;
         } catch (e) {
