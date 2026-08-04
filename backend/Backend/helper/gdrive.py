@@ -67,12 +67,14 @@ async def _get_json(path: str, file_id: str) -> dict:
     return data
 
 
-#----- GET /api/title -> {title, sizeBytes, ...}
+#----- GET /api/title -> {title, sizeBytes, width, height, ...}
 async def fetch_title(file_id: str) -> dict:
     data = await _get_json("/api/title", file_id)
     return {
         "title": data.get("title"),
         "size_bytes": data.get("sizeBytes"),
+        "width": data.get("width"),
+        "height": data.get("height"),
     }
 
 
