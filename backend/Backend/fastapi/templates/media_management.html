@@ -645,12 +645,32 @@
 
                 <!-- Stream -->
                 <div class="space-y-3">
-                    <div class="flex items-center justify-between gap-2">
-                        <label class="ma-label" style="margin-bottom:0">Stream link(s) *</label>
-                        <button type="button" onclick="maAddPart()" class="text-xs font-bold text-primary shrink-0"><i class="fa-solid fa-plus"></i> Add split part</button>
+                    <div>
+                        <label class="ma-label">Source</label>
+                        <div class="flex gap-2">
+                            <button type="button" class="ma-tab" data-ma-source="telegram" onclick="maSetSource('telegram')"><i class="fa-brands fa-telegram"></i> Telegram</button>
+                            <button type="button" class="ma-tab" data-ma-source="drive" onclick="maSetSource('drive')"><i class="fa-brands fa-google-drive"></i> Google Drive</button>
+                        </div>
                     </div>
-                    <div id="ma-parts" class="space-y-2"></div>
-                    <p class="text-xs text-text-secondary">Add more parts only for a split file (they join into one stream, in order).</p>
+
+                    <div id="ma-telegram-block" class="space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <label class="ma-label" style="margin-bottom:0">Stream link(s) *</label>
+                            <button type="button" onclick="maAddPart()" class="text-xs font-bold text-primary shrink-0"><i class="fa-solid fa-plus"></i> Add split part</button>
+                        </div>
+                        <div id="ma-parts" class="space-y-2"></div>
+                        <p class="text-xs text-text-secondary">Add more parts only for a split file (they join into one stream, in order).</p>
+                    </div>
+
+                    <div id="ma-drive-block" class="space-y-2 hidden">
+                        <label class="ma-label">Google Drive link or file ID *</label>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input id="ma-drive-link" class="ma-input" placeholder="https://drive.google.com/file/d/.../view">
+                            <button type="button" onclick="maResolveDrive()" class="px-4 py-2.5 rounded-xl glass-panel border border-hairline text-text font-bold text-sm shrink-0">Resolve</button>
+                        </div>
+                        <p class="text-xs text-text-secondary">File must be shared as "Anyone with the link". Playback redirects straight to Google — no upload, no re-encoding.</p>
+                    </div>
+
                     <p id="ma-resolve-state" class="text-xs text-text-secondary hidden"></p>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
@@ -689,6 +709,7 @@
 
 <script>
     let maType = mediaType;
+    let maSource = 'telegram';
     let maSelectedId = null;
     let maSearchList = [];
 
@@ -857,7 +878,8 @@
 
     function openManualAdd() {
         maSetType(mediaType);
-        ['ma-name','ma-season','ma-episode','ma-episode-title','ma-m-title','ma-m-year','ma-m-rating','ma-m-genres','ma-m-description','ma-m-poster','ma-m-backdrop','ma-quality-custom','ma-search-query'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        maSetSource('telegram');
+        ['ma-name','ma-season','ma-episode','ma-episode-title','ma-m-title','ma-m-year','ma-m-rating','ma-m-genres','ma-m-description','ma-m-poster','ma-m-backdrop','ma-quality-custom','ma-search-query','ma-drive-link'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         maResetParts();
         document.getElementById('ma-quality').value = '1080p';
         document.getElementById('ma-quality-custom').classList.add('hidden');
@@ -882,6 +904,38 @@
         maType = type;
         document.querySelectorAll('[data-ma-type]').forEach(b => b.classList.toggle('active', b.dataset.maType === type));
         document.getElementById('ma-tv-fields').classList.toggle('hidden', type !== 'tv');
+    }
+
+    function maSetSource(source) {
+        maSource = source;
+        document.querySelectorAll('[data-ma-source]').forEach(b => b.classList.toggle('active', b.dataset.maSource === source));
+        document.getElementById('ma-telegram-block').classList.toggle('hidden', source !== 'telegram');
+        document.getElementById('ma-drive-block').classList.toggle('hidden', source !== 'drive');
+        document.getElementById('ma-resolve-state').classList.add('hidden');
+    }
+
+    async function maResolveDrive() {
+        const link = document.getElementById('ma-drive-link').value.trim();
+        const state = document.getElementById('ma-resolve-state');
+        if (!link) { showToast('Paste a Google Drive link first.', 'error', 'Error'); return; }
+        state.textContent = 'Resolving...';
+        state.classList.remove('hidden');
+        try {
+            const res = await fetch('/api/media/resolve-drive', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ link })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || 'Could not resolve link');
+            const d = data.data || {};
+            if (!document.getElementById('ma-name').value.trim()) {
+                document.getElementById('ma-name').value = d.name || '';
+            }
+            state.textContent = `Found: ${d.name || 'file'} (${d.size || '—'})`;
+        } catch (e) {
+            state.textContent = e.message || 'Could not resolve link.';
+            showToast(e.message || 'Could not resolve link.', 'error', 'Error');
+        }
     }
 
     async function maResolve() {
@@ -932,16 +986,25 @@
 
     async function submitManualAdd() {
         const btn = document.getElementById('ma-submit');
-        const parts = maCollectParts();
         const quality = maQuality();
         const title = document.getElementById('ma-m-title').value.trim();
         if (!title) { showToast('Enter a title.', 'error', 'Error'); return; }
-        if (!parts.length) { showToast('Paste at least one Telegram message link.', 'error', 'Error'); return; }
         if (!quality) { showToast('Select a quality.', 'error', 'Error'); return; }
+
+        let streamPayload;
+        if (maSource === 'drive') {
+            const driveLink = document.getElementById('ma-drive-link').value.trim();
+            if (!driveLink) { showToast('Paste a Google Drive link.', 'error', 'Error'); return; }
+            streamPayload = { quality, name: document.getElementById('ma-name').value.trim() || undefined, drive_link: driveLink };
+        } else {
+            const parts = maCollectParts();
+            if (!parts.length) { showToast('Paste at least one Telegram message link.', 'error', 'Error'); return; }
+            streamPayload = { quality, name: document.getElementById('ma-name').value.trim() || undefined, parts };
+        }
 
         const payload = {
             media_type: maType,
-            stream: { quality, name: document.getElementById('ma-name').value.trim() || undefined, parts },
+            stream: streamPayload,
             catalog_ids: getMaSelectedCatalogIds(),
             manual_metadata: {
                 title,
