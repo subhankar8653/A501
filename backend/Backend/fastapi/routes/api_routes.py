@@ -30,7 +30,7 @@ from Backend.helper.custom_dl import ByteStreamer, _speed_test_single_client, ru
 from Backend.helper.encrypt import decode_string, encode_string
 from Backend.helper.gdrive import GDriveError, extract_drive_id, fetch_title as fetch_drive_title
 from Backend.helper.health import run_health_checks
-from Backend.helper.manual_add import resolve_telegram_message, stamp_caption_by_ref
+from Backend.helper.manual_add import quality_from_height, resolve_telegram_message, stamp_caption_by_ref
 from Backend.helper.requests_manager import (
     delete_request,
     list_requests,
@@ -44,16 +44,17 @@ from Backend.helper.metadata import (
     fetch_selected_movie_metadata,
     fetch_selected_tv_metadata,
     gradient_cover_path,
+    parse_media_name,
     resolve_cover_url,
     search_any_candidates,
     search_movie_candidates,
     search_tv_candidates,
 )
 from Backend.helper.passwords import hash_password, verify_password
-from Backend.helper.pyro import get_readable_file_size, get_readable_time
+from Backend.helper.pyro import clean_filename, finalize_media_name, get_readable_file_size, get_readable_time
 from Backend.helper.scan_manager import dbcheck_manager, duplicate_manager, scan_manager
 from Backend.helper.settings_manager import SettingsManager
-from Backend.helper.split_files import strip_part_suffix
+from Backend.helper.split_files import parse_split_info, strip_part_suffix
 from Backend.helper.subtitles import (
     list_languages,
     list_title_subtitles,
@@ -1015,7 +1016,8 @@ async def resolve_telegram_api(payload: dict) -> dict:
     return {"status": "success", "data": data}
 
 
-#----- Manual add: resolve a Google Drive link into a streamable file (title + size)
+#----- Manual add: resolve a Google Drive link into a streamable file
+#----- (title, quality, season/episode) — same filename parsing as Telegram resolve.
 async def resolve_drive_api(payload: dict) -> dict:
     link = str(payload.get("link") or "").strip()
     if not link:
@@ -1027,14 +1029,28 @@ async def resolve_drive_api(payload: dict) -> dict:
         info = await fetch_drive_title(file_id)
     except GDriveError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
     raw_size = int(info.get("size_bytes") or 0)
+    raw_name = (info.get("title") or file_id).strip()
+    cleaned = clean_filename(raw_name)
+    split_info = parse_split_info(cleaned)
+    parsed = parse_media_name(strip_part_suffix(cleaned) if split_info else cleaned)
+    file_name = finalize_media_name(raw_name, bool(split_info))
+
+    #----- Real video pixel height (Drive metadata) beats a guess from the filename
+    height = int(info.get("height") or 0)
+    quality = quality_from_height(height) or parsed.get("quality") or ""
+
     return {
         "status": "success",
         "data": {
             "id": file_id,
-            "name": info.get("title") or file_id,
+            "name": file_name,
             "raw_size": raw_size,
             "size": get_readable_file_size(raw_size),
+            "quality": quality,
+            "season": parsed.get("season"),
+            "episode": parsed.get("episode"),
         },
     }
 
@@ -1207,8 +1223,9 @@ async def manual_add_media_api(payload: dict) -> dict:
         raw_size = int(drive_info.get("size_bytes") or 0)
         primary = {"upload_year": 0}
         is_split = False
-        raw_name = (stream.get("name") or drive_info.get("title") or drive_file_id).strip()
-        name = raw_name
+        raw_drive_name = (drive_info.get("title") or drive_file_id).strip()
+        cleaned_drive_name = clean_filename(raw_drive_name)
+        name = (stream.get("name") or finalize_media_name(raw_drive_name, False) or cleaned_drive_name).strip()
     else:
         #----- One source = single file, multiple sources = split file parts (in order)
         part_sources = stream.get("parts")
