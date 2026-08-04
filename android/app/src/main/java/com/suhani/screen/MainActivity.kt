@@ -30,10 +30,13 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.suhani.videoplayer.PlayerNetwork
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -1033,7 +1036,23 @@ class MainActivity : AppCompatActivity() {
         val renderersFactory = FfmpegRenderersFactory(this, inlineEqProcessor)
             .setExtensionRendererMode(extensionMode)
             .setEnableDecoderFallback(decoderMode != 0)
+
+        // Bug fix (buffering slow): fullscreen PlayerActivity jaisa hi tuning yahan bhi —
+        // pehle yeh chhota inline/mini player bilkul default LoadControl aur bina kisi
+        // custom DataSource ke chal raha tha (8s HTTP timeout, cross-protocol redirect
+        // band, zero disk cache). Ab dono players PlayerNetwork ka shared tuned +
+        // cache-backed DataSource use karte hain, aur mini<->fullscreen switch karne par
+        // bhi already-buffered data dobara download nahi hota.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15_000, 50_000, 1_500, 2_500)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setDataSourceFactory(PlayerNetwork.dataSourceFactory(this))
+
         return ExoPlayer.Builder(this, renderersFactory)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
