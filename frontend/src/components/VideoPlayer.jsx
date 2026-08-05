@@ -40,7 +40,7 @@ function fmt(t) {
 function detectNativeBridge() {
   return !!(window.AndroidPlayer && typeof window.AndroidPlayer.mount === 'function')
 }
-export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick }) {
+export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError }) {
   const isNative = useRef(detectNativeBridge()).current
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -110,6 +110,13 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     const onPlay = () => { setPlaying(true); scheduleHide() }
     const onPause = () => { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current) }
     const onEnd = () => { setPlaying(false); setShowControls(true); onEnded && onEnded() }
+    // Drive-sourced streams can fail to extract server-side (unofficial method,
+    // Google can restrict it per-file). The backend then answers the /dl/ request
+    // with an error status instead of a redirect to the real video bytes, which
+    // makes the <video> element fire a plain "error" event with no useful detail
+    // of its own. Bubble it up so the page can probe *why* and fall back to an
+    // iframe embed of Drive's own preview player if that's the reason.
+    const onErr = () => { onFatalError && onFatalError() }
 
     v.addEventListener('timeupdate', onTime)
     v.addEventListener('loadedmetadata', onDur)
@@ -121,6 +128,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnd)
+    v.addEventListener('error', onErr)
     return () => {
       v.removeEventListener('timeupdate', onTime)
       v.removeEventListener('loadedmetadata', onDur)
@@ -132,8 +140,9 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
       v.removeEventListener('ended', onEnd)
+      v.removeEventListener('error', onErr)
     }
-  }, [isNative, scheduleHide, onEnded])
+  }, [isNative, scheduleHide, onEnded, onFatalError])
 
   // Native player ko qualities bhejne ke liye {url, label} tak trim kar do —
   // baaki stream metadata (title/size/etc.) native side ko nahi chahiye.
