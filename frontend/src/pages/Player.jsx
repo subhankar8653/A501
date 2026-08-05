@@ -67,6 +67,34 @@ export default function Player() {
   const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
   const { saved, toggle: toggleSaved } = useLocalSaved(`suhani-screen:saved:${storageKey}`)
 
+  // Drive-sourced streams occasionally fail server-side extraction. When the
+  // <video> element errors out, we probe the same /dl/ URL with a manual
+  // (non-followed) redirect: a successful stream answers with a 302 straight
+  // to googlevideo.com (type stays "opaqueredirect", nothing downloaded), a
+  // failed Drive extraction answers with JSON containing a previewUrl instead
+  // — in which case we swap to Drive's own embedded preview player.
+  const [driveFallbackUrl, setDriveFallbackUrl] = useState(null)
+  const fallbackCheckedFor = useRef(null)
+
+  async function handleVideoFatalError() {
+    if (!active?.url || fallbackCheckedFor.current === active.url) return
+    fallbackCheckedFor.current = active.url
+    try {
+      const res = await fetch(active.url, { redirect: 'manual' })
+      if (res.type === 'opaqueredirect') return // genuine playback/network issue, not this
+      if (res.status === 409 || res.status === 502) {
+        const body = await res.json().catch(() => null)
+        if (body?.preview_url || body?.detail?.preview_url) {
+          setDriveFallbackUrl(body.preview_url || body.detail.preview_url)
+          return
+        }
+      }
+      setError('Yeh stream play nahi ho payi.')
+    } catch {
+      // network hiccup while probing — leave the player's own error state as-is
+    }
+  }
+
   const [downloading, setDownloading] = useState(false)
   const [dlProgress, setDlProgress] = useState(0)
   const [retryKey, setRetryKey] = useState(0)
@@ -76,6 +104,8 @@ export default function Player() {
   const resumeAt = useRef(0)
 
   function switchQuality(stream) {
+    setDriveFallbackUrl(null)
+    fallbackCheckedFor.current = null
     setActive(stream)
   }
 
@@ -88,6 +118,8 @@ export default function Player() {
     setStreams(null)
     setActive(null)
     setError('')
+    setDriveFallbackUrl(null)
+    fallbackCheckedFor.current = null
     resumeAt.current = 0
     getStreams(type, id)
       .then((list) => {
@@ -326,17 +358,33 @@ export default function Player() {
               </>
             ) : null}
             <div className="relative aspect-video bg-black overflow-hidden">
-              <VideoPlayer
-                key={active.url}
-                src={active.url}
-                title={meta.filename}
-                qualities={qualities}
-                activeQuality={activeQualityObj}
-                onQualityChange={(q) => switchQuality(q)}
-                startAt={resumeAt.current}
-                onProgressTick={(t) => { resumeAt.current = t }}
-                onEnded={handleEnded}
-              />
+              {driveFallbackUrl ? (
+                // Direct extraction failed for this Drive file (Google restricts
+                // the unofficial method per-file) — fall back to Drive's own
+                // embedded preview player, which always works but has no custom
+                // controls/skin of ours.
+                <iframe
+                  src={driveFallbackUrl}
+                  title={meta.filename || 'Video'}
+                  className="w-full h-full"
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  frameBorder="0"
+                />
+              ) : (
+                <VideoPlayer
+                  key={active.url}
+                  src={active.url}
+                  title={meta.filename}
+                  qualities={qualities}
+                  activeQuality={activeQualityObj}
+                  onQualityChange={(q) => switchQuality(q)}
+                  startAt={resumeAt.current}
+                  onProgressTick={(t) => { resumeAt.current = t }}
+                  onEnded={handleEnded}
+                  onFatalError={handleVideoFatalError}
+                />
+              )}
             </div>
           </div>
 
