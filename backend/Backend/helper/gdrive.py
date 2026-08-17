@@ -81,3 +81,69 @@ async def fetch_title(file_id: str) -> dict:
 #----- GET /api/resolve -> {extracted, qualities[] | fallback:"iframe", previewUrl}
 async def resolve_stream(file_id: str) -> dict:
     return await _get_json("/api/resolve", file_id)
+
+
+#======================================================================
+# Official Drive API v3 proxy path (API-key auth)
+#
+# Root-cause fix for the black-screen bug: the Vercel resolver above scrapes
+# an unofficial googlevideo.com link. That link is bound to the IP that
+# fetched it (Vercel's server IP) — when we 302-redirect the Android client
+# straight to it, Google's CDN sees a different IP and refuses to serve the
+# video, so ExoPlayer just sits there with nothing to render.
+#
+# The official Drive API v3 "alt=media" endpoint has no such IP-binding and
+# fully supports Range requests, so instead of redirecting the client to a
+# scraped link, WE (the backend) fetch bytes from it and stream them onward —
+# same pattern as the existing Telegram media_streamer(). This needs
+# GDRIVE_API_KEY (a Google Cloud API key with the Drive API enabled) and the
+# Drive file/folder shared as "Anyone with the link".
+#======================================================================
+
+_DRIVE_API_BASE = "https://www.googleapis.com/drive/v3/files"
+
+
+class GDriveAPIError(Exception):
+    """Raised when the official Drive API v3 endpoint can't serve the file."""
+
+
+def api_key_configured() -> bool:
+    return bool((Config.GDRIVE_API_KEY or "").strip())
+
+
+def _api_key() -> str:
+    key = (Config.GDRIVE_API_KEY or "").strip()
+    if not key:
+        raise GDriveAPIError(
+            "GDRIVE_API_KEY is not set. Add it in your Railway/Backend env vars — "
+            "create an API key in Google Cloud Console with the Drive API v3 enabled."
+        )
+    return key
+
+
+#----- Shared httpx client, reused by the proxy streamer in stream_routes.py
+async def get_shared_client() -> httpx.AsyncClient:
+    return await _get_client()
+
+
+#----- GET /files/{id}?fields=name,size,mimeType via the official Drive API v3.
+#----- Requires the file to be shared "Anyone with the link".
+async def fetch_official_metadata(file_id: str) -> dict:
+    key = _api_key()
+    client = await _get_client()
+    try:
+        r = await client.get(
+            f"{_DRIVE_API_BASE}/{file_id}",
+            params={"key": key, "fields": "name,size,mimeType"},
+        )
+    except Exception as e:
+        raise GDriveAPIError(f"Could not reach the Google Drive API: {e}")
+    if r.status_code != 200:
+        message = r.text[:200] if r.text else f"HTTP {r.status_code}"
+        raise GDriveAPIError(f"Drive API metadata request failed ({r.status_code}): {message}")
+    return r.json()
+
+
+#----- Official, non-IP-locked, Range-capable direct media URL
+def official_media_url(file_id: str) -> str:
+    return f"{_DRIVE_API_BASE}/{file_id}?alt=media&key={_api_key()}"
