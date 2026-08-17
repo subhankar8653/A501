@@ -67,11 +67,24 @@ function base() {
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`Request failed (${res.status})`)
+  // Bug fix (user report: "Movies/Web Series load hi nahi ho raha, hamesha
+  // Loading... hi dikhta rehta hai" jabki Anime/K-Drama theek chalte hain):
+  // pehle fetch() ka koi timeout nahi tha — agar backend kisi specific
+  // catalog (jisme normally kaafi zyada items hote hain, jaise Movies/Web
+  // Series) par slow pad jaaye ya atak jaaye, promise hamesha ke liye pending
+  // reh jaata, aur "Loading..." kabhi hatta hi nahi. Ab 20s ke baad request
+  // khud abort ho jaati hai taaki UI kabhi hamesha ke liye atki na rahe.
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) {
+      throw new Error(`Request failed (${res.status})`)
+    }
+    return await res.json()
+  } finally {
+    clearTimeout(timeout)
   }
-  return res.json()
 }
 
 export async function getManifest() {
@@ -103,20 +116,42 @@ export async function getCatalog(type, id, extra = {}) {
 // catalog cover ho, na ki sirf uska pehla hissa.
 const CATALOG_PAGE_SIZE = 15
 const MAX_CATALOG_PAGES = 40 // safety cap: ~600 items/catalog, kabhi infinite loop na bane
+const PAGE_BATCH_SIZE = 5 // ek saath kitne pages parallel fetch karein
 
+// Bug fix (user report): pages pehle ek-ek karke sequentially (await ke
+// andar await) fetch hote the — Movies/Web Series jaise tabs mein Anime se
+// kaafi zyada catalogs/items hote hain, to unke saare pages ek-ek karke
+// fetch karne mein bahut zyada time lag jaata tha, aur user ko lagta "kabhi
+// load hi nahi hoga". Ab pages chhote batches (5 parallel) mein fetch hote
+// hain — kaafi tez, aur ek slow/hanging page se poori catalog nahi atakti
+// (fetchJson ka apna 20s timeout bhi hai).
 export async function getCatalogAllPages(type, id, extra = {}) {
   const all = []
-  for (let page = 0; page < MAX_CATALOG_PAGES; page++) {
-    const skip = page * CATALOG_PAGE_SIZE
-    let metas
-    try {
-      metas = await getCatalog(type, id, { ...extra, skip: skip || undefined })
-    } catch {
-      break // ek page fail hone se poora load na ruke — jo mil chuka wahi rakho
+  for (let batchStart = 0; batchStart < MAX_CATALOG_PAGES; batchStart += PAGE_BATCH_SIZE) {
+    const batchPages = Array.from(
+      { length: Math.min(PAGE_BATCH_SIZE, MAX_CATALOG_PAGES - batchStart) },
+      (_, i) => batchStart + i
+    )
+    const results = await Promise.all(
+      batchPages.map((page) => {
+        const skip = page * CATALOG_PAGE_SIZE
+        return getCatalog(type, id, { ...extra, skip: skip || undefined }).catch(() => null)
+      })
+    )
+
+    let hitEnd = false
+    for (const metas of results) {
+      if (!metas || metas.length === 0) {
+        hitEnd = true
+        break
+      }
+      all.push(...metas)
+      if (metas.length < CATALOG_PAGE_SIZE) {
+        hitEnd = true
+        break // yehi aakhri page tha
+      }
     }
-    if (!metas || metas.length === 0) break
-    all.push(...metas)
-    if (metas.length < CATALOG_PAGE_SIZE) break // yehi aakhri page tha
+    if (hitEnd) break
   }
   return all
 }

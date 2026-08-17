@@ -12,19 +12,13 @@ html, body, #root {
 
 /* Bug fix (user report): ungli se side swipe karne par poora page/content
    horizontally shift ho jaata tha ("side ho jaata hai") — jaisa YouTube ya
-   koi normal app mein nahi hota. Page ab sirf vertical (up/down) scroll
-   allow karta hai, horizontal swipe se page khud nahi hilega.
-   `pan-y` = sirf vertical panning allowed, pinch-zoom bhi allowed rehta hai. */
+   koi normal app mein nahi hota. `overflow-x: hidden` document ko kabhi bhi
+   apne width se bahar shift/scroll nahi hone deta — vertical scroll par
+   iska koi asar nahi padta (isse pehle `touch-action: pan-y` try kiya tha,
+   lekin us se is Android WebView mein poora vertical scroll hi kaam karna
+   band ho gaya tha, isliye us approach ko hata diya). */
 html, body {
-  touch-action: pan-y;
-  overscroll-behavior-x: none;
-}
-
-/* Upar wala global lock horizontal poster/episode/language rails ko bhi
-   accidentally tod deta — unhe explicitly wapas horizontal-swipe allow
-   karte hain (yeh khud independently scroll hote hain, page nahi). */
-.no-scrollbar {
-  touch-action: pan-x;
+  overflow-x: hidden;
 }
 
 /* Explicit (non-transparent) colors on every text input — belt-and-braces
