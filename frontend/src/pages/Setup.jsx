@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { saveConfig, getManifest } from '../api'
+import { saveConfig, clearConfig, getManifest } from '../api'
 
 export default function Setup() {
   const navigate = useNavigate()
@@ -17,11 +17,17 @@ export default function Setup() {
       return
     }
     setChecking(true)
+    // Save first so getManifest() (which reads config from storage) can use
+    // it — but if the check fails, clear it right back out. Otherwise a
+    // wrong URL/token would sit in localStorage looking "configured", and a
+    // later reload would drop you straight into a broken Home instead of
+    // keeping you here with the error.
     saveConfig({ backendUrl, token })
     try {
       await getManifest()
       navigate('/')
     } catch {
+      clearConfig()
       setError("Backend se connect nahi ho paya. URL aur token check karo — token bot ke /start se milta hai.")
     } finally {
       setChecking(false)
