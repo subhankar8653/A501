@@ -15,7 +15,7 @@ export function getConfig() {
 
 export function saveConfig({ backendUrl, token }) {
   const clean = {
-    backendUrl: backendUrl.replace(/\/+$/, ''),
+    backendUrl: backendUrl.trim().replace(/\/+$/, ''),
     token: token.trim(),
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(clean))
