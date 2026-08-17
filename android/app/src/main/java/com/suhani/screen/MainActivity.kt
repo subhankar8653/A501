@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -149,6 +150,22 @@ class MainActivity : AppCompatActivity() {
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
     private var inlineLongPressSpeedActive = false
     private var inlineSpeedBeforeLongPress = 1f
+
+    // BUG FIX (user report): "chhote player mein ek baar double-tap karne par
+    // 10s dikhta hai, but usi time ke aaspaas dobara double-tap karo to bhi
+    // sirf 10s hi dikhta hai (20s nahi)" — Android ka GestureDetector sirf
+    // pehle do taps ko "double tap" maanta hai, uske baad turant kiye gaye
+    // taps ko dobara double-tap event nahi deta. Bade (fullscreen) player
+    // mein isiliye ACTION_DOWN par khud check kiya jaata hai ki pichla seek
+    // tap abhi-abhi (continuation window ke andar) usi side par hua tha ya
+    // nahi — agar haan, to GestureDetector ko bypass karke seedha seconds
+    // accumulate kar dete hain (10s -> 20s -> 30s ...). Yahi exact logic ab
+    // chhote player mein bhi hai.
+    private var inlineLastSeekSide = 0 // 0 = koi active session nahi, -1 = left, 1 = right
+    private var inlineSeekAccumulatedUnits = 0
+    private var inlineLastSeekTapTime = 0L
+    private var inlineConsumingSeekContinuation = false
+    private val INLINE_SEEK_CONTINUATION_WINDOW_MS = 700L
 
     // Swipe-down-to-PiP on the inline player itself — video ko hold karke
     // neeche push karne se bhi chevron jaisa hi minimize hota hai.
@@ -501,31 +518,53 @@ class MainActivity : AppCompatActivity() {
             val hideInlineSeekLeft = Runnable { seekIndicatorLeft.visibility = View.GONE }
             val hideInlineSeekRight = Runnable { seekIndicatorRight.visibility = View.GONE }
 
+            // Har naye mount par purana seek-session baggage carry na ho.
+            inlineLastSeekSide = 0
+            inlineSeekAccumulatedUnits = 0
+            inlineConsumingSeekContinuation = false
+
+            // BUG FIX (user report): "ek baar double-tap se 10s dikhta hai,
+            // usi time ke aaspaas dobara double-tap karo to bhi sirf 10s hi
+            // dikhta hai, 20s nahi" — bade player jaisa hi ab yahan bhi kaam
+            // karta hai: har seek tap par ek "unit" accumulate hota hai, aur
+            // feedback total (units * seekSeconds) dikhata hai (10s -> 20s ->
+            // 30s ...) jab tak taps ek chhoti continuation-window ke andar
+            // hote rahein, usi side par.
+            fun handleInlineSeekTap(forward: Boolean) {
+                val p = inlinePlayer ?: return
+                val max = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                // Bug fix: yeh hamesha hardcoded 10s istemal karta tha, chahe user ne
+                // fullscreen player ke settings mein apna custom seek-duration (5-60s)
+                // set kiya ho — matlab dono players ka double-tap-seek alag-alag behave
+                // karta tha. Ab wahi shared GesturePrefs preference yahan bhi use hoti hai.
+                val seekSecondsPref = GesturePrefs.getSeekSeconds(this@MainActivity)
+                val seekMs = seekSecondsPref * 1000L
+                val target = if (forward) (p.currentPosition + seekMs).coerceAtMost(max)
+                             else (p.currentPosition - seekMs).coerceAtLeast(0)
+                p.seekTo(target)
+
+                val side = if (forward) 1 else -1
+                inlineSeekAccumulatedUnits += 1
+                inlineLastSeekSide = side
+                inlineLastSeekTapTime = SystemClock.elapsedRealtime()
+                val totalSeconds = inlineSeekAccumulatedUnits * seekSecondsPref
+
+                if (forward) {
+                    seekTextRight.text = "${totalSeconds}s"
+                    seekIndicatorRight.removeCallbacks(hideInlineSeekRight)
+                    seekIndicatorRight.visibility = View.VISIBLE
+                    seekIndicatorRight.postDelayed(hideInlineSeekRight, 600)
+                } else {
+                    seekTextLeft.text = "${totalSeconds}s"
+                    seekIndicatorLeft.removeCallbacks(hideInlineSeekLeft)
+                    seekIndicatorLeft.visibility = View.VISIBLE
+                    seekIndicatorLeft.postDelayed(hideInlineSeekLeft, 600)
+                }
+            }
+
             val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
-                    val forward = e.x >= playerView.width / 2
-                    val p = inlinePlayer ?: return true
-                    val max = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-                    // Bug fix: yeh hamesha hardcoded 10s istemal karta tha, chahe user ne
-                    // fullscreen player ke settings mein apna custom seek-duration (5-60s)
-                    // set kiya ho — matlab dono players ka double-tap-seek alag-alag behave
-                    // karta tha. Ab wahi shared GesturePrefs preference yahan bhi use hoti hai.
-                    val seekMs = GesturePrefs.getSeekSeconds(this@MainActivity) * 1000L
-                    val target = if (forward) (p.currentPosition + seekMs).coerceAtMost(max)
-                                 else (p.currentPosition - seekMs).coerceAtLeast(0)
-                    p.seekTo(target)
-                    val seekSecondsLabel = seekMs / 1000L
-                    if (forward) {
-                        seekTextRight.text = "${seekSecondsLabel}s"
-                        seekIndicatorRight.removeCallbacks(hideInlineSeekRight)
-                        seekIndicatorRight.visibility = View.VISIBLE
-                        seekIndicatorRight.postDelayed(hideInlineSeekRight, 600)
-                    } else {
-                        seekTextLeft.text = "${seekSecondsLabel}s"
-                        seekIndicatorLeft.removeCallbacks(hideInlineSeekLeft)
-                        seekIndicatorLeft.visibility = View.VISIBLE
-                        seekIndicatorLeft.postDelayed(hideInlineSeekLeft, 600)
-                    }
+                    handleInlineSeekTap(forward = e.x >= playerView.width / 2)
                     return true
                 }
 
@@ -544,7 +583,36 @@ class MainActivity : AppCompatActivity() {
                 }
             })
 
-            playerView.setOnTouchListener { _, event ->
+            playerView.setOnTouchListener { view, event ->
+                // Continuous seek: agar pichhle seek-tap ke turant baad (continuation
+                // window ke andar) usi side par dobara tap hua hai, to GestureDetector
+                // ko yeh event bilkul na dikhao — seedha continuation maan kar seconds
+                // accumulate karo. Android ka GestureDetector khud teesre/chauthe rapid
+                // tap ko dobara "double tap" event nahi deta, isliye yeh manual check
+                // zaroori hai (bade fullscreen player mein bhi yehi tarika hai).
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (inlineLastSeekSide != 0 && (now - inlineLastSeekTapTime) < INLINE_SEEK_CONTINUATION_WINDOW_MS) {
+                        val side = if (event.x < view.width / 2) -1 else 1
+                        if (side == inlineLastSeekSide) {
+                            inlineConsumingSeekContinuation = true
+                            handleInlineSeekTap(forward = side == 1)
+                            inlineSwipeStartX = event.rawX
+                            inlineSwipeStartY = event.rawY
+                            inlineSwipeDragging = false
+                            return@setOnTouchListener true
+                        }
+                    }
+                    inlineConsumingSeekContinuation = false
+                }
+
+                if (inlineConsumingSeekContinuation) {
+                    if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
+                        inlineConsumingSeekContinuation = false
+                    }
+                    return@setOnTouchListener true
+                }
+
                 gestureDetector.onTouchEvent(event)
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
