@@ -12,13 +12,17 @@ html, body, #root {
 
 /* Bug fix (user report): ungli se side swipe karne par poora page/content
    horizontally shift ho jaata tha ("side ho jaata hai") — jaisa YouTube ya
-   koi normal app mein nahi hota. `overflow-x: hidden` document ko kabhi bhi
-   apne width se bahar shift/scroll nahi hone deta — vertical scroll par
-   iska koi asar nahi padta (isse pehle `touch-action: pan-y` try kiya tha,
-   lekin us se is Android WebView mein poora vertical scroll hi kaam karna
-   band ho gaya tha, isliye us approach ko hata diya). */
-html, body {
+   koi normal app mein nahi hota.
+   BUG FIX #2 (user report): `html, body { overflow-x: hidden }` lagane se
+   is Android WebView mein neeche scroll to theek chala, lekin UPAR scroll
+   karna band ho gaya tha — WebView ka touch-scroll physics <html>/<body>
+   par overflow-x set hone se gadbadaa jaata hai. Ab <html>/<body> ko bilkul
+   chhoda nahi gaya — sirf #root (jahan poora React app render hota hai) par
+   overflow-x: hidden hai, jo bina WebView ke document-level scroll ko chhue
+   hi horizontal shift ko clip kar deta hai. */
+#root {
   overflow-x: hidden;
+  width: 100%;
 }
 
 /* Explicit (non-transparent) colors on every text input — belt-and-braces
