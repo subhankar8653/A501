@@ -14,6 +14,7 @@ from fastapi.responses import Response as PlainResponse
 from fastapi.responses import StreamingResponse
 
 from Backend import db
+from Backend.config import Telegram as Config
 from Backend.fastapi.security.tokens import verify_token
 from Backend.helper.custom_dl import ACTIVE_STREAMS, RECENT_STREAMS, ByteStreamer
 from Backend.helper.encrypt import decode_string
@@ -45,6 +46,43 @@ _rr_counter: int = 0
 
 _title_cache: Dict[str, tuple] = {}
 _TITLE_CACHE_TTL = 300
+
+#======================================================================
+# Capacity control — sized for small boxes (default: ~1GB RAM / 2 cores).
+#
+# Without this, the server accepts an unlimited number of simultaneous
+# streams; each one buffers chunks in RAM and burns Telegram API "work_load"
+# slots, so past a certain viewer count the process either OOMs or every
+# viewer's buffering degrades together. A global semaphore caps how many
+# streams can be ACTIVELY receiving bytes at once — anyone past that cap
+# waits a few seconds, then gets a clean 503 (Retry-After) instead of the
+# whole server degrading for everybody already watching.
+#======================================================================
+_STREAM_SEMAPHORE = asyncio.Semaphore(max(1, Config.MAX_CONCURRENT_STREAMS))
+_STREAM_SLOT_WAIT_TIMEOUT = 8.0
+
+
+#----- Reserve one of the global concurrent-stream slots, or fail cleanly (503)
+async def _acquire_stream_slot() -> None:
+    try:
+        await asyncio.wait_for(_STREAM_SEMAPHORE.acquire(), timeout=_STREAM_SLOT_WAIT_TIMEOUT)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is at capacity right now, please retry in a few seconds.",
+            headers={"Retry-After": "5"},
+        )
+
+
+#----- Wrap a body generator so its concurrent-stream slot is released the
+#----- moment the response actually finishes (done, cancelled, or errored) —
+#----- not when headers are sent, since that's when the RAM/work_load is freed.
+async def _release_slot_after(gen):
+    try:
+        async for chunk in gen:
+            yield chunk
+    finally:
+        _STREAM_SEMAPHORE.release()
 
 
 #----- Recursively convert non-JSON-native containers to serializable forms
@@ -121,9 +159,14 @@ async def decay_client_failures() -> None:
                 client_failures[k] = max(0, client_failures[k] - 1)
 
 
-#----- Parallelism/prefetch factor scaled by the number of clients
+#----- Parallelism/prefetch factor scaled by the number of clients, capped by
+#----- MAX_STREAM_PARALLELISM (small-box default: 2, was hardcoded 5) — each
+#----- unit here is another simultaneous Telegram chunk-fetch + buffer for a
+#----- SINGLE viewer, so keeping this low leaves more RAM/work_load headroom
+#----- for MORE concurrent viewers instead of fewer viewers buffering faster.
 def get_parallel_prefetch(client_count: int) -> tuple[int, int]:
-    value = min(max(math.ceil(client_count / 5), 1), 5)
+    cap = max(1, Config.MAX_STREAM_PARALLELISM)
+    value = min(max(math.ceil(client_count / 5), 1), cap)
     return value, value
 
 
@@ -344,13 +387,16 @@ async def drive_proxy_streamer(request: Request, drive_id: str, token: str, toke
     upstream_headers = {"Range": f"bytes={start}-{end}"}
     client = await get_shared_client()
     upstream_request = client.build_request("GET", official_media_url(drive_id), headers=upstream_headers)
+    await _acquire_stream_slot()
     try:
         upstream = await client.send(upstream_request, stream=True)
     except Exception as e:
+        _STREAM_SEMAPHORE.release()
         raise HTTPException(status_code=502, detail=f"Could not reach the Google Drive API: {e}")
 
     if upstream.status_code not in (200, 206):
         await upstream.aclose()
+        _STREAM_SEMAPHORE.release()
         raise HTTPException(status_code=502, detail=f"Drive media fetch failed ({upstream.status_code}).")
 
     stream_id = secrets.token_hex(8)
@@ -360,6 +406,7 @@ async def drive_proxy_streamer(request: Request, drive_id: str, token: str, toke
 
     if request.method == "HEAD":
         await upstream.aclose()
+        _STREAM_SEMAPHORE.release()
         return PlainResponse(status_code=status, headers=headers)
 
     async def body_gen():
@@ -369,7 +416,7 @@ async def drive_proxy_streamer(request: Request, drive_id: str, token: str, toke
         finally:
             await upstream.aclose()
 
-    return StreamingResponse(body_gen(), headers=headers, status_code=status, media_type=mime_type)
+    return StreamingResponse(_release_slot_after(body_gen()), headers=headers, status_code=status, media_type=mime_type)
 
 
 #----- Legacy path (no GDRIVE_API_KEY set): no bytes pass through Railway —
@@ -471,7 +518,8 @@ async def media_streamer(request: Request, chat_id: int, msg_id: int, token: str
 
     if request.method == "HEAD":
         return PlainResponse(status_code=status, headers=headers)
-    return StreamingResponse(body_gen, headers=headers, status_code=status, media_type=mime_type)
+    await _acquire_stream_slot()
+    return StreamingResponse(_release_slot_after(body_gen), headers=headers, status_code=status, media_type=mime_type)
 
 
 #----- Stream media reconstructed from multiple split parts
@@ -512,12 +560,13 @@ async def virtual_media_streamer(request: Request, parts_payload: list, token: s
     if request.method == "HEAD":
         return PlainResponse(status_code=status, headers=common_headers)
 
+    await _acquire_stream_slot()
     body_gen = virtual_stream_generator(
         parts=parts, start=start, end=end, chunk_size=chunk_size,
         streamer=streamer, client_index=index, request=request, meta=meta,
         stream_id=stream_id, parallelism=parallelism, prefetch_count=prefetch_count,
     )
-    return StreamingResponse(body_gen, headers=common_headers, status_code=status, media_type=mime_type)
+    return StreamingResponse(_release_slot_after(body_gen), headers=common_headers, status_code=status, media_type=mime_type)
 
 
 _userbot_streamer: ByteStreamer = None
@@ -590,7 +639,8 @@ async def global_media_streamer(request: Request, chat_id: int, msg_id: int, tok
         chat_id=chat_id,
         message_id=msg_id,
     )
-    return StreamingResponse(body_gen, headers=headers, status_code=status, media_type=mime_type)
+    await _acquire_stream_slot()
+    return StreamingResponse(_release_slot_after(body_gen), headers=headers, status_code=status, media_type=mime_type)
 
 
 #----- Live and recent stream telemetry, pruning stale active entries
