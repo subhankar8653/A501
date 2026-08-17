@@ -5,6 +5,8 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.GestureDetector
 import android.view.KeyEvent
@@ -167,6 +169,21 @@ class MainActivity : AppCompatActivity() {
     private var inlineConsumingSeekContinuation = false
     private val INLINE_SEEK_CONTINUATION_WINDOW_MS = 700L
 
+    // BUG FIX (user report): bade (fullscreen) player mein continuation window
+    // khatm hote hi session khud reset ho jaata hai (seekSessionResetRunnable,
+    // dekho PlayerActivity.kt) — taaki ek naya, baad mein kabhi bhi kiya gaya
+    // double-tap dobara "10s" se shuru ho, "30s/40s..." se nahi. Chhote player
+    // mein yeh reset missing tha: inlineSeekAccumulatedUnits/inlineLastSeekSide
+    // sirf agle mount par (ya kabhi nahi) reset hote the, isliye kaafi der baad
+    // kiya gaya bilkul naya double-tap bhi purani session ke units par hi
+    // accumulate hoke galat (bada) total dikhata tha. Ab bade player jaisa hi
+    // ek Handler-based session-reset hai.
+    private val inlineSeekSessionHandler = Handler(Looper.getMainLooper())
+    private val inlineSeekSessionResetRunnable = Runnable {
+        inlineLastSeekSide = 0
+        inlineSeekAccumulatedUnits = 0
+    }
+
     // Swipe-down-to-PiP on the inline player itself — video ko hold karke
     // neeche push karne se bhi chevron jaisa hi minimize hota hai.
     private var inlineSwipeStartX = 0f
@@ -317,9 +334,29 @@ class MainActivity : AppCompatActivity() {
             // (slow network, hung request), don't leave the spinner stuck forever.
             swipeRefresh.postDelayed({ swipeRefresh.isRefreshing = false }, 8000)
         }
-        webView.setOnScrollChangeListener { _, scrollY, _, _, _ ->
-            swipeRefresh.isEnabled = scrollY == 0
-        }
+        // BUG FIX (user report): "neeche scroll ho jaata hai, upar nahi hota —
+        // agar finger uthake dobara upar-ki-taraf (scroll-up) gesture shuru karo
+        // to loading/refresh lag jaata hai." Root cause: modern Chromium WebView
+        // scroll karta hai compositor thread par, isliye iska View-level
+        // `scrollY` (jo `setOnScrollChangeListener` yahan padhta tha) touch ke
+        // dauraan hamesha turant/sahi update nahi hota — kabhi purana (stale)
+        // ya 0 hi reh jaata hai jab tak agla naya touch-gesture (ACTION_DOWN)
+        // shuru na ho jaaye. Isi wajah se poori ek gesture ke andar (hold karke)
+        // scroll-down-phir-up chalta tha (WebView khud us gesture ko handle kar
+        // raha hota hai, SwipeRefreshLayout beech mein nahi aata) — lekin finger
+        // uthake NAYA upward-drag gesture shuru karne par SwipeRefreshLayout
+        // stale `isEnabled = true` (scrollY abhi tak 0 padha) dekh kar use pull-
+        // to-refresh maan leta tha, halaanki page scroll ho chuka tha.
+        //
+        // Fix: khud se scrollY track/isEnabled toggle karna band karo — isEnabled
+        // hamesha true rehne do, aur SwipeRefreshLayout ke apne official hook
+        // `setOnChildScrollUpCallback` ka use karo. Yeh callback SwipeRefreshLayout
+        // khud, HAR baar jab drag genuinely shuru hota hai, EXACT usi waqt call
+        // karta hai (na ki pehle se cache kiya hua stale flag) — isliye WebView se
+        // taaza `canScrollVertically(-1)` milta hai, aur galat refresh trigger
+        // nahi hota.
+        swipeRefresh.isEnabled = true
+        swipeRefresh.setOnChildScrollUpCallback { _, _ -> webView.canScrollVertically(-1) }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
@@ -519,6 +556,7 @@ class MainActivity : AppCompatActivity() {
             val hideInlineSeekRight = Runnable { seekIndicatorRight.visibility = View.GONE }
 
             // Har naye mount par purana seek-session baggage carry na ho.
+            inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
             inlineLastSeekSide = 0
             inlineSeekAccumulatedUnits = 0
             inlineConsumingSeekContinuation = false
@@ -560,6 +598,12 @@ class MainActivity : AppCompatActivity() {
                     seekIndicatorLeft.visibility = View.VISIBLE
                     seekIndicatorLeft.postDelayed(hideInlineSeekLeft, 600)
                 }
+
+                // Bade player jaisa: har tap ke baad session-reset ko fresh se
+                // schedule karo, taaki continuation window ke baad accumulated
+                // units khud-ba-khud 0 par wapas aa jayein.
+                inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
+                inlineSeekSessionHandler.postDelayed(inlineSeekSessionResetRunnable, INLINE_SEEK_CONTINUATION_WINDOW_MS)
             }
 
             val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -1090,6 +1134,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun unmountInlinePlayer() {
+        inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
         saveInlineWatchProgress()
         inlinePlayer?.pause()
         inlineOverlay?.let { overlay ->
