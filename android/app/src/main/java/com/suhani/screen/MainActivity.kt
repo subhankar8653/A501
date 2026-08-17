@@ -167,6 +167,28 @@ class MainActivity : AppCompatActivity() {
     // true since every fresh page load begins at the top.
     var webIsAtTop = true
 
+    // BUG FIX (user report, round 3): round 2's fix alone still wasn't
+    // enough — user still saw scroll-up gestures mid-page get swallowed by
+    // pull-to-refresh (spinner/"buffering" + the page reloading). Reason:
+    // webIsAtTop is a SINGLE signal that comes from JS via requestAnimationFrame
+    // — there's a small window, right as a brand-new upward drag begins
+    // (especially right after a fling), where that JS report hasn't landed
+    // yet and webIsAtTop is still holding a stale "true" from earlier.
+    // SwipeRefreshLayout queries canScrollUp at exactly that moment and
+    // wrongly decides "child is at top" -> starts the pull-to-refresh
+    // instead of letting WebView keep scrolling up.
+    //
+    // Fix: don't rely on one signal — combine THREE independent ones and
+    // treat "any one of them says we're not at top" as authoritative. This
+    // needs all three to be stale/wrong at the exact same instant for the
+    // bug to resurface, which in practice doesn't happen:
+    //   1) webIsAtTop      — JS DOM scrollY, reported on every 'scroll' event
+    //   2) webNativeScrollY — WebView's own Java-side View.onScrollChanged,
+    //                         a completely separate update path from (1)
+    //   3) webView.canScrollVertically(-1) — queried fresh, synchronously,
+    //                         at the exact moment SwipeRefreshLayout asks
+    private var webNativeScrollY = 0
+
     // Chhota (inline) native player aur uske controls
     private var inlinePlayer: ExoPlayer? = null
     private var inlineOverlay: FrameLayout? = null
@@ -330,6 +352,7 @@ class MainActivity : AppCompatActivity() {
                 // Naya load shuru — jab tak fresh scroll report na aaye tab tak
                 // "top par hoon" maan lo (safe default, page top se hi shuru hoti hai).
                 webIsAtTop = true
+                webNativeScrollY = 0
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -386,11 +409,20 @@ class MainActivity : AppCompatActivity() {
         // taaza `canScrollVertically(-1)` milta hai, aur galat refresh trigger
         // nahi hota.
         swipeRefresh.isEnabled = true
-        // webIsAtTop ab JS-reported (asli DOM scroll position) se aata hai —
-        // dekho injectScrollTracker() aur WebAppInterface.reportAtTop() — isliye
-        // yeh WebView ke apne stale canScrollVertically(-1) se zyada bharosemand
-        // hai. "child can scroll up" = "page top par NAHI hai".
-        swipeRefresh.setOnChildScrollUpCallback { _, _ -> !webIsAtTop }
+        // Round 3 fix: teeno signal check karo (dekho webNativeScrollY field ka
+        // comment) — agar koi bhi ek "not at top" bole, use maano. "child can
+        // scroll up" (return true) = "page top par NAHI hai" = refresh mat karo,
+        // scroll hi hone do.
+        swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            !webIsAtTop || webNativeScrollY > 0 || webView.canScrollVertically(-1)
+        }
+        // Second, independent scroll-position path (View-layer, not JS/bridge) —
+        // fires on WebView's own onScrollChanged, so it updates on a different
+        // path/thread timing than the JS 'scroll' listener. Purely a safety net
+        // for the callback above; doesn't drive any UI itself.
+        webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            webNativeScrollY = scrollY
+        }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
