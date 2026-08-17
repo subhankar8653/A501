@@ -38,39 +38,104 @@
 
     <include layout="@layout/inline_top_bar" />
 
-    <!-- Double-tap ±10s seek ka feedback — ab fullscreen ke speedIndicatorBadge
-         jaisa hi ek chhota pill, video ke top border ke paas (center video
-         ko block nahi karta, bilkul fullscreen wale small notification jaisa). -->
-    <TextView
-        android:id="@+id/inlineSeekFeedback"
+    <!-- BUG FIX (user report): pehle yeh ek single pill tha jismein text
+         color #0B0B12 (near-black) tha, jo dark background ke upar
+         practically invisible tha. Ab fullscreen player (activity_player.xml
+         ke seekIndicatorLeft/Right) jaisa hi exact style — icon-in-circle +
+         bold white "10s" text — bas thoda chhota (inline area ke hisaab se). -->
+    <LinearLayout
+        android:id="@+id/inlineSeekIndicatorLeft"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="38dp"
-        android:background="@drawable/speed_badge_bg"
-        android:paddingHorizontal="9dp"
-        android:paddingVertical="3dp"
-        android:textColor="#0B0B12"
-        android:textSize="10sp"
-        android:textStyle="bold"
-        android:visibility="gone"
-        tools:text="⏩ 10s" />
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/seek_chevron_bg">
+
+            <ImageView
+                android:layout_width="13dp"
+                android:layout_height="13dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_fast_rewind"
+                android:contentDescription="rewind" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/inlineSeekTextLeft"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
+            tools:text="10s" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/inlineSeekIndicatorRight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/inlineSeekTextRight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="4"
+            tools:text="10s" />
+
+        <FrameLayout
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/seek_chevron_bg">
+
+            <ImageView
+                android:layout_width="13dp"
+                android:layout_height="13dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_fast_forward"
+                android:contentDescription="forward" />
+        </FrameLayout>
+    </LinearLayout>
 
     <!-- Hold-to-2x speed badge — fullscreen ke speedIndicatorBadge jaisa hi
-         (chhota pill, video ke top border ke paas). -->
+         (chhota pill, video ke top border ke paas). BUG FIX: textColor ab
+         white hai (#FFFFFF) — pehle #0B0B12 tha jo pill ke dark background
+         ke upar dikhta hi nahi tha. -->
     <TextView
         android:id="@+id/inlineSpeedBadge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="38dp"
+        android:layout_marginTop="10dp"
         android:background="@drawable/speed_badge_bg"
-        android:paddingHorizontal="9dp"
-        android:paddingVertical="3dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
         android:text="2x"
-        android:textColor="#0B0B12"
+        android:textColor="#FFFFFF"
         android:textStyle="bold"
-        android:textSize="10sp"
+        android:textSize="11sp"
         android:visibility="gone" />
 
     <!-- Lock feature hata di gayi hai (user ne kaha ki iska icon "ajeeb"
