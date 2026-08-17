@@ -338,7 +338,12 @@ export default function Player() {
         </div>
       ) : (
         <>
-          <div className="relative">
+          {/* Bug fix (user report): page scroll karte waqt video "andar ghus
+              jaata" (galat z-order/position mein chala jaata) tha kyunki yeh
+              container normal flow mein tha. Ab YouTube jaisa hi — video ek
+              hi jagah top par sticky/fixed rehta hai jab neeche ka content
+              (title, comments, Up Next) scroll hota hai. */}
+          <div className="relative sticky top-0 z-30 bg-reel-bg">
             {glowImage ? (
               <>
                 <div
