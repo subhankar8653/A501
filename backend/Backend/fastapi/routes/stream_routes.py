@@ -17,7 +17,15 @@ from Backend import db
 from Backend.fastapi.security.tokens import verify_token
 from Backend.helper.custom_dl import ACTIVE_STREAMS, RECENT_STREAMS, ByteStreamer
 from Backend.helper.encrypt import decode_string
-from Backend.helper.gdrive import GDriveError, resolve_stream
+from Backend.helper.gdrive import (
+    GDriveAPIError,
+    GDriveError,
+    api_key_configured,
+    fetch_official_metadata,
+    get_shared_client,
+    official_media_url,
+    resolve_stream,
+)
 from Backend.helper.utils import track_usage
 from Backend.helper.virtual_dl import resolve_virtual_parts, virtual_stream_generator
 from Backend.logger import LOGGER
@@ -298,10 +306,78 @@ def _pick_drive_url(qualities: list):
     return video_only[0]["url"]
 
 
-#----- Google Drive: no bytes pass through Railway — resolve a fresh googlevideo.com
-#----- URL via the Vercel resolver and 302 redirect straight to it. If extraction
-#----- fails, surface Drive's own preview URL so the client can fall back to it.
+#----- Entry point for Drive-sourced streams. Prefers the official Drive API v3
+#----- proxy (GDRIVE_API_KEY) — no IP-lock, real Range support, bytes pass through
+#----- Railway. Falls back to the old Vercel-resolver redirect when no API key is
+#----- configured, so existing setups keep working unchanged.
 async def drive_media_streamer(request: Request, drive_id: str, token: str, token_data: dict = None):
+    if api_key_configured():
+        return await drive_proxy_streamer(request=request, drive_id=drive_id, token=token, token_data=token_data)
+    return await drive_redirect_streamer(request=request, drive_id=drive_id, token=token, token_data=token_data)
+
+
+#----- ROOT-CAUSE FIX for the black-screen bug: the scraped googlevideo.com link
+#----- from the Vercel resolver is bound to the IP that fetched it (Vercel's own
+#----- server), so redirecting the Android client straight to it gets silently
+#----- refused by Google's CDN once the client's IP doesn't match — ExoPlayer
+#----- never errors cleanly, it just shows a black screen forever.
+#----- Fix: fetch bytes ourselves from the OFFICIAL Drive API v3 alt=media
+#----- endpoint (API-key auth, no IP-lock, real Range support) and stream them
+#----- onward — same shape as the Telegram media_streamer() below. Requires the
+#----- Drive file to be shared "Anyone with the link".
+async def drive_proxy_streamer(request: Request, drive_id: str, token: str, token_data: dict = None):
+    try:
+        meta = await fetch_official_metadata(drive_id)
+    except GDriveAPIError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    file_size = int(meta.get("size") or 0)
+    mime_type = meta.get("mimeType") or "video/mp4"
+    file_name = meta.get("name") or f"{drive_id}.mp4"
+    if not file_size:
+        raise HTTPException(status_code=502, detail="Drive API did not return a file size for this file.")
+
+    range_header = request.headers.get("Range", "")
+    start, end = parse_range_header(range_header, file_size)
+    req_length = end - start + 1
+
+    upstream_headers = {"Range": f"bytes={start}-{end}"}
+    client = await get_shared_client()
+    upstream_request = client.build_request("GET", official_media_url(drive_id), headers=upstream_headers)
+    try:
+        upstream = await client.send(upstream_request, stream=True)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach the Google Drive API: {e}")
+
+    if upstream.status_code not in (200, 206):
+        await upstream.aclose()
+        raise HTTPException(status_code=502, detail=f"Drive media fetch failed ({upstream.status_code}).")
+
+    stream_id = secrets.token_hex(8)
+    asyncio.create_task(track_usage(stream_id, token, token_data))
+
+    headers, status = _build_stream_headers(mime_type, file_name, req_length, range_header, start, end, file_size)
+
+    if request.method == "HEAD":
+        await upstream.aclose()
+        return PlainResponse(status_code=status, headers=headers)
+
+    async def body_gen():
+        try:
+            async for chunk in upstream.aiter_bytes(1024 * 64):
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(body_gen(), headers=headers, status_code=status, media_type=mime_type)
+
+
+#----- Legacy path (no GDRIVE_API_KEY set): no bytes pass through Railway —
+#----- resolve a fresh googlevideo.com URL via the Vercel resolver and 302
+#----- redirect straight to it. If extraction fails, surface Drive's own preview
+#----- URL so the client can fall back to it. Kept for backward compatibility;
+#----- prone to the black-screen IP-lock issue described above.
+async def drive_redirect_streamer(request: Request, drive_id: str, token: str, token_data: dict = None):
     try:
         data = await resolve_stream(drive_id)
     except GDriveError as e:
