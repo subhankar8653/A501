@@ -54,3 +54,13 @@ class Telegram:
     #----- be shared "Anyone with the link". Falls back to GDRIVE_RESOLVER_BASE
     #----- when this is not set.
     GDRIVE_API_KEY                 = getenv("GDRIVE_API_KEY", "")
+
+    #----- Capacity tuning for small servers (default assumes ~1GB RAM / 2 cores):
+    #----- MAX_CONCURRENT_STREAMS caps how many viewers can be actively receiving
+    #----- video bytes at once — beyond this, new requests wait briefly then get a
+    #----- clean 503 (Retry-After) instead of the process running out of memory.
+    #----- MAX_STREAM_PARALLELISM caps how many simultaneous Telegram chunk-fetches
+    #----- a SINGLE viewer's stream may use (was hardcoded to 5) — lower means less
+    #----- RAM/work_load per viewer, so more viewers fit in the same box.
+    MAX_CONCURRENT_STREAMS          = _int_env("MAX_CONCURRENT_STREAMS", 40)
+    MAX_STREAM_PARALLELISM          = _int_env("MAX_STREAM_PARALLELISM", 2)
