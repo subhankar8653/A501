@@ -488,10 +488,18 @@ class MainActivity : AppCompatActivity() {
 
             // --- Gestures: double-tap ±10s seek, hold-anywhere-for-2x-speed ---
             // Fullscreen ke gestureDetector jaisa hi — bas chhote area ke hisaab
-            // se feedback (inlineSeekFeedback pill / inlineSpeedBadge).
-            val seekFeedback = root.findViewById<TextView>(R.id.inlineSeekFeedback)
+            // se feedback (inlineSeekIndicatorLeft/Right / inlineSpeedBadge).
+            // BUG FIX (user report): purana single "inlineSeekFeedback" pill
+            // white/black text ke saath mushkil se dikhta tha aur bade player
+            // se alag dikhta tha (koi icon nahi tha). Ab exact bade player
+            // (seekIndicatorLeft/Right) jaisa hi icon-in-circle + white text.
+            val seekIndicatorLeft = root.findViewById<View>(R.id.inlineSeekIndicatorLeft)
+            val seekIndicatorRight = root.findViewById<View>(R.id.inlineSeekIndicatorRight)
+            val seekTextLeft = root.findViewById<TextView>(R.id.inlineSeekTextLeft)
+            val seekTextRight = root.findViewById<TextView>(R.id.inlineSeekTextRight)
             val speedBadge = root.findViewById<TextView>(R.id.inlineSpeedBadge)
-            val hideInlineSeekFeedback = Runnable { seekFeedback.visibility = View.GONE }
+            val hideInlineSeekLeft = Runnable { seekIndicatorLeft.visibility = View.GONE }
+            val hideInlineSeekRight = Runnable { seekIndicatorRight.visibility = View.GONE }
 
             val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -507,10 +515,17 @@ class MainActivity : AppCompatActivity() {
                                  else (p.currentPosition - seekMs).coerceAtLeast(0)
                     p.seekTo(target)
                     val seekSecondsLabel = seekMs / 1000L
-                    seekFeedback.text = if (forward) "⏩ ${seekSecondsLabel}s" else "⏪ ${seekSecondsLabel}s"
-                    seekFeedback.removeCallbacks(hideInlineSeekFeedback)
-                    seekFeedback.visibility = View.VISIBLE
-                    seekFeedback.postDelayed(hideInlineSeekFeedback, 600)
+                    if (forward) {
+                        seekTextRight.text = "${seekSecondsLabel}s"
+                        seekIndicatorRight.removeCallbacks(hideInlineSeekRight)
+                        seekIndicatorRight.visibility = View.VISIBLE
+                        seekIndicatorRight.postDelayed(hideInlineSeekRight, 600)
+                    } else {
+                        seekTextLeft.text = "${seekSecondsLabel}s"
+                        seekIndicatorLeft.removeCallbacks(hideInlineSeekLeft)
+                        seekIndicatorLeft.visibility = View.VISIBLE
+                        seekIndicatorLeft.postDelayed(hideInlineSeekLeft, 600)
+                    }
                     return true
                 }
 
