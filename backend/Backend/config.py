@@ -46,3 +46,11 @@ class Telegram:
     #----- Google Drive: base URL of the Vercel project (frontend/src/api/*.js)
     #----- used to fetch Drive file titles and resolve direct stream URLs.
     GDRIVE_RESOLVER_BASE          = getenv("GDRIVE_RESOLVER_BASE", "").rstrip("/")
+
+    #----- Google Drive: official Drive API v3 key (Drive API enabled in Google
+    #----- Cloud Console). When set, streaming proxies bytes through this backend
+    #----- via the official alt=media endpoint instead of redirecting to the
+    #----- Vercel resolver's scraped (IP-locked) googlevideo.com link. Files must
+    #----- be shared "Anyone with the link". Falls back to GDRIVE_RESOLVER_BASE
+    #----- when this is not set.
+    GDRIVE_API_KEY                 = getenv("GDRIVE_API_KEY", "")
