@@ -321,7 +321,21 @@ export default function Player() {
           </button>
         </div>
       ) : !active ? (
-        <div className="aspect-video bg-reel-surface2 animate-pulse" />
+        <div>
+          <div className="aspect-video bg-reel-surface2 animate-pulse" />
+          <div className="px-4 sm:px-6 mt-4 space-y-3">
+            <div className="h-5 w-3/4 rounded bg-reel-surface2 animate-pulse" />
+            <div className="flex gap-2">
+              <div className="h-6 w-20 rounded-full bg-reel-surface2 animate-pulse" />
+              <div className="h-6 w-16 rounded-full bg-reel-surface2 animate-pulse" />
+            </div>
+            <div className="flex gap-2 mt-2">
+              <div className="h-8 w-16 rounded-full bg-reel-surface2 animate-pulse" />
+              <div className="h-8 w-16 rounded-full bg-reel-surface2 animate-pulse" />
+              <div className="h-8 w-24 rounded-full bg-reel-surface2 animate-pulse" />
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           <div className="relative">

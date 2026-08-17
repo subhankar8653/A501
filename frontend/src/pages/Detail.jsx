@@ -63,9 +63,24 @@ export default function Detail() {
 
   if (!meta) {
     return (
-      <div className="max-w-4xl mx-auto py-10 px-4">
-        <BackButton className="fixed top-4 left-4 z-30" />
-        <div className="h-72 bg-reel-surface2 rounded-xl animate-pulse" />
+      <div>
+        <div className="w-full h-[42vh] sm:h-[52vh] bg-reel-surface2 relative overflow-hidden animate-pulse">
+          <BackButton className="absolute top-4 left-4 z-20" />
+        </div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+          <div className="h-8 w-2/3 rounded bg-reel-surface2 animate-pulse" />
+          <div className="flex gap-2">
+            <div className="h-6 w-16 rounded-full bg-reel-surface2 animate-pulse" />
+            <div className="h-6 w-20 rounded-full bg-reel-surface2 animate-pulse" />
+            <div className="h-6 w-14 rounded-full bg-reel-surface2 animate-pulse" />
+          </div>
+          <div className="space-y-2 max-w-2xl">
+            <div className="h-3.5 w-full rounded bg-reel-surface2 animate-pulse" />
+            <div className="h-3.5 w-5/6 rounded bg-reel-surface2 animate-pulse" />
+            <div className="h-3.5 w-3/4 rounded bg-reel-surface2 animate-pulse" />
+          </div>
+          <div className="h-10 w-32 rounded-lg bg-reel-surface2 animate-pulse" />
+        </div>
       </div>
     )
   }

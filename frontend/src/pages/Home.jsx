@@ -62,16 +62,8 @@ export default function Home() {
     )
   }
 
-  if (!tabCatalogs) {
-    return (
-      <div className="max-w-6xl mx-auto px-0 sm:px-6 py-8">
-        <Rail title="Loading…" loading items={[]} />
-      </div>
-    )
-  }
-
-  const groups = groupsByTab[active]
-  const hasCatalogsForTab = (tabCatalogs[active] || []).length > 0
+  const groups = tabCatalogs ? groupsByTab[active] : null
+  const hasCatalogsForTab = tabCatalogs ? (tabCatalogs[active] || []).length > 0 : true
 
   return (
     <div className="max-w-6xl mx-auto py-8">
@@ -81,7 +73,8 @@ export default function Home() {
             <button
               key={tab.key}
               onClick={() => setActive(tab.key)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 active:scale-95 border ${
+              disabled={!tabCatalogs}
+              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 active:scale-95 border disabled:opacity-50 ${
                 active === tab.key
                   ? 'animate-tab-pop-in bg-reel-gold text-black border-reel-gold shadow-[0_4px_16px_-4px_rgba(232,163,61,0.55)]'
                   : 'bg-reel-surface2 text-reel-ink border-white/5 hover:border-reel-gold/50 hover:text-reel-gold'
@@ -94,7 +87,9 @@ export default function Home() {
       </div>
 
       <div key={active} className="page-fade-in">
-        {!hasCatalogsForTab ? (
+        {!tabCatalogs ? (
+          <Rail title="Loading…" loading items={[]} />
+        ) : !hasCatalogsForTab ? (
           <p className="text-center text-reel-muted mt-10 px-4">
             Is category mein abhi content nahi hai.
           </p>

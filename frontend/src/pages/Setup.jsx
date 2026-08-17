@@ -47,6 +47,7 @@ export default function Setup() {
             <label className="block text-xs font-medium text-reel-muted mb-1">Backend URL (Railway)</label>
             <input
               type="url"
+              autoFocus
               placeholder="https://your-app.up.railway.app"
               value={backendUrl}
               onChange={(e) => setBackendUrl(e.target.value)}
