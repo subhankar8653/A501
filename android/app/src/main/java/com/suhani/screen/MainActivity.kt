@@ -109,6 +109,25 @@ class WebAppInterface(private val activity: MainActivity) {
     fun setAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
         activity.runOnUiThread { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
     }
+
+    // BUG FIX (user report, round 2): "upar scroll karne ki koshish karo to
+    // buffering/refresh icon aa jaata hai aur pura page refresh ho jaata hai —
+    // yeh sirf tabhi aana chahiye jab upar aur koi content na ho." Root cause:
+    // swipeRefresh.setOnChildScrollUpCallback pehle webView.canScrollVertically(-1)
+    // par depend karta tha, lekin Chromium WebView ka YEH bhi ek internal, compositor-
+    // thread-driven cache hai — genuine list ke beech mein hote hue bhi kabhi-kabhi
+    // stale "false" (matlab "already top par hoon") de deta hai, khaaskar fling ke
+    // turant baad ya fast reverse-direction drag par. Isse SwipeRefreshLayout galat
+    // se pull-to-refresh maan leta.
+    //
+    // Fix: WebView ke native scroll-state par bharosa hi mat karo — seedha JS se,
+    // asli DOM scroll position (window.scrollY, jo har scroll par turant/sahi update
+    // hoti hai) report karwao, aur yehi authoritative value niche onChildScrollUpCallback
+    // mein use karo.
+    @JavascriptInterface
+    fun reportAtTop(atTop: Boolean) {
+        activity.webIsAtTop = atTop
+    }
 }
 
 class MainActivity : AppCompatActivity() {
@@ -140,6 +159,13 @@ class MainActivity : AppCompatActivity() {
     // status bar ke neeche se shuru karte hain, (2) inline player ka rect isi offset
     // ko add karke calculate karte hain, taaki dono screen ke sahi jagah par rahen.
     private var statusBarInsetPx = 0
+
+    // BUG FIX (user report, round 2): authoritative "page is scrolled to its
+    // very top" flag, reported live by JS (see reportAtTop() above / the
+    // injected listener in injectScrollTracker()) instead of trusting
+    // WebView's own (occasionally stale) canScrollVertically(-1). Starts
+    // true since every fresh page load begins at the top.
+    var webIsAtTop = true
 
     // Chhota (inline) native player aur uske controls
     private var inlinePlayer: ExoPlayer? = null
@@ -301,6 +327,9 @@ class MainActivity : AppCompatActivity() {
                 // Reload (retry/pull-to-refresh) par bhi purani error screen turant
                 // hata do, warna spinner ke peeche stale error text dikhta rehta.
                 loadErrorView.visibility = View.GONE
+                // Naya load shuru — jab tak fresh scroll report na aaye tab tak
+                // "top par hoon" maan lo (safe default, page top se hi shuru hoti hai).
+                webIsAtTop = true
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -308,6 +337,7 @@ class MainActivity : AppCompatActivity() {
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
                 fadeOutLoadingView()
+                injectScrollTracker(view)
             }
 
             override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
@@ -356,13 +386,51 @@ class MainActivity : AppCompatActivity() {
         // taaza `canScrollVertically(-1)` milta hai, aur galat refresh trigger
         // nahi hota.
         swipeRefresh.isEnabled = true
-        swipeRefresh.setOnChildScrollUpCallback { _, _ -> webView.canScrollVertically(-1) }
+        // webIsAtTop ab JS-reported (asli DOM scroll position) se aata hai —
+        // dekho injectScrollTracker() aur WebAppInterface.reportAtTop() — isliye
+        // yeh WebView ke apne stale canScrollVertically(-1) se zyada bharosemand
+        // hai. "child can scroll up" = "page top par NAHI hai".
+        swipeRefresh.setOnChildScrollUpCallback { _, _ -> !webIsAtTop }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else {
             webView.loadUrl(SITE_URL)
         }
+    }
+
+    // BUG FIX (user report, round 2): asli scroll-position tracker, JS side se.
+    // window/document par 'scroll' event laga kar har change par turant
+    // AndroidPlayer.reportAtTop(true/false) call karte hain — passive listener
+    // hai (scroll ko block/slow nahi karta), aur rAF se throttle kiya hai taaki
+    // fast scrolling ke dauraan bhi bridge par spam na ho. Yeh SPA hai (client-side
+    // routing), isliye listener sirf ek baar (har real page-load/reload par,
+    // onPageFinished se) lagana kaafi hai — beech ki route-changes iska use hi
+    // karte rehte hain (idempotent guard se dobara-dobara nahi lagta).
+    private fun injectScrollTracker(view: WebView) {
+        val js = """
+            (function() {
+                if (window.__suhaniScrollTrackerInstalled) return;
+                window.__suhaniScrollTrackerInstalled = true;
+                var ticking = false;
+                function report() {
+                    ticking = false;
+                    var top = (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0);
+                    if (window.AndroidPlayer && window.AndroidPlayer.reportAtTop) {
+                        window.AndroidPlayer.reportAtTop(top <= 0);
+                    }
+                }
+                function onScroll() {
+                    if (!ticking) {
+                        ticking = true;
+                        requestAnimationFrame(report);
+                    }
+                }
+                window.addEventListener('scroll', onScroll, { passive: true });
+                report();
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
     }
 
     private fun startLoadingLabelPulse() {
