@@ -47,8 +47,34 @@
         android:layout_height="match_parent"
         app:use_controller="true"
         app:controller_layout_id="@layout/custom_player_control_view"
-        app:show_buffering="when_playing"
+        app:show_buffering="never"
         app:surface_type="texture_view" />
+
+    <!-- BUG FIX (user report: "skip karne par pause + buffering icon ek saath
+         dikhta hai") — same fix as inline_player_view.xml: Media3 ka default
+         buffering spinner band karke apna themed dark-glass + gold-ring
+         indicator, jo PlayerActivity center play/pause button ke saath
+         cross-fade karta hai (ek waqt mein sirf ek hi dikhta hai). -->
+    <FrameLayout
+        android:id="@+id/bufferingIndicator"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_buffering_chip"
+        android:visibility="gone"
+        android:alpha="0"
+        android:scaleX="0.7"
+        android:scaleY="0.7"
+        android:elevation="6dp"
+        android:clickable="false"
+        android:focusable="false">
+
+        <ProgressBar
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:indeterminateTint="#FFD700" />
+    </FrameLayout>
 
     <!-- Dual Subtitle: doosri, independent subtitle file (DualSubtitleController.kt se
          driven, ExoPlayer ke apne text-renderer se alag) — screen ke UPAR dikhti hai

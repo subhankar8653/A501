@@ -27,10 +27,15 @@
          samet) ke hisaab se center hoti thi, isliye visually upar-upar dikhti
          thi (top bar chhota box mein bada hissa le leta hai). Yeh spacer
          inline_top_bar.xml ki approx height jitna hai — ab center row sirf
-         top-bar ke NEECHE wale asli-dikhne-wale hisse mein center hoti hai. -->
+         top-bar ke NEECHE wale asli-dikhne-wale hisse mein center hoti hai.
+         BUG FIX (user report: "time bar/controls thoda upar chala gaya hai"):
+         yeh spacer pehle 36dp tha, lekin inline_top_bar.xml ki asli height
+         46dp hai (marginTop 6dp + paddingVertical 4dp+4dp + icon 32dp) — 10dp
+         ka mismatch, isliye poora center control row usi 10dp jitna upar
+         khinch jaata tha. Ab exact match kar diya. -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="36dp" />
+        android:layout_height="46dp" />
 
     <!-- Center row: plain icons, no background chip, evenly spread — reference jaisa.
          Bug fix: play/pause pehle DO alag overlapping ImageButtons the (exo_play +
