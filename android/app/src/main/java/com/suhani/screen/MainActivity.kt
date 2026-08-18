@@ -329,15 +329,15 @@ class MainActivity : AppCompatActivity() {
         // seedha native Sisisisi (chhota inline, fullscreen-expandable) player khol sakta hai.
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidPlayer")
 
-        swipeRefresh.setOnRefreshListener {
-            webView.reload()
-            // Safety net: if the page load somehow never fires onPageFinished
-            // (slow network, hung request), don't leave the spinner stuck forever.
-            swipeRefresh.postDelayed({ swipeRefresh.isRefreshing = false }, 8000)
-        }
-        webView.setOnScrollChangeListener { _, scrollY, _, _, _ ->
-            swipeRefresh.isEnabled = scrollY == 0
-        }
+        // BUG FIX (user report): pull-to-refresh (neeche-swipe-se-reload) hi
+        // "upar scroll nahi ho raha" issue ki asli wajah nikla — SwipeRefreshLayout
+        // page ke top par touch ko intercept kar leta tha, chahe kitna bhi fine-tune
+        // karo (scrollY check, JS bridge, debounce — kuch bhi permanently fix nahi
+        // kar paaya kyunki root cause hi yeh feature tha). Isliye pull-to-refresh
+        // ko poori tarah disable kar diya — ab SwipeRefreshLayout sirf ek plain
+        // container hai, kabhi bhi touch intercept nahi karega, aur WebView ka
+        // apna scroll (upar ho ya neeche) hamesha bina rukawat ke chalega.
+        swipeRefresh.isEnabled = false
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
