@@ -1170,6 +1170,55 @@
             app:tint="#FFFFFF" />
     </LinearLayout>
 
+    <!-- Player-wide themed toast/snackbar: pehle kai jagah (playback error,
+         quality change, track unavailable, screenshot/share status, etc.)
+         par plain system Toast.makeText(...) use ho raha tha — woh player ke
+         dark/glass theme se match nahi karta, position/duration inconsistent
+         hota hai aur controls ke upar ajeeb tarike se overlap kar jaata hai.
+         Ye ek hi reusable bottom-center card hai (showPlayerSnackbar() se
+         driven) jo har jagah consistent look/feel deta hai, multi-line text
+         support karta hai (lambe error messages ke liye), aur controls bar
+         se upar hi rehta hai taaki kabhi overlap na ho. -->
+    <LinearLayout
+        android:id="@+id/playerSnackbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="110dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_player_snackbar"
+        android:paddingStart="14dp"
+        android:paddingEnd="16dp"
+        android:paddingVertical="12dp"
+        android:elevation="14dp"
+        android:visibility="gone"
+        android:alpha="0">
+
+        <ImageView
+            android:id="@+id/playerSnackbarIcon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginTop="1dp"
+            android:src="@drawable/ic_info"
+            app:tint="#FFD700"
+            android:contentDescription="status" />
+
+        <TextView
+            android:id="@+id/playerSnackbarText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_gravity="center_vertical"
+            android:textColor="#FFFFFF"
+            android:textSize="13.5sp"
+            android:maxWidth="260dp"
+            android:lineSpacingExtra="2dp"
+            tools:text="Quality: 1080p" />
+    </LinearLayout>
+
     </FrameLayout>
 
 </FrameLayout>
