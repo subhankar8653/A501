@@ -911,19 +911,50 @@ class MainActivity : AppCompatActivity() {
         return parseInlineQualities().firstOrNull { it.second == inlineUri }?.first ?: "Auto"
     }
 
+    /** Quality / Subtitles / Audio track — teeno ab isi ek premium dark
+     *  bottom-sheet se khulte hain (plain grey AlertDialog ki jagah), bilkul
+     *  playback-speed sheet jaisa hi look: solid near-black gradient, rounded
+     *  top corners, faint gold hairline, aur selected row par gold checkmark. */
+    private fun showInlineChoiceSheet(title: String, options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+        val sheetView = LayoutInflater.from(this).inflate(R.layout.inline_choice_sheet, null)
+        sheetView.findViewById<TextView>(R.id.choiceSheetTitle).text = title
+        val container = sheetView.findViewById<ViewGroup>(R.id.inlineChoiceRowsContainer)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(sheetView)
+
+        options.forEachIndexed { index, label ->
+            val row = LayoutInflater.from(this).inflate(R.layout.inline_choice_row, container, false)
+            val isSelected = index == selectedIndex
+            row.findViewById<TextView>(R.id.choiceRowLabel).apply {
+                text = label
+                setTextColor(if (isSelected) android.graphics.Color.parseColor("#FFD700") else android.graphics.Color.WHITE)
+            }
+            row.findViewById<TextView>(R.id.choiceRowCheck).visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+            row.setOnClickListener {
+                onSelect(index)
+                dialog.dismiss()
+            }
+            container.addView(row)
+        }
+
+        dialog.setOnShowListener {
+            // Same fix as the settings/speed sheets — clear Material's default
+            // white bottom-sheet background so only our dark drawable shows.
+            val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
+        dialog.show()
+    }
+
     private fun showInlineQualityDialog(qualityButton: TextView) {
         val qualities = parseInlineQualities()
         if (qualities.isEmpty()) return
-        val labels = qualities.map { it.first }.toTypedArray()
+        val labels = qualities.map { it.first }
         val currentIndex = qualities.indexOfFirst { it.second == inlineUri }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("Quality")
-            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
-                switchInlineQuality(qualities[which].second)
-                qualityButton.text = qualities[which].first
-                dialog.dismiss()
-            }
-            .show()
+        showInlineChoiceSheet("Quality", labels, currentIndex) { which ->
+            switchInlineQuality(qualities[which].second)
+            qualityButton.text = qualities[which].first
+        }
     }
 
     /** Quality (resolution) badalte waqt ExoPlayer instance wahi rehta hai — sirf
@@ -1308,30 +1339,26 @@ class MainActivity : AppCompatActivity() {
         }
         labels.add("Off")
 
-        var selectedIndex = if (subtitleManuallyDisabled) labels.size - 1
+        val selectedIndex = if (subtitleManuallyDisabled) labels.size - 1
             else trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }.let { if (it < 0) 0 else it }
 
-        AlertDialog.Builder(this)
-            .setTitle("Subtitles")
-            .setSingleChoiceItems(labels.toTypedArray(), selectedIndex) { dialog, which ->
-                if (which == labels.size - 1) {
-                    subtitleManuallyDisabled = true
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        .build()
-                    subtitleButton.alpha = 0.5f
-                } else {
-                    subtitleManuallyDisabled = false
-                    val (group, index) = trackRefs[which]
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
-                        .build()
-                    subtitleButton.alpha = 1f
-                }
-                dialog.dismiss()
+        showInlineChoiceSheet("Subtitles", labels, selectedIndex) { which ->
+            if (which == labels.size - 1) {
+                subtitleManuallyDisabled = true
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+                subtitleButton.alpha = 0.5f
+            } else {
+                subtitleManuallyDisabled = false
+                val (group, index) = trackRefs[which]
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                    .build()
+                subtitleButton.alpha = 1f
             }
-            .show()
+        }
     }
 
     /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
@@ -1378,25 +1405,21 @@ class MainActivity : AppCompatActivity() {
         var selectedIndex = trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }
         if (selectedIndex < 0) selectedIndex = if (audioManuallyDisabled) labels.size - 1 else 0
 
-        AlertDialog.Builder(this)
-            .setTitle("Audio track")
-            .setSingleChoiceItems(labels.toTypedArray(), selectedIndex) { dialog, which ->
-                if (which == labels.size - 1) {
-                    audioManuallyDisabled = true
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                        .build()
-                } else {
-                    audioManuallyDisabled = false
-                    val (group, index) = trackRefs[which]
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
-                        .build()
-                }
-                dialog.dismiss()
+        showInlineChoiceSheet("Audio track", labels, selectedIndex) { which ->
+            if (which == labels.size - 1) {
+                audioManuallyDisabled = true
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                    .build()
+            } else {
+                audioManuallyDisabled = false
+                val (group, index) = trackRefs[which]
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
+                    .build()
             }
-            .show()
+        }
     }
 
     /** Chhote player ke fullscreen/more/PiP button se poora native PlayerActivity khulta hai,
