@@ -67,6 +67,20 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   // --- Picture-in-Picture (mini player) state --------------------------------
   const [isPip, setIsPip] = useState(false)
   const [pipRect, setPipRect] = useState(null) // {top,left,width,height,anim}
+  // BUG FIX (user ne pakda — "PiP ke X pe click karne par wapas upar bhari
+  // screen mein khul jaata hai"): PiP mini-player ke "X" (close) aur "▲"
+  // (expand) button — dono ke onClick pehle `exitPip` par hi wired the. Lekin
+  // `exitPip()` ka poora kaam hi "wapas bade/original player mein expand karo"
+  // hai — woh "close/off" nahi karta, sirf mini-player ko bada karke wahi jagah
+  // (jahan se PiP shuru hui thi) restore kar deta hai. Isliye X dabane par bhi
+  // video expand ho ke chalta rehta tha, kabhi "off" nahi hota tha — bilkul
+  // jaisa user ne report kiya.
+  // Fix: ek naya `closed` state + `closePip()` function — yeh video ko poori
+  // tarah pause kar deta hai aur poora player area hi hata deta hai (khaali
+  // black box), bilkul back-button jaisa "sab band". Sirf "X" is naye function
+  // ko call karta hai ab; "▲" (expand) pehle jaisa `exitPip` hi use karta
+  // rehta hai.
+  const [closed, setClosed] = useState(false)
   const pipDrag = useRef(null) // pointer-drag-to-reposition state, once already in PiP
   const swipeDrag = useRef(null) // pointer-drag state for swipe-down-to-PiP gesture
   const [dragY, setDragY] = useState(0)
@@ -354,6 +368,17 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     }, FLIP_MS)
   }
 
+  // "X" button — poora band karo (back-button jaisa "sab off"), expand mat
+  // karo. Video ko turant pause karo taaki background mein audio na chale,
+  // fir poora player hi hata do.
+  function closePip() {
+    const v = videoRef.current
+    if (v) v.pause()
+    setPipRect(null)
+    setIsPip(false)
+    setClosed(true)
+  }
+
   // Drag-to-reposition the mini player once it's already docked as PiP
   function onPipPointerDown(e) {
     if (!isPip) return
@@ -466,6 +491,13 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     return <div ref={containerRef} className="relative w-full h-full bg-black" />
   }
 
+  // BUG FIX: "X" se genuinely band karne ke baad poora player hata do — bilkul
+  // back-button jaisa "sab off". Khaali black box, na video na controls, jab
+  // tak naya src na aaye (parent naya `key` de kar remount karega).
+  if (closed) {
+    return <div ref={containerRef} className="relative w-full h-full bg-black" />
+  }
+
   const dragScale = 1 - Math.min(dragY / 900, 0.16)
   const dragOpacity = 1 - Math.min(dragY / 500, 0.35)
 
@@ -528,7 +560,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               )}
             </button>
             <button
-              onClick={exitPip}
+              onClick={closePip}
               aria-label="Close mini player"
               className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white active:scale-90 transition"
               title="Band karo"
