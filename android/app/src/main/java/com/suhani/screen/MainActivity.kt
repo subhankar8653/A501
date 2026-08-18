@@ -110,46 +110,6 @@ class WebAppInterface(private val activity: MainActivity) {
         activity.runOnUiThread { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
     }
 
-    // BUG FIX (user report, round 2): "upar scroll karne ki koshish karo to
-    // buffering/refresh icon aa jaata hai aur pura page refresh ho jaata hai —
-    // yeh sirf tabhi aana chahiye jab upar aur koi content na ho." Root cause:
-    // swipeRefresh.setOnChildScrollUpCallback pehle webView.canScrollVertically(-1)
-    // par depend karta tha, lekin Chromium WebView ka YEH bhi ek internal, compositor-
-    // thread-driven cache hai — genuine list ke beech mein hote hue bhi kabhi-kabhi
-    // stale "false" (matlab "already top par hoon") de deta hai, khaaskar fling ke
-    // turant baad ya fast reverse-direction drag par. Isse SwipeRefreshLayout galat
-    // se pull-to-refresh maan leta.
-    //
-    // Fix: WebView ke native scroll-state par bharosa hi mat karo — seedha JS se,
-    // asli DOM scroll position (window.scrollY, jo har scroll par turant/sahi update
-    // hoti hai) report karwao, aur yehi authoritative value niche onChildScrollUpCallback
-    // mein use karo.
-    //
-    // BUG FIX (round 4 — rounds 2/3 ke baad bhi issue wapas aaya): rounds 2/3
-    // dono REACTIVE the — SwipeRefreshLayout jab apni marzi se
-    // onChildScrollUpCallback poochta, tabhi hum teeno signal check karte the.
-    // Dikkat: SwipeRefreshLayout yeh decision touch ke EXACT shuru hote hi
-    // (ACTION_DOWN/pehla ACTION_MOVE) leta hai, aur JS→Native bridge call
-    // (JavascriptInterface) us instant tak apna latest report deliver nahi
-    // kar paata — race lagi hi rehti hai chahe kitne bhi signal combine karo,
-    // kyunki sab ek hi async delivery path share karte hain.
-    //
-    // Naya fix: decision ko PROACTIVE bana diya — swipeRefresh.isEnabled ko
-    // seedha yahin (JS report aate hi) toggle karte hain, gesture shuru hone
-    // se pehle hi, taaki SwipeRefreshLayout ke apne touch-intercept ko kabhi
-    // "mid-gesture race" jhelni hi na pade:
-    //   - Page top se hatte hi (atTop=false): turant, bina delay, isEnabled
-    //     false kar do — ab SwipeRefreshLayout is poore scroll-session ke
-    //     liye touch intercept karega hi nahi.
-    //   - Wapas top par aane par (atTop=true): thoda (120ms) debounce ke
-    //     baad hi isEnabled=true karo — taaki ek fast reverse-fling ke turant
-    //     baad, agar woh sirf momentary/overshoot bounce nikla, to galti se
-    //     turant re-armed na ho jaaye.
-    @JavascriptInterface
-    fun reportAtTop(atTop: Boolean) {
-        activity.webIsAtTop = atTop
-        activity.runOnUiThread { activity.updateSwipeRefreshArmed(atTop) }
-    }
 }
 
 class MainActivity : AppCompatActivity() {
@@ -181,57 +141,6 @@ class MainActivity : AppCompatActivity() {
     // status bar ke neeche se shuru karte hain, (2) inline player ka rect isi offset
     // ko add karke calculate karte hain, taaki dono screen ke sahi jagah par rahen.
     private var statusBarInsetPx = 0
-
-    // BUG FIX (user report, round 2): authoritative "page is scrolled to its
-    // very top" flag, reported live by JS (see reportAtTop() above / the
-    // injected listener in injectScrollTracker()) instead of trusting
-    // WebView's own (occasionally stale) canScrollVertically(-1). Starts
-    // true since every fresh page load begins at the top.
-    var webIsAtTop = true
-
-    // Round 4 fix: debounced "arm pull-to-refresh" runnable — see the big
-    // comment on WebAppInterface.reportAtTop() above for why this exists.
-    private val armSwipeRefreshRunnable = Runnable {
-        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
-    }
-
-    // Proactively enables/disables SwipeRefreshLayout's touch-intercept
-    // itself (instead of only answering its reactive canScrollUp query),
-    // so the decision is already settled BEFORE any new touch gesture
-    // begins — removing the JS-bridge race window entirely.
-    fun updateSwipeRefreshArmed(atTop: Boolean) {
-        if (!::swipeRefresh.isInitialized) return
-        swipeRefresh.removeCallbacks(armSwipeRefreshRunnable)
-        if (atTop) {
-            swipeRefresh.postDelayed(armSwipeRefreshRunnable, 120L)
-        } else {
-            // Not at top — disable immediately, no delay. Pull-to-refresh
-            // must never be armable while scrolled down, full stop.
-            swipeRefresh.isEnabled = false
-        }
-    }
-
-    // BUG FIX (user report, round 3): round 2's fix alone still wasn't
-    // enough — user still saw scroll-up gestures mid-page get swallowed by
-    // pull-to-refresh (spinner/"buffering" + the page reloading). Reason:
-    // webIsAtTop is a SINGLE signal that comes from JS via requestAnimationFrame
-    // — there's a small window, right as a brand-new upward drag begins
-    // (especially right after a fling), where that JS report hasn't landed
-    // yet and webIsAtTop is still holding a stale "true" from earlier.
-    // SwipeRefreshLayout queries canScrollUp at exactly that moment and
-    // wrongly decides "child is at top" -> starts the pull-to-refresh
-    // instead of letting WebView keep scrolling up.
-    //
-    // Fix: don't rely on one signal — combine THREE independent ones and
-    // treat "any one of them says we're not at top" as authoritative. This
-    // needs all three to be stale/wrong at the exact same instant for the
-    // bug to resurface, which in practice doesn't happen:
-    //   1) webIsAtTop      — JS DOM scrollY, reported on every 'scroll' event
-    //   2) webNativeScrollY — WebView's own Java-side View.onScrollChanged,
-    //                         a completely separate update path from (1)
-    //   3) webView.canScrollVertically(-1) — queried fresh, synchronously,
-    //                         at the exact moment SwipeRefreshLayout asks
-    private var webNativeScrollY = 0
 
     // Chhota (inline) native player aur uske controls
     private var inlinePlayer: ExoPlayer? = null
@@ -393,11 +302,6 @@ class MainActivity : AppCompatActivity() {
                 // Reload (retry/pull-to-refresh) par bhi purani error screen turant
                 // hata do, warna spinner ke peeche stale error text dikhta rehta.
                 loadErrorView.visibility = View.GONE
-                // Naya load shuru — jab tak fresh scroll report na aaye tab tak
-                // "top par hoon" maan lo (safe default, page top se hi shuru hoti hai).
-                webIsAtTop = true
-                webNativeScrollY = 0
-                updateSwipeRefreshArmed(true)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -405,7 +309,6 @@ class MainActivity : AppCompatActivity() {
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
                 fadeOutLoadingView()
-                injectScrollTracker(view)
             }
 
             override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
@@ -432,38 +335,8 @@ class MainActivity : AppCompatActivity() {
             // (slow network, hung request), don't leave the spinner stuck forever.
             swipeRefresh.postDelayed({ swipeRefresh.isRefreshing = false }, 8000)
         }
-        // BUG FIX (user report): "neeche scroll ho jaata hai, upar nahi hota —
-        // agar finger uthake dobara upar-ki-taraf (scroll-up) gesture shuru karo
-        // to loading/refresh lag jaata hai." Root cause: modern Chromium WebView
-        // scroll karta hai compositor thread par, isliye iska View-level
-        // `scrollY` (jo `setOnScrollChangeListener` yahan padhta tha) touch ke
-        // dauraan hamesha turant/sahi update nahi hota — kabhi purana (stale)
-        // ya 0 hi reh jaata hai jab tak agla naya touch-gesture (ACTION_DOWN)
-        // shuru na ho jaaye.
-        //
-        // BUG FIX (round 4 — rounds 2/3 ke baad bhi issue wapas aaya): rounds
-        // 2/3 dono ne `isEnabled` ko hardcoded hamesha `true` rakha tha aur
-        // sirf `setOnChildScrollUpCallback` (reactive, SwipeRefreshLayout khud
-        // jab poochta tabhi check hota) par bharosa kiya — lekin JS→Native
-        // bridge call ke async delivery ki wajah se woh query hamesha EXACT
-        // sahi waqt par fresh answer nahi paata, race lagi hi rehti thi.
-        //
-        // Ab `isEnabled` ko yahan hardcode NAHI kiya — ye ab poori tarah
-        // `updateSwipeRefreshArmed()` (JS ke reportAtTop() se driven) control
-        // karta hai, jo gesture shuru hone se PEHLE hi decide kar leta hai
-        // (proactive, na ki reactive). `setOnChildScrollUpCallback` yahan
-        // sirf ek defense-in-depth extra safety net ke taur par rakha hai —
-        // agar kabhi `isEnabled` galti se true reh gaya ho, ye teeno signal
-        // wali check bhi ek aur last-resort layer ka kaam karti hai.
-        swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            !webIsAtTop || webNativeScrollY > 0 || webView.canScrollVertically(-1)
-        }
-        // Second, independent scroll-position path (View-layer, not JS/bridge) —
-        // fires on WebView's own onScrollChanged, so it updates on a different
-        // path/thread timing than the JS 'scroll' listener. Purely a safety net
-        // for the callback above; doesn't drive any UI itself.
-        webView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            webNativeScrollY = scrollY
+        webView.setOnScrollChangeListener { _, scrollY, _, _, _ ->
+            swipeRefresh.isEnabled = scrollY == 0
         }
 
         if (savedInstanceState != null) {
@@ -471,40 +344,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             webView.loadUrl(SITE_URL)
         }
-    }
-
-    // BUG FIX (user report, round 2): asli scroll-position tracker, JS side se.
-    // window/document par 'scroll' event laga kar har change par turant
-    // AndroidPlayer.reportAtTop(true/false) call karte hain — passive listener
-    // hai (scroll ko block/slow nahi karta), aur rAF se throttle kiya hai taaki
-    // fast scrolling ke dauraan bhi bridge par spam na ho. Yeh SPA hai (client-side
-    // routing), isliye listener sirf ek baar (har real page-load/reload par,
-    // onPageFinished se) lagana kaafi hai — beech ki route-changes iska use hi
-    // karte rehte hain (idempotent guard se dobara-dobara nahi lagta).
-    private fun injectScrollTracker(view: WebView) {
-        val js = """
-            (function() {
-                if (window.__suhaniScrollTrackerInstalled) return;
-                window.__suhaniScrollTrackerInstalled = true;
-                var ticking = false;
-                function report() {
-                    ticking = false;
-                    var top = (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0);
-                    if (window.AndroidPlayer && window.AndroidPlayer.reportAtTop) {
-                        window.AndroidPlayer.reportAtTop(top <= 0);
-                    }
-                }
-                function onScroll() {
-                    if (!ticking) {
-                        ticking = true;
-                        requestAnimationFrame(report);
-                    }
-                }
-                window.addEventListener('scroll', onScroll, { passive: true });
-                report();
-            })();
-        """.trimIndent()
-        view.evaluateJavascript(js, null)
     }
 
     private fun startLoadingLabelPulse() {
