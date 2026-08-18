@@ -162,9 +162,6 @@ class PlayerActivity : AppCompatActivity() {
     // PiP mein jaate waqt playback state ka snapshot — PiP-se-fullscreen
     // restore par forcibly re-assert karne ke liye (audio-focus-pause bug fix).
     private var pipEntryWasPlaying = false
-    // handlePipExitDecision() ko cross-function state chahiye (dono ab alag
-    // function hain, deferred-post ki wajah se) — isliye field hai, local val nahi.
-    private var pipWasJustClosedField = false
     // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
     // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
     // on-screen rect (pip_src_* extras) yahan store hota hai — pehli hi real PiP
@@ -202,25 +199,28 @@ class PlayerActivity : AppCompatActivity() {
     // yaad rakhta hai, taaki finish() sahi resume_playing value bhej sake.
     private var resumePlayingIntentOverride: Boolean? = null
 
-    // Bug fix (user report: PiP ke "X" (close) button dabane par PiP window
-    // remove nahi hoti, floating hi reh jaati hai): upar wala poora
-    // close-vs-expand decision system ke apne `isFinishing` flag par depend
-    // karta hai, jo humare control mein nahi hai. Kai devices/OEM builds par
-    // (khaaskar jab PiP session seedha fullscreen se shuru hui ho, inline se
-    // nahi — dekho pipOriginFromInline) "X" dabane ke baad bhi kabhi-kabhi
-    // system `isFinishing` ko turant/kabhi bhi true set nahi karta, isliye
-    // handlePipExitDecision() galti se ise "expand" samajh kar controls wapas
-    // dikha deta hai — Activity kabhi finish() hi nahi hoti aur PiP window
-    // atki reh jaati hai.
+    // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut nahi
+    // hota, video kahin na kahin chalta reh jaata hai"): saari pichli koshishein
+    // system ke `isFinishing` flag par depend karti thi, jo humare control mein
+    // nahi hai aur kai devices/OEM builds par turant (ya kabhi bhi) reliably
+    // settle nahi hota — isliye ek chhoti race window mein galat decision
+    // ("close" ki jagah "expand") le liya jaata tha, aur ek baar galat decision
+    // lene ke baad (controls wapas dikha diye / playback resume kar diya /
+    // galat result extras ke saath finish() bhi ho chuka) koi baad ka watchdog
+    // usko theek nahi kar sakta tha.
     //
-    // Fix: har real PiP-exit ke baad ek chhota safety-net watchdog laga do —
-    // agar thodi der mein Activity na to finish ho rahi hai na dobara RESUMED
-    // hui hai (yani genuinely expand hoke user ko wapas dikhi), to isko khud
-    // ek genuine "X"/swipe close maan kar force finish() kar do. Genuine
-    // expand hamesha turant (kuch hi ms mein) onResume() la deta hai, isliye
-    // yeh kabhi galti se ek real expand ko cut nahi karta.
-    private var pipExitWatchdogToken: Any? = null
-    private var resumedSincePipExit = false
+    // Naya approach: `isFinishing` per bharosa hi mat karo. Iski jagah Android
+    // khud jo DO GUARANTEED, ordering-safe lifecycle signal deta hai unhi par
+    // bharosa karo:
+    //   - Genuine "tap to expand": Activity hamesha wapas RESUMED state mein
+    //     aati hai -> onResume() zaroor call hota hai.
+    //   - Genuine "X"/swipe close: Activity kabhi RESUMED nahi hoti, seedha
+    //     onStop() (phir onDestroy()) par chali jaati hai -> onResume() KABHI
+    //     call nahi hota.
+    // `pendingPipExitDecision` PiP se bahar aate hi true set hota hai, aur
+    // jo bhi lifecycle callback PEHLE genuinely fire ho (onResume ya onStop),
+    // wahi is flag ko consume karke sahi faisla leta hai — koi timer/race nahi.
+    private var pendingPipExitDecision = false
 
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
@@ -6695,200 +6695,88 @@ class PlayerActivity : AppCompatActivity() {
             brightnessSliderContainer.visibility = View.GONE
             playerView.useController = false
         } else {
-            // Ye batata hai ki hum abhi-abhi genuine PiP window se bahar aaye
-            // hain (X ya swipe-away close) — normal back-navigation handoff mein
-            // yeh flag kabhi true nahi hota kyunki wahan PiP mode mein gaye hi
-            // nahi the.
-            val pipWasJustClosed = wasInRealPipMode
-            pipWasJustClosedField = pipWasJustClosed
             wasInRealPipMode = false
-            // Bug fix v2 ("X se cut hua, lekin ab expand-tap bhi gayab ho jaata
-            // hai" — pichle fix ka side-effect): `wasInRealPipMode` sirf itna
-            // batata hai ki "hum abhi real PiP mode mein THE" — yeh X-close aur
-            // expand-tap DONO ke liye hamesha true hota hai (dono hi PiP se
-            // "bahar" nikalte hain), isliye ise seedha pip_closed maan lena
-            // GALAT signal tha — har expand-tap bhi "close" maan liya jaata,
-            // video gayab ho jaata.
-            //
-            // Sahi signal: default maan lo ki agar yeh session inline se shuru
-            // hui thi (pipOriginFromInline) to close hi hai — SIRF neeche wale
-            // "deliberate tap-to-expand" branch mein hi hum ise explicitly
-            // false karte hain, kyunki wahi EK jagah hai jahan hume pakka pata
-            // hai ki yeh close nahi, ek genuine expand hai.
-            pipCloseFlagForResult = pipOriginFromInline
-
-            // Bug fix v3 (MIUI/OEM race — "kabhi X bhi expand jaisa behave
-            // karta hai, kabhi expand bhi X jaisa"): upar wala poora faisla
-            // `isFinishing` ki EXACT is-hi-instant wali value par depend
-            // karta hai. Kai OEM builds (khaaskar MIUI) par is callback ke
-            // fire hone aur system ke apne finish()-trigger (genuine X-close
-            // ke liye) ke beech ka order guaranteed nahi hai — kabhi
-            // isFinishing abhi tak settle nahi hua hota jab yeh callback
-            // chalta hai, isliye X-close bhi galti se "tap-to-expand" jaisa
-            // dikh jaata (ya ulta). Fix: is poore faisle ko agle message-loop
-            // tick tak post kar do — itni si der mein system ka apna
-            // finish()-trigger (agar chal raha ho) apna kaam pura kar chuka
-            // hota hai, taaki jab hum isFinishing padhein, wo hamesha sahi/
-            // final value ho.
-            playerView.post {
-                handlePipExitDecision()
-            }
-
-            // Watchdog arm karo (dekho field comment upar). resumedSincePipExit
-            // ko yahin turant false kar do taaki purani koi stale value na bache.
-            resumedSincePipExit = false
-            val token = Any()
-            pipExitWatchdogToken = token
-            playerView.postDelayed({
-                if (pipExitWatchdogToken === token && !isFinishing && !isDestroyed && !resumedSincePipExit) {
-                    // Na finish ho rahi hai, na wapas resume hui — matlab "X"/swipe
-                    // se genuinely band ki gayi thi lekin system ne khud finish()
-                    // trigger nahi kiya. Khud safely band karo: shared player ho to
-                    // pause karo (background audio-leak na ho), phir finish().
-                    try {
-                        if (usingSharedPlayer && ::player.isInitialized) {
-                            resumePlayingIntentOverride = player.playWhenReady
-                            player.playWhenReady = false
-                        }
-                        BackgroundPlaybackService.stop(this)
-                        finish()
-                    } catch (_: Exception) {}
-                }
-            }, 600L)
-            return
+            // BUG FIX (rewrite — dekho `pendingPipExitDecision` field ka comment
+            // upar): yahan koi isFinishing-based faisla NAHI liya jaata ab. Bas
+            // itna record karo ki "PiP se abhi-abhi bahar aaye hain, faisla
+            // baaki hai" — asli faisla onResume() (= expand) ya onStop()
+            // (= genuine close) mein, jo bhi pehle genuinely fire ho, wahan
+            // hota hai.
+            pendingPipExitDecision = true
         }
     }
 
-    private fun handlePipExitDecision() {
-            // BUG FIX (user report: "PiP ka X dabane ke baad bhi PiP gayab nahi
-            // hoti, ulta main/fullscreen video player par chalne lag jaata hai"):
-            // pehle yeh poora "controls dikhao + playback resume karo" wala flow
-            // sirf `pipOriginFromInline` par gated tha — agar session fullscreen
-            // se shuru hui thi (pipOriginFromInline == false), to X-close par bhi
-            // yeh block hamesha chalta tha: playerView.useController = true,
-            // showAllControls(), aur 150ms baad playWhenReady = true assert ho
-            // jaata — sirf NEECHE wala `isFinishing` block hi baad mein ise pause
-            // karta. Kai devices/OEM builds par is exact tick tak isFinishing
-            // settle hoke true nahi hua hota (dekho neeche ka MIUI-race comment),
-            // isliye yeh chhota window kaafi hota controls flash + video resume
-            // dikhane ke liye — bilkul waisa hi jaisa user ne report kiya: PiP
-            // band hone ki jagah, video seedha bade/fullscreen player par chalne
-            // lag jaata.
-            //
-            // Fix: sabse pehle hi check karo ki yeh genuine close hai ya nahi —
-            // `isFinishing` ab poore is function ke top par gate karta hai, na
-            // ki sirf pipOriginFromInline ke andar. Genuine close (isFinishing
-            // == true) par ab controls kabhi show nahi hote, playback kabhi
-            // resume nahi hota — chahe session inline se shuru hui ho ya
-            // fullscreen se. "Tap to expand" wala behaviour (dono cases —
-            // inline-origin bounce-back neeche, aur normal fullscreen expand
-            // uske baad) bilkul pehle jaisa hi hai, sirf ab explicitly
-            // isFinishing == false ke peeche gated hai.
-            if (isFinishing) {
-                if (::player.isInitialized) {
-                    if (pipWasJustClosedField) {
-                        // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
-                        // kaala/black screen reh jaata hai"): pehle yahan genuine PiP
-                        // close (X/swipe) par SharedPlayerHolder.clear() + poora player
-                        // release() (onDestroy() mein, releasePlayerFullyOnDestroy se) ho
-                        // jaata tha. Iska matlab MainActivity.onActivityResult() ko ab
-                        // wahi zinda instance milta hi nahi (SharedPlayerHolder khaali),
-                        // isliye woh mountInlinePlayer() se ek BILKUL NAYA ExoPlayer
-                        // banata — fresh network buffer/decoder init se shuru — result:
-                        // user ko kuch second (ya poora) black/frozen screen dikhta,
-                        // "video wapas nahi chala" jaisa mehsoos hota.
-                        //
-                        // Fix: player ko pause zaroor karo (audio background mein leak
-                        // na ho, purana bug), lekin ise release/clear MAT karo — SharedPlayerHolder
-                        // mein zinda rehne do. MainActivity.onActivityResult() apne
-                        // existing check (SharedPlayerHolder.player != null && uri match)
-                        // se isi already-buffered instance ko turant reuse kar lega —
-                        // koi naya buffer/black-frame nahi, seedha wahi frame jahan
-                        // pause hua tha, instantly resume.
-                        resumePlayingIntentOverride = player.playWhenReady
-                        player.playWhenReady = false
-                        BackgroundPlaybackService.stop(this)
-                    } else if (usingSharedPlayer) {
-                        BackgroundPlaybackService.stop(this)
-                    } else {
-                        player.playWhenReady = false
-                        BackgroundPlaybackService.stop(this)
-                    }
-                }
-                // Safety-net: kabhi-kabhi (OEM race) isFinishing true ho chuka
-                // hota hai lekin Android khud finish() trigger karne mein slow
-                // hota hai — is Activity/fullscreen player ko screen par kabhi
-                // "atka" na chhodo, khud bhi finish() call kar do (already-
-                // finishing Activity par yeh call safe/no-op hai).
-                finish()
-                return
-            }
+    // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut nahi
+    // hota"): yeh function sirf tabhi kuch karta hai jab `pendingPipExitDecision`
+    // set ho (matlab hum abhi-abhi real PiP se bahar aaye the aur faisla baaki
+    // tha). Isko onResume() se bulaya jaata hai — Android guarantee karta hai ki
+    // "tap to expand" ONLY yahi path hai jahan Activity dobara RESUMED hoti hai,
+    // isliye yahan pahunchna khud hi pakka signal hai ki yeh genuine expand hai,
+    // koi isFinishing check ki zaroorat nahi.
+    private fun handlePipExpand() {
+        if (!pendingPipExitDecision) return
+        pendingPipExitDecision = false
 
-            // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
-            // (pipOriginFromInline) — isko tap karke "bada" karne par Android
-            // bas is Activity ko wapas fullscreen dikha deta hai, jo galat hai:
-            // yeh video kabhi genuinely fullscreen dekhi hi nahi gayi thi. User
-            // yahan NORMAL (inline) player hi expect karta hai, fullscreen nahi.
-            // isFinishing abhi false hai (genuine "X"/swipe close upar hi handle
-            // ho chuka hai) — matlab yeh ek asli "tap to expand" hai.
-            // Fix: turant finish() karo (bilkul normal back jaisa) taaki
-            // MainActivity ko control wapas mile aur wahi NORMAL/inline player
-            // dobara mount ho — koi fullscreen chrome kabhi flash na ho.
-            if (pipOriginFromInline) {
-                // Yehi EK jagah hai jahan hume pakka pata hai ki yeh genuine
-                // expand hai, close nahi — explicitly override karo.
-                pipCloseFlagForResult = false
-                // Bug fix ("PiP se normal player hone mein buffering"): pehle
-                // yahan seedha finish() bulaate the aur Surface/foreground-mode
-                // ka kaam sirf onPause() ke bharose chhod dete the — us dauraan
-                // ek chhota timing-gap ban sakta tha jahan decoder Surface-less
-                // ho kar apne resources reconfigure kar deta (rebuffer/stutter).
-                // Fix: yahi, finish() se PEHLE hi, turant foreground-mode set
-                // karo aur is Activity ke PlayerView ko turant detach kar do —
-                // taaki MainActivity ko control milne tak decoder hamesha
-                // "ready" rahe, koi surface-less reconfigure-gap na bane.
-                if (usingSharedPlayer && ::player.isInitialized) {
-                    player.setForegroundMode(true)
-                    playerView.player = null
-                }
-                // Smooth animation: bounce-back bilkul invisible/instant nahi,
-                // ek halka fade — taaki system ke apne PiP-restore animation
-                // ke turant baad yeh doosra "jump" na lage, seedha ek hi
-                // continuous fade-through-black feel de.
-                @Suppress("DEPRECATION")
-                overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
-                finish()
-                return
+        // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
+        // (pipOriginFromInline) — isko tap karke "bada" karne par Android bas
+        // is Activity ko wapas fullscreen dikha deta hai, jo galat hai: yeh
+        // video kabhi genuinely fullscreen dekhi hi nahi gayi thi. User yahan
+        // NORMAL (inline) player hi expect karta hai, fullscreen nahi.
+        if (pipOriginFromInline) {
+            pipCloseFlagForResult = false
+            if (usingSharedPlayer && ::player.isInitialized) {
+                player.setForegroundMode(true)
+                playerView.player = null
             }
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
+            finish()
+            return
+        }
 
-            // Wapas full-size par aane par controls/controller dobara enable karo.
-            playerView.useController = true
-            if (::topBar.isInitialized) showAllControls()
-            // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
-            // upar record kiya gaya pipEntryWasPlaying ab forcibly assert karo —
-            // agar PiP mein jaate waqt play ho raha tha, to yahan bhi zaroor
-            // playing hona chahiye, chahe beech mein koi transient audio-focus
-            // blip ne ExoPlayer ka internal playWhenReady chupke se false kyun
-            // na kar diya ho. Chhota post-delay isliye taaki us focus-regain
-            // ke "aakhri" event ke baad hi yeh final state jeete, usse pehle nahi.
-            if (::player.isInitialized) {
-                val shouldResume = pipEntryWasPlaying
-                playerView.postDelayed({
-                    if (!isFinishing && ::player.isInitialized) player.playWhenReady = shouldResume
-                }, 150)
-            }
-            // Note: genuine "X"/swipe close (isFinishing == true) ab is function
-            // ke top par hi fully handle ho kar return ho chuka hota hai — yahan
-            // tak pahunchna hi matlab hai yeh pakka ek genuine expand tha.
+        // Wapas full-size par aane par controls/controller dobara enable karo.
+        playerView.useController = true
+        if (::topBar.isInitialized) showAllControls()
+        // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
+        // upar record kiya gaya pipEntryWasPlaying ab forcibly assert karo.
+        if (::player.isInitialized) {
+            val shouldResume = pipEntryWasPlaying
+            playerView.postDelayed({
+                if (!isFinishing && ::player.isInitialized) player.playWhenReady = shouldResume
+            }, 150)
+        }
+    }
+
+    // BUG FIX (major rewrite — dekho `pendingPipExitDecision` field ka comment
+    // upar): agar onStop() fire ho raha hai jabki PiP-exit ka faisla abhi bhi
+    // pending hai (matlab beech mein onResume() KABHI nahi aaya), to yeh pakka
+    // ek genuine "X"/swipe close hai — Activity kabhi RESUMED hui hi nahi.
+    // isFinishing par bharosa kiye bina, yahin definitively cut kar do.
+    private fun handlePipGenuineClose() {
+        if (!pendingPipExitDecision) return
+        pendingPipExitDecision = false
+        pipCloseFlagForResult = pipOriginFromInline
+        if (::player.isInitialized) {
+            // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
+            // black screen reh jaata hai"): player ko pause zaroor karo (audio
+            // background mein leak na ho), lekin release/SharedPlayerHolder-
+            // clear yahan MAT karo — woh kaam MainActivity.onActivityResult()
+            // "pip_closed" extra dekh kar khud (definitively) karega.
+            resumePlayingIntentOverride = player.playWhenReady
+            player.playWhenReady = false
+        }
+        BackgroundPlaybackService.stop(this)
+        // System ne khud finish() trigger na kiya ho (kuch OEM par aisa hota
+        // hai) to bhi is Activity/PiP window ko screen par kabhi "atka" na
+        // chhodo — khud finish() bulao (already-finishing par yeh safe/no-op).
+        if (!isFinishing) finish()
     }
 
     override fun onResume() {
         super.onResume()
-        // PiP-exit watchdog ko disarm karo — hum genuinely resume ho gaye
-        // (real expand), isliye ab watchdog ko force-finish() nahi karna
-        // chahiye. Dekho pipExitWatchdogToken field ka comment.
-        resumedSincePipExit = true
-        pipExitWatchdogToken = null
+        // Genuine "tap to expand" ka pakka signal — dekho handlePipExpand()
+        // function ka comment.
+        handlePipExpand()
         // Wapas app khulte hi background service band kar do — ab notification
         // aur foreground-priority ki zaroorat nahi, Activity khud foreground me hai.
         BackgroundPlaybackService.stop(this)
@@ -6989,6 +6877,13 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut
+        // nahi hota"): agar `pendingPipExitDecision` abhi bhi pending hai yahan
+        // tak (matlab PiP se bahar aane ke baad Activity kabhi onResume() tak
+        // nahi pahunchi), to yeh 100% pakka ek genuine "X"/swipe close hai —
+        // dekho handlePipGenuineClose() ka comment. Ise sabse pehle, kisi bhi
+        // aur logic se pehle handle karo.
+        handlePipGenuineClose()
         // BUG FIX (PiP black screen): pehle yahan bina kisi shart ke turant
         // pause kar dete the ye soch kar ki "onStop() ka matlab hi hai Activity
         // dikh nahi rahi". Lekin galat nikla — kai devices/launchers (especially
@@ -7027,7 +6922,6 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        pipExitWatchdogToken = null
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
             pipReceiverRegistered = false
