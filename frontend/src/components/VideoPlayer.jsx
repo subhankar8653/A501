@@ -607,45 +607,58 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
 
             {!playing && !buffering && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-14 h-14 rounded-full bg-reel-gold/90 flex items-center justify-center">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="#0B0B12"><path d="M8 5v14l11-7z" /></svg>
+                <div className="w-16 h-16 rounded-full bg-black/35 backdrop-blur-sm ring-1 ring-white/15 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.45)] animate-toast-in">
+                  <div className="w-12 h-12 rounded-full bg-reel-gold flex items-center justify-center shadow-[0_0_18px_rgba(232,163,61,0.55)]">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#0B0B12"><path d="M8 5v14l11-7z" /></svg>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Top bar — chevron-down = shrink into mini player (PiP) */}
+            {/* Top bar — chevron-down = shrink into mini player (PiP); title
+                shown next to it once controls are visible, YouTube-style. */}
             <div
-              className={`absolute inset-x-0 top-0 px-3 pt-3 pb-8 bg-gradient-to-b from-black/70 to-transparent transition-opacity duration-200 ${
+              className={`absolute inset-x-0 top-0 px-3 pt-3 pb-10 bg-gradient-to-b from-black/75 via-black/25 to-transparent transition-opacity duration-200 ${
                 showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}
             >
-              <button
-                onClick={enterPip}
-                aria-label="Switch to mini player"
-                className="w-8 h-8 rounded-full bg-black/45 flex items-center justify-center text-reel-ink active:scale-90 transition"
-                title="Mini player"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-              </button>
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={enterPip}
+                  aria-label="Switch to mini player"
+                  className="w-8 h-8 shrink-0 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-reel-ink active:scale-90 transition"
+                  title="Mini player"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
+                {title ? (
+                  <p className="min-w-0 flex-1 truncate text-xs font-medium text-reel-ink/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    {title}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             {/* Controls */}
             <div
-              className={`absolute inset-x-0 bottom-0 px-3 pb-2 pt-10 bg-gradient-to-t from-black/85 via-black/30 to-transparent transition-opacity duration-200 ${
+              className={`absolute inset-x-0 bottom-0 px-3 pb-2 pt-10 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-200 ${
                 showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}
             >
               <div
                 ref={progressRef}
                 onPointerDown={onScrubStart}
-                className="relative h-4 flex items-center cursor-pointer touch-none"
+                className="group relative h-4 flex items-center cursor-pointer touch-none"
               >
-                <div className="absolute inset-x-0 h-1 rounded-full bg-white/20" />
-                <div className="absolute h-1 rounded-full bg-white/40" style={{ width: `${bufferedPct}%` }} />
-                <div className="absolute h-1 rounded-full bg-reel-gold" style={{ width: `${progressPct}%` }} />
+                <div className="absolute inset-x-0 h-[3px] rounded-full bg-white/25 transition-all group-active:h-[5px]" />
+                <div className="absolute h-[3px] rounded-full bg-white/45 transition-all group-active:h-[5px]" style={{ width: `${bufferedPct}%` }} />
                 <div
-                  className="absolute w-3 h-3 rounded-full bg-reel-gold shadow"
-                  style={{ left: `calc(${progressPct}% - 6px)` }}
+                  className="absolute h-[3px] rounded-full bg-gradient-to-r from-reel-gold to-amber-300 shadow-[0_0_8px_rgba(232,163,61,0.65)] transition-all group-active:h-[5px]"
+                  style={{ width: `${progressPct}%` }}
+                />
+                <div
+                  className="absolute w-3.5 h-3.5 rounded-full bg-reel-gold ring-2 ring-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.5)] transition-transform group-active:scale-125"
+                  style={{ left: `calc(${progressPct}% - 7px)` }}
                 />
               </div>
 
