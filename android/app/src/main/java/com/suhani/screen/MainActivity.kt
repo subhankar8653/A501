@@ -1459,7 +1459,24 @@ class MainActivity : AppCompatActivity() {
             // karo, na WebView ko us watch page par forward navigate karo. User
             // jahan (peeche navigate ki gayi page par) hai, wahi rahe — bilkul
             // khaali/silent, koi background playback nahi.
-            if (didNavigateBackForPip && pipGenuinelyClosed) {
+            //
+            // BUG FIX (asli root cause — "PiP cut ho jaata hai lekin audio
+            // background mein chalta rehta hai"): pehle yahan `didNavigateBackForPip
+            // && pipGenuinelyClosed` check hota tha — matlab yeh "poora cut karo"
+            // wala path SIRF tabhi chalta jab PiP turant-inline se bani ho (jahan
+            // WebView bhi peeche navigate hui thi). Sabse aam case mein — video
+            // fullscreen se dekha gaya, phir home/swipe se PiP mein gaye, phir "X"
+            // se band kiya — didNavigateBackForPip false hi rehta (kyunki wo sirf
+            // enterPipImmediately wale flow mein set hota hai), isliye yeh poora
+            // block skip ho jaata aur code neeche wale "normal wapas aana" branch
+            // mein gir jaata, jo inlinePlayer ko FORCIBLY RESUME (playWhenReady =
+            // true) kar deta — result: PiP window gayab ho jaati (cut dikhta hai)
+            // lekin audio/video background mein chalta rehta. Ab sirf
+            // `pipGenuinelyClosed` par hi bharosa karo — PlayerActivity ab yeh flag
+            // origin (inline ho ya fullscreen) ki parwah kiye bina hamesha bhejta
+            // hai jab bhi yeh ek definitively genuine PiP close ho (dekho
+            // PlayerActivity.handlePipGenuineClose()).
+            if (pipGenuinelyClosed) {
                 didNavigateBackForPip = false
                 inlinePlayer?.playWhenReady = false
                 inlinePlayer?.pause()
