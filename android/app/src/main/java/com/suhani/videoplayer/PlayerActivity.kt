@@ -293,6 +293,13 @@ class PlayerActivity : AppCompatActivity() {
     private var usingSharedPlayer = false
     private lateinit var playerView: PlayerView
     private lateinit var playerContainer: FrameLayout
+    // BUG FIX (user report: "skip karte hi pause aur buffering ka icon ek
+    // saath dikhta hai"): apna themed buffering indicator (dekho
+    // activity_player.xml — Media3 ka default spinner ab band hai). Isko
+    // exo_play/exo_pause ke saath cross-fade karte hain taaki ek waqt mein
+    // sirf ek hi cheez dikhe.
+    private var bufferingIndicator: View? = null
+    private var isShowingBufferingIndicator = false
     // Web frontend se aayi quality list (label -> url) — More menu ke "Quality"
     // option se yahi list dikhti hai, jugaad-style: bas mediaItem swap + resume.
     private var availableQualities: List<Pair<String, String>> = emptyList()
@@ -1164,6 +1171,7 @@ class PlayerActivity : AppCompatActivity() {
         exoPauseButton = playerView.findViewById(androidx.media3.ui.R.id.exo_pause)
         exoPlayButton?.let { applyPressScale(it) }
         exoPauseButton?.let { applyPressScale(it) }
+        bufferingIndicator = findViewById(R.id.bufferingIndicator)
 
         exoPlayButton?.setOnClickListener {
             if (player.playbackState == Player.STATE_ENDED) {
@@ -1190,6 +1198,51 @@ class PlayerActivity : AppCompatActivity() {
             player.playbackState != Player.STATE_ENDED &&
             player.playbackState != Player.STATE_IDLE
         animatePlayPauseSwap(showPause)
+        // Skip/seek karte hi player thodi der STATE_BUFFERING mein jaata hai —
+        // us waqt play/pause hero button ko cross-fade se apne themed spinner
+        // ke saath badal do (ek waqt mein sirf ek hi dikhega), buffering khatam
+        // hote hi wapas ulta.
+        setBufferingIndicatorVisible(player.playbackState == Player.STATE_BUFFERING)
+    }
+
+    private fun setBufferingIndicatorVisible(show: Boolean) {
+        if (isShowingBufferingIndicator == show) return
+        isShowingBufferingIndicator = show
+        val spinner = bufferingIndicator ?: return
+        val playPauseGroup = listOfNotNull(exoPlayButton, exoPauseButton)
+        if (show) {
+            spinner.visibility = View.VISIBLE
+            spinner.animate().cancel()
+            spinner.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(180)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+            playPauseGroup.forEach { btn ->
+                btn.animate().cancel()
+                btn.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setDuration(140).start()
+            }
+        } else {
+            spinner.animate().cancel()
+            spinner.animate()
+                .alpha(0f).scaleX(0.7f).scaleY(0.7f)
+                .setDuration(140)
+                .withEndAction { spinner.visibility = View.GONE }
+                .start()
+            playPauseGroup.forEach { btn ->
+                btn.animate().cancel()
+                btn.alpha = 1f
+                btn.scaleX = 1f
+                btn.scaleY = 1f
+            }
+            // Wapas asli play/pause visibility state (jo abhi tak buffering ke
+            // peeche chhupi thi) turant sahi se dikhao.
+            animatePlayPauseSwap(
+                player.playWhenReady &&
+                    player.playbackState != Player.STATE_ENDED &&
+                    player.playbackState != Player.STATE_IDLE
+            )
+        }
     }
 
     /**
