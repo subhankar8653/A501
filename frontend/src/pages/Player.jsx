@@ -304,7 +304,7 @@ export default function Player() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto py-6">
+    <div className="max-w-3xl mx-auto pb-6">
       {error ? (
         <div className="px-4 sm:px-6">
           <p className="text-reel-rust mb-3">{error}</p>
