@@ -214,6 +214,8 @@ class MainActivity : AppCompatActivity() {
     private var inlineNextButtonRef: ImageButton? = null
     private var inlinePlayPauseButtonRef: ImageButton? = null
     private var inlineQualityButtonRef: TextView? = null
+    private var inlineBufferingIndicatorRef: View? = null
+    private var inlineIsBuffering = false
 
     // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
     // purane player se hata kar naye player par dobara laga sakein. Bug fix: pehle
@@ -225,6 +227,53 @@ class MainActivity : AppCompatActivity() {
             inlinePlayPauseButtonRef?.setImageResource(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow
             )
+        }
+
+        // BUG FIX (user report: "skip/seek karte hi video pause aur buffering
+        // ka icon ek saath dikhta hai, bekar lagta hai"): pehle Media3 ka apna
+        // default buffering spinner (show_buffering="when_playing") seedha
+        // hamare play/pause hero button ke UPAR draw hota tha, dono ek saath
+        // dikhte the. Ab woh band hai (dekho inline_player_view.xml) — is
+        // listener se STATE_BUFFERING par khud ek smooth cross-fade karte
+        // hain: play/pause button fade+scale-out, apna themed spinner fade+
+        // scale-in usi jagah (aur wapas jaate hi ulta) — ek waqt mein sirf
+        // ek hi cheez dikhti hai, jhatka-free premium feel.
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            setInlineBuffering(playbackState == Player.STATE_BUFFERING)
+        }
+    }
+
+    private fun setInlineBuffering(buffering: Boolean) {
+        if (inlineIsBuffering == buffering) return
+        inlineIsBuffering = buffering
+        val spinner = inlineBufferingIndicatorRef ?: return
+        val playPause = inlinePlayPauseButtonRef
+        if (buffering) {
+            spinner.visibility = View.VISIBLE
+            spinner.animate().cancel()
+            spinner.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(180)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+            playPause?.animate()?.cancel()
+            playPause?.animate()
+                ?.alpha(0f)?.scaleX(0.7f)?.scaleY(0.7f)
+                ?.setDuration(140)
+                ?.start()
+        } else {
+            spinner.animate().cancel()
+            spinner.animate()
+                .alpha(0f).scaleX(0.7f).scaleY(0.7f)
+                .setDuration(140)
+                .withEndAction { spinner.visibility = View.GONE }
+                .start()
+            playPause?.animate()?.cancel()
+            playPause?.animate()
+                ?.alpha(1f)?.scaleX(1f)?.scaleY(1f)
+                ?.setDuration(200)
+                ?.setInterpolator(android.view.animation.OvershootInterpolator(2f))
+                ?.start()
         }
     }
 
@@ -436,7 +485,9 @@ class MainActivity : AppCompatActivity() {
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
             val topBarRoot = root.findViewById<View>(R.id.inlineTopBarRoot)
+            val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             inlineQualityButtonRef = qualityButton
+            inlineBufferingIndicatorRef = bufferingIndicator
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
