@@ -152,13 +152,36 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   )
 
   // --- Native bridge: chhota inline player mount/unmount karo har naye src par ---
+  // BUG FIX (user ne pakda — "PiP off wala system website pe add nahi kiya"):
+  // pehle website sirf apni taraf se mount()/unmount() call karti thi (naya src
+  // aane par ya component/page chhodne par) — lekin native side (MainActivity)
+  // kabhi bhi website ko yeh nahi batata tha ki uska poora player genuinely
+  // "cut"/off ho gaya hai (PiP "X" se band karne par — dekho
+  // MainActivity.onActivityResult()'s `pipGenuinelyClosed` branch). Result:
+  // native taraf player release ho jaata, lekin website ko lagta rehta ki uska
+  // `window.AndroidPlayer.mount()` call abhi bhi zinda/mounted hai — is div ki
+  // jagah khaali reh jaati, play/scroll-back-in par kuch resume nahi hota, jab
+  // tak page reload na ho.
+  // Fix: native ab `window.__suhaniOnNativeClosed()` call karta hai jab bhi
+  // genuinely poora cut kare. Yahan is signal ko sunte hain aur ek fresh
+  // `mount()` trigger karte hain taaki chhota player is jagah dobara zinda ho
+  // jaaye (naye sire se — jaisa back-button/off ke baad hona chahiye).
+  const [nativeCloseTick, setNativeCloseTick] = useState(0)
+  useEffect(() => {
+    if (!isNative) return
+    window.__suhaniOnNativeClosed = () => setNativeCloseTick((t) => t + 1)
+    return () => {
+      delete window.__suhaniOnNativeClosed
+    }
+  }, [isNative])
+
   useEffect(() => {
     if (!isNative || !src) return
     window.AndroidPlayer.mount(src, title || 'Video', qualityPayload())
     return () => {
       window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
     }
-  }, [isNative, src, title, qualityPayload])
+  }, [isNative, src, title, qualityPayload, nativeCloseTick])
 
   // --- Native bridge: chhote player ko is div ki exact jagah par chipkaaye rakho ---
   useEffect(() => {
