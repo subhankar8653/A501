@@ -10,6 +10,20 @@ html, body, #root {
   height: 100%;
 }
 
+/* Bug fix (user report): a visible track/thumb scrollbar was sitting on the
+   right edge of the page — looked out of place on a mobile app (YouTube's
+   own app has none). Scrolling itself still works exactly the same; only
+   the rendered scrollbar chrome is suppressed, and only at the document
+   level — individual elements can still opt back into a visible scrollbar
+   if ever needed. */
+html {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+html::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Android WebView */
+}
+
 /* Bug fix (user report): ungli se side swipe karne par poora page/content
    horizontally shift ho jaata tha ("side ho jaata hai") — jaisa YouTube ya
    koi normal app mein nahi hota.
