@@ -6755,7 +6755,30 @@ class PlayerActivity : AppCompatActivity() {
     private fun handlePipGenuineClose() {
         if (!pendingPipExitDecision) return
         pendingPipExitDecision = false
-        pipCloseFlagForResult = pipOriginFromInline
+        // BUG FIX (asli root cause — "PiP cut hota hai lekin audio background
+        // mein bajta rehta hai, agla video kholne par black screen"): pehle
+        // yahan `pipCloseFlagForResult = pipOriginFromInline` tha — matlab
+        // MainActivity ko "genuine close" tabhi bataya jaata tha jab PiP seedhe
+        // inline (chhote) player se turant-PiP ban kar aayi thi. Lekin
+        // handlePipGenuineClose() khud sirf TABHI chalta hai jab yeh definitively
+        // ek real "X"/swipe close ho (upar `pendingPipExitDecision` ka comment
+        // dekho) — origin (inline ho ya fullscreen se) se iska koi lena-dena
+        // nahi. Jab origin fullscreen thi (jo sabse aam case hai), pehle yeh
+        // flag false chala jaata tha, MainActivity ise ek NORMAL "wapas aana"
+        // samajh kar apna inlinePlayer resume (playWhenReady = true) kar deta
+        // tha — isi wajah se PiP window screen se "cut" ho jaati thi lekin audio
+        // chalta reh jaata. Ab yeh flag hamesha true jaata hai jab bhi yeh
+        // genuinely PiP-close path hai, origin chahe jo bhi ho.
+        pipCloseFlagForResult = true
+        // BUG FIX (agla video black screen dikhata tha): yeh flag pehle kabhi
+        // set hi nahi hota tha (dekho iski declaration ka comment) — isliye
+        // onDestroy() mein neeche wala "poora release + SharedPlayerHolder
+        // clear" branch genuine PiP-close par bhi kabhi nahi chalta tha. Player
+        // sirf pause hota, zinda reh jaata, aur agla video khulne par ek
+        // orphaned/stale instance reuse hone ki koshish hoti — surface conflict
+        // se black screen, jab tak fullscreen jaakar surfaces force-refresh na
+        // ho jaayein.
+        releasePlayerFullyOnDestroy = true
         if (::player.isInitialized) {
             // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
             // black screen reh jaata hai"): player ko pause zaroor karo (audio
