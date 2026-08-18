@@ -222,6 +222,32 @@ class PlayerActivity : AppCompatActivity() {
     // wahi is flag ko consume karke sahi faisla leta hai — koi timer/race nahi.
     private var pendingPipExitDecision = false
 
+    // BUG FIX (user report — "app mein PiP ka X dabane par bhi background
+    // audio chalta rehta hai", website jaisa nahi): upar wala poora
+    // `pendingPipExitDecision`/`isFinishing` based mechanism kai real devices
+    // par bhi fail hota hai — kuch OEM/launchers par system PiP window ka "X"
+    // dabane par Android `isFinishing` ko turant (ya kabhi bhi, is Activity ke
+    // `onStop()` fire hone tak) `true` set hi nahi karta; woh sirf Activity ko
+    // "stopped" kar deta hai aur baad mein kisi aur waqt destroy karta hai. Us
+    // case mein `onStop()` ka neeche wala `isFinishing`-based fallback bhi
+    // kabhi trigger nahi hota, isliye code use "abhi bhi PiP mein hai (bas
+    // covered/backgrounded)" samajh kar `BackgroundPlaybackService` start kar
+    // deta — audio backgroud mein bajta reh jaata hai.
+    //
+    // User confirm kar chuka hai ki background-continue (jaise screen-lock par
+    // bhi chalte rehna) koi zaroori feature nahi hai — PiP band (X se) hote hi
+    // turant SAB band ho jaana chahiye. Isliye ab `isFinishing` par bharosa
+    // hataakar ek simple, reliable time-based signal use karte hain: agar
+    // real PiP window kam se kam ek chhota grace-period (taaki PiP mein
+    // ABHI-ABHI enter hone par kuch launchers jo turant ek spurious/false
+    // `onStop()` fire kar dete hain, unse bacha rahe — dekho onStop() ka
+    // comment) se zyada der se open thi, aur is beech Activity kabhi
+    // `onResume()` (= genuine expand) tak nahi pahunchi, to agla bhi
+    // `onStop()` seedha genuine "X"/swipe close maana jaata hai — `isFinishing`
+    // ki koi shart nahi.
+    private var pipEnteredAtMs = 0L
+    private val PIP_CLOSE_GRACE_MS = 350L
+
     private var pipReceiverRegistered = false
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -6671,6 +6697,9 @@ class PlayerActivity : AppCompatActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (isInPictureInPictureMode) {
             wasInRealPipMode = true
+            // Naya time-based genuine-close signal (dekho `pipEnteredAtMs` field
+            // ka comment upar) — grace-period yahin se count hoti hai.
+            pipEnteredAtMs = System.currentTimeMillis()
             // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
             // ExoPlayer khud audio-focus handle karta hai (handleAudioFocus=true,
             // dekho initializePlayer()). PiP <-> fullscreen ke beech window-manager
@@ -6810,6 +6839,19 @@ class PlayerActivity : AppCompatActivity() {
         // Genuine "tap to expand" ka pakka signal — dekho handlePipExpand()
         // function ka comment.
         handlePipExpand()
+        // BUG FIX (regression guard for the naya time-based `onStop()`
+        // genuine-close fallback upar): `onResume()` khud pakka signal hai ki
+        // hum abhi genuinely wapas foreground/resumed hain (chahe PiP se
+        // expand ho ya normal launch). Us purani PiP-session ka "still looks
+        // like PiP" state (`wasInRealPipMode` + `pipEnteredAtMs`) yahan reset
+        // karna zaroori hai — warna kuch devices par jahan
+        // `onPictureInPictureModeChanged(false)` kabhi fire hi nahi hota,
+        // `wasInRealPipMode` galti se `true` atka reh sakta tha, aur baad mein
+        // ek bilkul NORMAL (non-PiP) home-press/backgrounding par bhi
+        // `onStop()` ka naya fallback ise galti se "X-close" samajh kar
+        // activity ko wrongly finish/pause kar deta.
+        wasInRealPipMode = false
+        pipEnteredAtMs = 0L
         // Wapas app khulte hi background service band kar do — ab notification
         // aur foreground-priority ki zaroorat nahi, Activity khud foreground me hai.
         BackgroundPlaybackService.stop(this)
@@ -6928,6 +6970,23 @@ class PlayerActivity : AppCompatActivity() {
         val stillLooksLikePip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             (wasInRealPipMode || isInPictureInPictureMode)
         if (!pipGenuineCloseHandled && isFinishing && stillLooksLikePip) {
+            performGenuinePipClose()
+        }
+        // BUG FIX (asli fix — "PiP ka X dabane par app mein bhi background
+        // audio chalta rehta hai", website ki tarah turant band ho): upar wala
+        // `isFinishing`-based fallback kuch devices par kabhi trigger nahi
+        // hota (dekho `pipEnteredAtMs` field ka comment). Isliye ab `isFinishing`
+        // ki koi shart nahi lagate — sirf itna dekhte hain ki Activity abhi bhi
+        // (ya abhi-abhi) real PiP mein thi, PiP mein aaye kaafi (grace-period se
+        // zyada) der ho chuki thi (taaki launcher ke "enter karte hi turant
+        // onStop()" wale false-positive se na ulajhein), aur beech mein kabhi
+        // genuinely expand (onResume()) nahi hua. Aisi har `onStop()` ab
+        // definitively "X"/swipe se genuine close" maani jaati hai — turant
+        // sab band.
+        if (!pipGenuineCloseHandled && stillLooksLikePip &&
+            pipEnteredAtMs != 0L &&
+            (System.currentTimeMillis() - pipEnteredAtMs) >= PIP_CLOSE_GRACE_MS
+        ) {
             performGenuinePipClose()
         }
         // BUG FIX (PiP black screen): pehle yahan bina kisi shart ke turant
