@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium buffering indicator backdrop: chhota dark-glass circle + gold
+     hairline border, bilkul scrub-preview card/speed-badge jaisa hi
+     consistent "premium" family look. Play/pause hero button ke bilkul
+     upar center mein aata hai (dono ek hi jagah), isliye play/pause
+     button khud fade-out ho jaata hai jab yeh dikhta hai — kabhi dono
+     ek saath overlap karke "ajeeb" nahi lagte (dekho PlayerActivity /
+     MainActivity ka buffering listener wiring). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#B3131318" />
+    <stroke android:width="1dp" android:color="#66FFD700" />
+</shape>
