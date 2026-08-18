@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getStreams, getMeta } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
-import BackButton from '../components/BackButton'
 import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
@@ -306,10 +305,6 @@ export default function Player() {
 
   return (
     <div className="max-w-3xl mx-auto py-6">
-      <div className="px-4 sm:px-6 mb-3">
-        <BackButton variant="inline" />
-      </div>
-
       {error ? (
         <div className="px-4 sm:px-6">
           <p className="text-reel-rust mb-3">{error}</p>
