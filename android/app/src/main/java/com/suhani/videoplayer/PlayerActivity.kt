@@ -56,7 +56,6 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
@@ -278,6 +277,14 @@ class PlayerActivity : AppCompatActivity() {
     private var playerContainerWidthAnimator: android.animation.ValueAnimator? = null
     private lateinit var gestureIndicator: LinearLayout
     private lateinit var gestureText: TextView
+
+    // Player-wide themed toast/snackbar (see showPlayerSnackbar()) — replaces
+    // scattered plain Toast.makeText(...) calls across the file so every
+    // status/error message looks consistent with the rest of the player UI.
+    private lateinit var playerSnackbar: LinearLayout
+    private lateinit var playerSnackbarIcon: ImageView
+    private lateinit var playerSnackbarText: TextView
+    private val hidePlayerSnackbarRunnable = Runnable { hidePlayerSnackbar() }
 
     // Dedicated chhota "2x" badge, upar beech mein (center of screen wale
     // gestureIndicator se alag) — sirf hold-to-2x-speed ke liye.
@@ -771,6 +778,9 @@ class PlayerActivity : AppCompatActivity() {
         speedIndicatorBadge = findViewById(R.id.speedIndicatorBadge)
         resetZoomChip = findViewById(R.id.resetZoomChip)
         resetZoomChip.setOnClickListener { resetVideoZoom() }
+        playerSnackbar = findViewById(R.id.playerSnackbar)
+        playerSnackbarIcon = findViewById(R.id.playerSnackbarIcon)
+        playerSnackbarText = findViewById(R.id.playerSnackbarText)
 
         // Premium: Frame-by-Frame stepping — pause karke precise frame-by-frame
         // navigation, editing/analysis dekhne walo ke liye kaafi useful.
@@ -1724,22 +1734,19 @@ class PlayerActivity : AppCompatActivity() {
                             1 -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                             else -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
                         }
-                        Toast.makeText(
-                            this@PlayerActivity,
-                            "Is track ke liye HW decoder support nahi tha, software decoder try kiya jaa raha hai\u2026",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showPlayerSnackbar(
+                            "Is track ke liye HW decoder support nahi tha, software decoder try kiya jaa raha hai\u2026"
+                        )
                         buildPlayer(mode, enableFallback = true, resumePositionMs = resumePos, resumeIndex = resumeIdx)
                     } else {
                         // HW, HW+, aur SW (FFmpeg) — teeno decoder mode try ho chuke aur
                         // fir bhi fail — ab is file ko "corrupt" tag kar do taaki Home
                         // grid mein dobara khole bina hi pata chal jaaye.
                         markCurrentFileCorrupt(error.errorCodeName)
-                        Toast.makeText(
-                            this@PlayerActivity,
+                        showPlayerSnackbar(
                             "Ye file is device par play nahi ho paa rahi: ${error.errorCodeName}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                            isError = true
+                        )
                     }
                 }
 
@@ -1748,11 +1755,10 @@ class PlayerActivity : AppCompatActivity() {
                 androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                 androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
                     markCurrentFileCorrupt(error.errorCodeName)
-                    Toast.makeText(
-                        this@PlayerActivity,
+                    showPlayerSnackbar(
                         "Ye file corrupt/damaged lag rahi hai: ${error.errorCodeName}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                        isError = true
+                    )
                 }
 
                 // Network/storage se data padhte waqt aata hai — kabhi kabhi ek chhota glitch
@@ -1777,16 +1783,15 @@ class PlayerActivity : AppCompatActivity() {
                             .firstOrNull { !it.message.isNullOrBlank() }
                             ?.message
                         val detailSuffix = if (causeDetail != null) "\n($causeDetail)" else ""
-                        Toast.makeText(
-                            this@PlayerActivity,
+                        showPlayerSnackbar(
                             "Ye file load nahi ho paa rahi (I/O error). File move/delete to nahi ho gayi?$detailSuffix",
-                            Toast.LENGTH_LONG
-                        ).show()
+                            isError = true
+                        )
                     }
                 }
 
                 else -> {
-                    Toast.makeText(this@PlayerActivity, "Playback error: ${error.errorCodeName}", Toast.LENGTH_LONG).show()
+                    showPlayerSnackbar("Playback error: ${error.errorCodeName}", isError = true)
                 }
             }
         }
@@ -3243,11 +3248,9 @@ class PlayerActivity : AppCompatActivity() {
                 buildPlayer(mode, fallback, resumePositionMs = resumePos, resumeIndex = resumeIdx)
 
                 if (which == 2) {
-                    Toast.makeText(
-                        this,
-                        "SW decoder ON — FFmpeg software decoding use hoga (thoda zyada battery/CPU lag sakta hai).",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    showPlayerSnackbar(
+                        "SW decoder ON — FFmpeg software decoding use hoga (thoda zyada battery/CPU lag sakta hai)."
+                    )
                 }
                 dialog.dismiss()
             }
@@ -3548,11 +3551,9 @@ class PlayerActivity : AppCompatActivity() {
 
         body.addView(checkboxRow("Use SW audio decoder", useSwAudioDecoder, null) { checked ->
             useSwAudioDecoder = checked
-            Toast.makeText(
-                this,
-                if (checked) "SW audio decoder ON (agla playback se apply hoga)" else "SW audio decoder OFF",
-                Toast.LENGTH_SHORT
-            ).show()
+            showPlayerSnackbar(
+                if (checked) "SW audio decoder ON (agla playback se apply hoga)" else "SW audio decoder OFF"
+            )
         })
 
         body.addView(View(this).apply {
@@ -3608,7 +3609,7 @@ class PlayerActivity : AppCompatActivity() {
             alpha = 0.4f
             isClickable = true
             setOnClickListener {
-                Toast.makeText(this@PlayerActivity, "$label: is track ke liye available nahi hai", Toast.LENGTH_SHORT).show()
+                showPlayerSnackbar("$label: is track ke liye available nahi hai")
             }
 
             addView(TextView(this@PlayerActivity).apply {
@@ -3632,7 +3633,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showEqualizerDialog() {
         val sessionId = player.audioSessionId
         if (sessionId == C.AUDIO_SESSION_ID_UNSET) {
-            Toast.makeText(this, "Audio abhi ready nahi hai, thoda wait karke dobara try karein", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Audio abhi ready nahi hai, thoda wait karke dobara try karein")
             return
         }
         setupAudioFx(sessionId)
@@ -4250,7 +4251,7 @@ class PlayerActivity : AppCompatActivity() {
             attachedSessionId = sessionId
         } else {
             audioFxAttached = false
-            Toast.makeText(this, "Audio effects is device par supported nahi hain", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Audio effects is device par supported nahi hain", isError = true)
         }
     }
 
@@ -5227,7 +5228,7 @@ class PlayerActivity : AppCompatActivity() {
             }
             startActivity(Intent.createChooser(intent, "Share video"))
         } catch (e: Exception) {
-            Toast.makeText(this, "Share fail ho gaya: ${e.message}", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Share fail ho gaya: ${e.message}", isError = true)
         }
     }
 
@@ -5236,7 +5237,7 @@ class PlayerActivity : AppCompatActivity() {
     // wahi position se resume karo. Website ke quality button jaisa hi result.
     private fun showQualityDialog() {
         if (availableQualities.size < 2) {
-            Toast.makeText(this, "Is video ke liye aur koi quality available nahi hai", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Is video ke liye aur koi quality available nahi hai")
             return
         }
         val labels = availableQualities.map { it.first }.toTypedArray()
@@ -5250,7 +5251,7 @@ class PlayerActivity : AppCompatActivity() {
                 player.setMediaItem(item, resumePos)
                 player.prepare()
                 player.playWhenReady = wasPlaying
-                Toast.makeText(this, "Quality: $label", Toast.LENGTH_SHORT).show()
+                showPlayerSnackbar("Quality: $label")
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -5484,11 +5485,10 @@ class PlayerActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    Toast.makeText(
-                        this,
+                    showPlayerSnackbar(
                         "Cut fail ho gaya (format shayad support nahi karta): ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                        isError = true
+                    )
                 }
             }
         }.start()
@@ -5567,7 +5567,7 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------
     private fun takeScreenshot() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            Toast.makeText(this, "Screenshot ke liye Android 7.0+ chahiye", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Screenshot ke liye Android 7.0+ chahiye", isError = true)
             return
         }
         // Bug fix (PiP black screen): playerView ab surface_type="texture_view" use karta
@@ -5577,7 +5577,7 @@ class PlayerActivity : AppCompatActivity() {
         // getBitmap() deta hai.
         val textureView = playerView.videoSurfaceView as? android.view.TextureView
         if (textureView == null || textureView.width == 0 || textureView.height == 0) {
-            Toast.makeText(this, "Abhi screenshot possible nahi hai", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Abhi screenshot possible nahi hai", isError = true)
             return
         }
         try {
@@ -5586,7 +5586,7 @@ class PlayerActivity : AppCompatActivity() {
             )
             saveScreenshot(bitmap)
         } catch (e: Exception) {
-            Toast.makeText(this, "Screenshot error: ${e.message}", Toast.LENGTH_SHORT).show()
+            showPlayerSnackbar("Screenshot error: ${e.message}", isError = true)
         }
     }
 
@@ -6313,6 +6313,48 @@ class PlayerActivity : AppCompatActivity() {
         gestureText.text = text
         popIn(gestureIndicator)
         hideGestureIndicatorDelayed()
+    }
+
+    // ---------------------------------------------------------------------
+    // Player-wide snackbar — status/error messages ke liye (jaise decoder
+    // fallback, corrupt file, quality change, screenshot/share result waghera)
+    // jo pehle bare system Toast.makeText(...) se dikhte the. Woh center-screen
+    // gestureIndicator (short taps ke liye tuned, 700ms, single-line) se
+    // jaanbujh kar alag rakha hai kyunki ye messages kabhi lambe/multi-line
+    // hote hain aur inhe padhne ke liye zyada time chahiye — isliye duration
+    // message length ke hisaab se scale hota hai, aur bottom mein controls ke
+    // upar dikhta hai taaki kabhi center content ko block na kare.
+    private fun showPlayerSnackbar(message: String, isError: Boolean = false) {
+        if (!::playerSnackbar.isInitialized) return
+        playerSnackbar.removeCallbacks(hidePlayerSnackbarRunnable)
+        playerSnackbarText.text = message
+        playerSnackbarIcon.setImageResource(if (isError) R.drawable.ic_warning else R.drawable.ic_info)
+        playerSnackbarIcon.setColorFilter(if (isError) android.graphics.Color.parseColor("#FF6B5D") else android.graphics.Color.parseColor("#FFD700"))
+
+        playerSnackbar.animate().cancel()
+        playerSnackbar.visibility = View.VISIBLE
+        playerSnackbar.alpha = 0f
+        playerSnackbar.translationY = dp(16).toFloat()
+        playerSnackbar.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(200)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+
+        val autoHideMs = (1800L + message.length * 30L).coerceIn(1800L, 5000L)
+        playerSnackbar.postDelayed(hidePlayerSnackbarRunnable, autoHideMs)
+    }
+
+    private fun hidePlayerSnackbar() {
+        if (!::playerSnackbar.isInitialized) return
+        playerSnackbar.animate().cancel()
+        playerSnackbar.animate()
+            .alpha(0f)
+            .translationY(dp(16).toFloat())
+            .setDuration(160)
+            .withEndAction { playerSnackbar.visibility = View.GONE }
+            .start()
     }
 
     private fun hideGestureIndicatorDelayed() {
