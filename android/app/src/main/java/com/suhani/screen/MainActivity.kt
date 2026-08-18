@@ -1485,6 +1485,24 @@ class MainActivity : AppCompatActivity() {
                 inlinePlayer?.release()
                 inlinePlayer = null
                 inlineOverlay?.visibility = View.GONE
+                // BUG FIX (asli gap jo aapne pakda — "website side to add hi
+                // nahi kiya"): ab tak yahan sirf NATIVE side (Kotlin) poora cut
+                // kar raha tha — inlinePlayer release, SharedPlayerHolder clear.
+                // Lekin website (VideoPlayer.jsx) ko iska koi pata hi nahi chalta
+                // tha — usne `window.AndroidPlayer.mount(...)` pehle hi call kar
+                // diya tha aur usse lagta hai ki chhota native player abhi bhi
+                // wahin mounted/zinda hai. Isliye is div ki jagah khaali/dead reh
+                // jaati thi — na play-button kaam karta, na scroll-back-in-view
+                // par kuch dikhta, jab tak user manually page reload/re-navigate
+                // na kare.
+                // Fix: yahan website ko explicitly bata do ki native player cut ho
+                // gaya hai, taaki JS side apna state reset kar ke chhote player ko
+                // dobara fresh mount kar sake (jaise woh already prev/next button
+                // ke liye window.__suhaniOnNativePrev/Next se karta hai). Website
+                // side ka matching handler VideoPlayer.jsx mein add kiya gaya hai.
+                webView.evaluateJavascript(
+                    "if (window.__suhaniOnNativeClosed) window.__suhaniOnNativeClosed();", null
+                )
                 return
             }
 
