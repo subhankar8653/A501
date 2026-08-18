@@ -6752,47 +6752,57 @@ class PlayerActivity : AppCompatActivity() {
     // pending hai (matlab beech mein onResume() KABHI nahi aaya), to yeh pakka
     // ek genuine "X"/swipe close hai — Activity kabhi RESUMED hui hi nahi.
     // isFinishing par bharosa kiye bina, yahin definitively cut kar do.
-    private fun handlePipGenuineClose() {
-        if (!pendingPipExitDecision) return
+    // BUG FIX (root cause of "PiP X se band karne ke baad bhi audio/video
+    // background mein chalta rehta hai" — yeh bug pichhle fix ke baad bhi bana
+    // raha): saara upar wala `pendingPipExitDecision` mechanism is baat par
+    // depend karta tha ki system PiP window ka "X" (close) button dabane par
+    // Android `onPictureInPictureModeChanged(false)` callback fire karega —
+    // lekin bahut saare devices/launchers par aisa HOTA HI NAHI. X dabane par
+    // Android seedha Activity ko stop/finish kar deta hai jabki
+    // isInPictureInPictureMode abhi bhi `true` hi report karta rehta hai — mode
+    // "false" mein kabhi transition hi nahi hota, isliye woh callback kabhi
+    // fire nahi hota. Result: `pendingPipExitDecision` kabhi `true` set hi nahi
+    // hota, `handlePipGenuineClose()` (jo isi flag par depend karta tha) khud
+    // ek no-op ban jaata, aur neeche `onStop()` mein `isFinishing &&
+    // usingSharedPlayer` wala branch turant `return` kar deta bina player ko
+    // pause/release kiye — isliye "cut" sirf visually (PiP window gayab) hota
+    // tha, player andar se chalta hi reh jaata tha.
+    //
+    // Fix: is poore close-out logic ko ek chhoti, idempotent helper mein nikaal
+    // diya (`performGenuinePipClose()`), aur ab ise DO independent jagah se
+    // trigger kiya jaata hai — (1) jahan `onPictureInPictureModeChanged(false)`
+    // genuinely fire ho jaaye (purana path, kuch devices par kaam karta hai),
+    // AUR (2) ek naya `isFinishing`-based fallback seedha `onStop()` ke
+    // shuruaat mein (dekho neeche), jo un devices par bhi kaam karta hai jahan
+    // pehla callback kabhi nahi aata. `pipGenuineCloseHandled` guard ensure
+    // karta hai ki dono trigger ek saath fire ho jaayein to bhi kaam sirf ek
+    // baar ho.
+    private var pipGenuineCloseHandled = false
+
+    private fun performGenuinePipClose() {
+        if (pipGenuineCloseHandled) return
+        pipGenuineCloseHandled = true
         pendingPipExitDecision = false
-        // BUG FIX (asli root cause — "PiP cut hota hai lekin audio background
-        // mein bajta rehta hai, agla video kholne par black screen"): pehle
-        // yahan `pipCloseFlagForResult = pipOriginFromInline` tha — matlab
-        // MainActivity ko "genuine close" tabhi bataya jaata tha jab PiP seedhe
-        // inline (chhote) player se turant-PiP ban kar aayi thi. Lekin
-        // handlePipGenuineClose() khud sirf TABHI chalta hai jab yeh definitively
-        // ek real "X"/swipe close ho (upar `pendingPipExitDecision` ka comment
-        // dekho) — origin (inline ho ya fullscreen se) se iska koi lena-dena
-        // nahi. Jab origin fullscreen thi (jo sabse aam case hai), pehle yeh
-        // flag false chala jaata tha, MainActivity ise ek NORMAL "wapas aana"
-        // samajh kar apna inlinePlayer resume (playWhenReady = true) kar deta
-        // tha — isi wajah se PiP window screen se "cut" ho jaati thi lekin audio
-        // chalta reh jaata. Ab yeh flag hamesha true jaata hai jab bhi yeh
-        // genuinely PiP-close path hai, origin chahe jo bhi ho.
+        // MainActivity ko hamesha batao ki yeh genuine PiP close hai — origin
+        // (inline se ho ya fullscreen se) se koi farak nahi padta, taaki wahan
+        // inlinePlayer FORCIBLY resume na ho jaaye.
         pipCloseFlagForResult = true
-        // BUG FIX (agla video black screen dikhata tha): yeh flag pehle kabhi
-        // set hi nahi hota tha (dekho iski declaration ka comment) — isliye
-        // onDestroy() mein neeche wala "poora release + SharedPlayerHolder
-        // clear" branch genuine PiP-close par bhi kabhi nahi chalta tha. Player
-        // sirf pause hota, zinda reh jaata, aur agla video khulne par ek
-        // orphaned/stale instance reuse hone ki koshish hoti — surface conflict
-        // se black screen, jab tak fullscreen jaakar surfaces force-refresh na
-        // ho jaayein.
+        // Taaki onDestroy() mein player poora release ho aur SharedPlayerHolder
+        // clear ho — agle video ke liye koi orphaned/stale instance reuse na ho
+        // (black-screen bug).
         releasePlayerFullyOnDestroy = true
         if (::player.isInitialized) {
-            // Bug fix ("PiP X se band karne ke baad video wapas nahi chalta,
-            // black screen reh jaata hai"): player ko pause zaroor karo (audio
-            // background mein leak na ho), lekin release/SharedPlayerHolder-
-            // clear yahan MAT karo — woh kaam MainActivity.onActivityResult()
-            // "pip_closed" extra dekh kar khud (definitively) karega.
             resumePlayingIntentOverride = player.playWhenReady
             player.playWhenReady = false
+            player.pause()
         }
         BackgroundPlaybackService.stop(this)
-        // System ne khud finish() trigger na kiya ho (kuch OEM par aisa hota
-        // hai) to bhi is Activity/PiP window ko screen par kabhi "atka" na
-        // chhodo — khud finish() bulao (already-finishing par yeh safe/no-op).
         if (!isFinishing) finish()
+    }
+
+    private fun handlePipGenuineClose() {
+        if (!pendingPipExitDecision) return
+        performGenuinePipClose()
     }
 
     override fun onResume() {
@@ -6907,6 +6917,19 @@ class PlayerActivity : AppCompatActivity() {
         // dekho handlePipGenuineClose() ka comment. Ise sabse pehle, kisi bhi
         // aur logic se pehle handle karo.
         handlePipGenuineClose()
+        // BUG FIX (asli fallback — dekho `performGenuinePipClose()` ka bada
+        // comment upar): agar `pendingPipExitDecision`-based path is device par
+        // kabhi trigger hi nahi hua (X-close par onPictureInPictureModeChanged
+        // callback nahi aaya), to bhi yahan seedha `isFinishing` se detect kar
+        // ke definitively cut karo. Yeh sirf genuine PiP-close ke liye hi fire
+        // hota hai (`wasInRealPipMode` ya abhi bhi `isInPictureInPictureMode`
+        // true hone se pakka), normal (non-PiP) back-press/finish() ko yeh
+        // chhedta nahi — us case mein dono false hote hain.
+        val stillLooksLikePip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            (wasInRealPipMode || isInPictureInPictureMode)
+        if (!pipGenuineCloseHandled && isFinishing && stillLooksLikePip) {
+            performGenuinePipClose()
+        }
         // BUG FIX (PiP black screen): pehle yahan bina kisi shart ke turant
         // pause kar dete the ye soch kar ki "onStop() ka matlab hi hai Activity
         // dikh nahi rahi". Lekin galat nikla — kai devices/launchers (especially
