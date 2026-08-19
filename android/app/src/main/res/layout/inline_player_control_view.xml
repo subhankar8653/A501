@@ -34,9 +34,28 @@
       - Quality text ("Auto"/"1080p") ka color plain white se badal ke gold
         kiya — time text se alag/highlighted dikhta hai, extra background
         chip ke bina hi thoda "premium tag" jaisa feel deta hai.
-      - Play/pause icon ka fill ab dark ink (#0B0B12), safed nahi — bright
-        gold hero background par safed icon ka contrast kam tha, dark ink
-        wahi OTT-app jaisa crisp look deta hai jo React web player mein hai.
+
+    Redesign #2 (user report: "play/pause button bada aur aankhon mein
+    chubh raha hai" — the bright gold radial-glow squircle borrowed from
+    the fullscreen player): replaced with bg_inline_hero_button — a
+    smaller (46dp, was 54dp) plain dark-glass circle + thin gold hairline
+    ring, no bright fill/glow. Icon itself is now gold-tinted (was dark ink
+    on bright gold) so the accent still reads as premium/gold, just calm.
+
+    Redesign #3 (user report: "controls chhupte/aate waqt runtime bar aur
+    baaki icons ek saath nahi hote, thoda pehle-baad mein gayab hote hain,
+    isper achha premium transition animation chahiye"): root cause was that
+    inline_top_bar.xml lived OUTSIDE this controller layout (a sibling
+    <include> in inline_player_view.xml), so MainActivity.kt had to
+    manually sync its visibility via setControllerVisibilityListener — but
+    that was an INSTANT visibility flip, while Media3 fades THIS layout's
+    own visibility in/out with its own built-in animation. Two different
+    animation systems on two different views = visible stagger, exactly
+    what was reported. Fix: the top bar row is now moved IN HERE, as the
+    first child of this same root — so it's physically part of the exact
+    same view Media3 already fades as a single unit. Same animation, same
+    timing, zero custom sync code needed (setControllerVisibilityListener
+    calls were removed from MainActivity.kt as part of this fix).
 -->
 
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -45,19 +64,99 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Bug fix: pehle center row poore box (top-bar ke peeche wale hisse
-         samet) ke hisaab se center hoti thi, isliye visually upar-upar dikhti
-         thi (top bar chhota box mein bada hissa le leta hai). Yeh spacer
-         inline_top_bar.xml ki approx height jitna hai — ab center row sirf
-         top-bar ke NEECHE wale asli-dikhne-wale hisse mein center hoti hai.
-         BUG FIX (user report: "time bar/controls thoda upar chala gaya hai"):
-         yeh spacer pehle 36dp tha, lekin inline_top_bar.xml ki asli height
-         46dp hai (marginTop 6dp + paddingVertical 4dp+4dp + icon 32dp) — 10dp
-         ka mismatch, isliye poora center control row usi 10dp jitna upar
-         khinch jaata tha. Ab exact match kar diya. -->
-    <View
+    <!-- Top bar (moved in from the old inline_top_bar.xml — see "Redesign #3"
+         comment above for why: being inside this same root means Media3
+         fades it together with everything else, with zero custom sync
+         code). Same content/ids as before, just relocated. -->
+    <LinearLayout
+        android:id="@+id/inlineTopBarRoot"
         android:layout_width="match_parent"
-        android:layout_height="46dp" />
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_top_gradient">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="4dp">
+
+            <!-- Chevron-down: shrinks the inline player into PiP, matching the
+                 fullscreen player's dedicated icon. -->
+            <ImageView
+                android:id="@+id/inlinePipChevron"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_chevron_down_pip"
+                android:tint="#FFF8E7"
+                android:background="@drawable/bg_icon_soft_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="minimize to mini player" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageView
+                android:id="@+id/inlineAudioTrackButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_audiotrack"
+                android:tint="#FFF8E7"
+                android:background="@drawable/bg_icon_soft_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="audio track" />
+
+            <ImageView
+                android:id="@+id/inlineSubtitleButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_subtitle"
+                android:tint="#FFF8E7"
+                android:background="@drawable/bg_icon_soft_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="subtitle" />
+
+            <ImageView
+                android:id="@+id/inlineSettingsButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_settings"
+                android:tint="#FFF8E7"
+                android:background="@drawable/bg_icon_soft_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="settings" />
+
+            <!-- Hidden — settings-sheet ke "Playback speed"/"Decoder" row se
+                 performClick() hote hain, logic wahi purana hai -->
+            <TextView
+                android:id="@+id/inlineSpeedButton"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                android:text="1.0x" />
+
+            <TextView
+                android:id="@+id/inlineDecoderButton"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                android:text="HW+"
+                android:contentDescription="decoder select" />
+
+        </LinearLayout>
+
+    </LinearLayout>
 
     <!-- Center row: plain icons, no background chip, evenly spread — reference jaisa.
          Bug fix: play/pause pehle DO alag overlapping ImageButtons the (exo_play +
@@ -89,14 +188,14 @@
 
         <ImageButton
             android:id="@+id/inlinePlayPauseButton"
-            android:layout_width="54dp"
-            android:layout_height="54dp"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
             android:layout_marginHorizontal="36dp"
-            android:padding="14dp"
-            android:elevation="6dp"
+            android:padding="12dp"
+            android:elevation="2dp"
             android:src="@drawable/ic_pause"
-            android:tint="#0B0B12"
-            android:background="@drawable/bg_play_button_hero"
+            android:tint="#FFD700"
+            android:background="@drawable/bg_inline_hero_button"
             android:contentDescription="play or pause" />
 
         <ImageButton

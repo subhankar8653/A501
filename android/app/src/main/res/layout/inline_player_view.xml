@@ -36,7 +36,10 @@
         app:show_buffering="never"
         app:surface_type="texture_view" />
 
-    <include layout="@layout/inline_top_bar" />
+    <!-- inline_top_bar.xml ab yahan include nahi hota — woh ab
+         inline_player_control_view.xml ke andar hi maujood hai (dekho us
+         file ka "Redesign #3" comment), taaki Media3 usse baaki controls
+         ke saath EXACT ek hi fade animation mein sync rakh sake. -->
 
     <!-- BUG FIX (user report: "seek/skip karne par pause aur buffering ka
          icon ek saath dikhta hai, bekar lagta hai"): Media3 ka apna default
