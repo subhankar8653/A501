@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- User report: the old squircle "hero" button (bg_play_button_hero, borrowed
+     from the fullscreen player) looked too big/harsh here — "aankhon mein
+     chubh raha hai" (a glaring bright-gold radial glow). This is a calmer
+     redesign just for the inline player: a simple dark-glass circle with a
+     thin gold hairline ring — no bright radial fill, no heavy stroke — the
+     icon itself (tinted gold) provides the accent instead of the background. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#66000000" />
+    <stroke
+        android:width="1dp"
+        android:color="#99FFD700" />
+</shape>
