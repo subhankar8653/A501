@@ -491,7 +491,6 @@ class MainActivity : AppCompatActivity() {
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
-            val topBarRoot = root.findViewById<View>(R.id.inlineTopBarRoot)
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             inlineQualityButtonRef = qualityButton
             inlineBufferingIndicatorRef = bufferingIndicator
@@ -569,15 +568,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Bottom controls (center row + progress bar) Media3 khud show/hide karta
-            // hai; ab top bar (back/title/CC/gear) ko bhi usi ke saath sync kar dete
-            // hain — pehle yeh alag/independent rehta tha, isliye control-bar hide
-            // hone par bhi upar wali line screen par chipki rehti thi.
-            playerView.setControllerVisibilityListener(
-                PlayerView.ControllerVisibilityListener { visibility ->
-                    topBarRoot.visibility = visibility
-                }
-            )
+            // Bug fix (user report: "runtime bar aur baaki icons ek saath
+            // nahi chhupte/aate, achha transition animation chahiye"): top
+            // bar ab inline_player_control_view.xml ke andar hi hai (see
+            // that file's comment), isliye Media3 use baaki controls ke
+            // saath khud hi ek single fade animation mein sync rakhta hai —
+            // ab yahan alag se setControllerVisibilityListener se
+            // topBarRoot.visibility manually set karne ki zaroorat nahi
+            // (yehi manual/instant toggle stagger ki asli wajah tha).
 
             // --- Gestures: double-tap ±10s seek, hold-anywhere-for-2x-speed ---
             // Fullscreen ke gestureDetector jaisa hi — bas chhote area ke hisaab
