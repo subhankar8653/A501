@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getManifest, groupCatalogsByTab, loadTabByLanguage, HOME_TABS } from '../api'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
+import HomeHero from '../components/HomeHero'
 
 export default function Home() {
   const [tabCatalogs, setTabCatalogs] = useState(null) // { anime: [...], movie: [...], ... }
@@ -65,10 +66,22 @@ export default function Home() {
   const groups = tabCatalogs ? groupsByTab[active] : null
   const hasCatalogsForTab = tabCatalogs ? (tabCatalogs[active] || []).length > 0 : true
 
+  // Spotlight pick for the hero banner — top item of whichever language
+  // group has the most content in the active tab.
+  const heroItem = useMemo(() => {
+    const withItems = (groups || []).find((g) => g.items && g.items.length)
+    return withItems ? withItems.items[0] : null
+  }, [groups])
+  const heroLoading = !tabCatalogs || (loadingTab && !groups)
+
   return (
-    <div className="max-w-6xl mx-auto py-8">
-      <div className="mb-7">
-        <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 sm:px-0 py-1">
+    <div className="pb-4">
+      <HomeHero item={heroItem} loading={heroLoading} />
+
+      {/* Category pills float up over the hero's bottom edge instead of
+          sitting below a slab of empty space. */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 -mt-6 sm:-mt-7 relative z-10 mb-7">
+        <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
           {HOME_TABS.map((tab) => (
             <button
               key={tab.key}
@@ -77,34 +90,35 @@ export default function Home() {
               className={`shrink-0 px-5 py-2 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                 active === tab.key
                   ? 'animate-tab-pop-in bg-gradient-to-b from-[#F3C067] to-reel-gold text-reel-bg shadow-[0_6px_20px_-4px_rgba(232,163,61,0.5)]'
-                  : 'bg-white/[0.04] text-reel-muted ring-1 ring-white/[0.08] backdrop-blur-sm hover:ring-reel-gold/40 hover:text-reel-ink'
+                  : 'bg-reel-surface/90 backdrop-blur-sm text-reel-muted ring-1 ring-white/[0.08] hover:ring-reel-gold/40 hover:text-reel-ink'
               }`}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <div className="mt-3 h-px bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
       </div>
 
-      <div key={active} className="page-fade-in">
-        {!tabCatalogs ? (
-          <Rail title="Loading…" loading items={[]} />
-        ) : !hasCatalogsForTab ? (
-          <p className="text-center text-reel-muted mt-10 px-4">
-            Is category mein abhi content nahi hai.
-          </p>
-        ) : loadingTab && !groups ? (
-          <Rail title="Loading…" loading items={[]} />
-        ) : groups && groups.length > 0 ? (
-          groups.map(({ language, items }) => (
-            <LanguageRail key={language} language={language} items={items} />
-          ))
-        ) : (
-          <p className="text-center text-reel-muted mt-10 px-4">
-            Is category mein abhi content nahi hai.
-          </p>
-        )}
+      <div className="max-w-6xl mx-auto px-0">
+        <div key={active} className="page-fade-in">
+          {!tabCatalogs ? (
+            <Rail title="Loading…" loading items={[]} />
+          ) : !hasCatalogsForTab ? (
+            <p className="text-center text-reel-muted mt-10 px-4">
+              Is category mein abhi content nahi hai.
+            </p>
+          ) : loadingTab && !groups ? (
+            <Rail title="Loading…" loading items={[]} />
+          ) : groups && groups.length > 0 ? (
+            groups.map(({ language, items }) => (
+              <LanguageRail key={language} language={language} items={items} />
+            ))
+          ) : (
+            <p className="text-center text-reel-muted mt-10 px-4">
+              Is category mein abhi content nahi hai.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )
