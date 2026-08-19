@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta } from '../api'
+import { getStreams, getMeta, qualityLabel } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import { useLocalReactions } from '../components/localInteractions'
@@ -18,16 +18,6 @@ function parseStreamMeta(stream) {
     else badges.push(line)
   }
   return { filename, badges }
-}
-
-// Pulls a short "360p / 480p / 720p / 1080p" style label out of a stream's
-// name or title so the in-player quality menu shows something compact
-// instead of the full filename.
-function qualityLabel(stream) {
-  const hay = `${stream?.name || ''} ${stream?.title || ''}`
-  const res = hay.match(/\b(2160p|4k|1440p|1080p|720p|480p|360p|240p)\b/i)
-  if (res) return res[1].toLowerCase() === '4k' ? '4K' : res[1].toLowerCase()
-  return (stream?.name || 'Auto').split('\n')[0].trim()
 }
 
 export default function Player() {
@@ -183,10 +173,27 @@ export default function Player() {
     toggleSaved(type, imdbId, titleInfo)
   }
 
-  const qualities = useMemo(
-    () => (streams || []).map((s) => ({ ...s, label: qualityLabel(s) })),
-    [streams]
-  )
+  // Bug fix (user report: "480p select karne par bhi 1080p hi chalta hai"):
+  // backend kabhi-kabhi ek hi actual file ke liye do stream entries bhej deta
+  // hai jinke "url" bilkul same hote hain lekin "label" alag-alag (mislabeled
+  // indexing/admin tagging ki wajah se — dekho backend/Backend/fastapi/routes/
+  // stremio_routes.py: format_stream_details() ka `resolution = parsed.get(
+  // "resolution", quality)` fallback). Jab do labels same URL par point karte
+  // hain, dropdown mein "480p" dikhta hai lekin uspar click karne se bhi wahi
+  // (asal mein 1080p wali) file chalti hai — kyunki url hi same hai, koi
+  // real switch hota hi nahi. Fix: same-URL wale duplicate quality entries ko
+  // yahin par hi drop kar do, taaki sirf genuinely-alag files hi menu mein
+  // dikhein aur select karna hamesha actually-alag stream par le jaaye.
+  const qualities = useMemo(() => {
+    const seenUrls = new Set()
+    const out = []
+    for (const s of streams || []) {
+      if (seenUrls.has(s.url)) continue
+      seenUrls.add(s.url)
+      out.push({ ...s, label: qualityLabel(s) })
+    }
+    return out
+  }, [streams])
   const activeQualityObj = useMemo(
     () => qualities.find((q) => q.url === active?.url) || null,
     [qualities, active]
@@ -272,7 +279,14 @@ export default function Player() {
 
   // Download is per-quality — one entry per stream URL, so switching
   // quality and downloading again doesn't clash with an earlier download.
-  const thisDownloadId = activeQualityObj ? downloadId(type, imdbId, activeQualityObj.label) : null
+  // Bug fix: pehle yahan sirf `imdbId` (season/episode ke bina) use hota tha
+  // — series ke har episode ka downloadId isliye sirf quality-label se banta
+  // tha (jaise "series:tt123:1080p"), toh Episode 1 aur Episode 2 dono ka
+  // 1080p download EK HI id/IndexedDB-entry par collide ho jaata tha, aur
+  // baad wala pehle wale ko silently overwrite kar deta tha. Ab poora `id`
+  // (series ke liye "imdbId:season:episode") use karte hain taaki har
+  // episode ka apna alag, safe download entry bane.
+  const thisDownloadId = activeQualityObj ? downloadId(type, id, activeQualityObj.label) : null
   const downloadEntry = useDownloadEntry(thisDownloadId)
 
   // Kicks off an in-app managed download (progress tracked globally, file
@@ -283,7 +297,16 @@ export default function Player() {
     if (!active?.url || downloadEntry?.status === 'downloading' || downloadEntry?.status === 'done') return
     startDownload(active.url, {
       type,
-      titleId: imdbId,
+      titleId: id,
+      // Season/episode-level grouping metadata (Downloads tab ke season-cover
+      // view ke liye zaroori) — sirf series ke liye set hota hai, movies ke
+      // liye null rehta hai.
+      showId: imdbId,
+      showName: titleInfo.name,
+      showPoster: titleInfo.poster,
+      season: isSeries ? currentSeason : null,
+      episode: isSeries ? currentEpisode : null,
+      episodeTitle: isSeries ? (allEpisodes.find((e) => e.id === id)?.title || '') : '',
       filename: meta.filename,
       poster: titleInfo.poster,
       qualityLabel: activeQualityObj?.label || '',
