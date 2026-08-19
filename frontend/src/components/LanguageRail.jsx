@@ -57,7 +57,10 @@ export default function LanguageRail({ language, items }) {
 
   return (
     <section className="mb-8">
-      <h2 className="font-display text-xl font-semibold mb-3 px-4 sm:px-0">{language}</h2>
+      <h2 className="flex items-center gap-2 font-display text-lg sm:text-xl font-semibold mb-3 px-4 sm:px-0">
+        <span className="w-1 h-4 rounded-full bg-reel-gold" />
+        {language}
+      </h2>
       <Row items={row1} />
       {row2.length > 0 ? (
         <div className="mt-3">

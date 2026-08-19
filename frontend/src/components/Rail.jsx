@@ -11,7 +11,7 @@ export default function Rail({ title, items, loading }) {
           ? Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="shrink-0 w-[140px] sm:w-[160px] aspect-[2/3] rounded-md bg-reel-surface2 animate-pulse"
+                className="shrink-0 w-[calc(25vw-17px)] sm:w-[160px] aspect-[2/3] rounded-lg bg-reel-surface2 animate-pulse"
               />
             ))
           : items.map((item, i) => <MediaCard key={item.id} item={item} index={i} />)}

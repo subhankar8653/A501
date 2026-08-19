@@ -1,16 +1,9 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { clearConfig } from '../api'
 import SearchOverlay from './SearchOverlay'
 
 export default function Navbar() {
-  const navigate = useNavigate()
   const [searchOpen, setSearchOpen] = useState(false)
-
-  function handleReset() {
-    clearConfig()
-    navigate('/setup')
-  }
 
   return (
     <div className="sticky top-0 z-30">
@@ -37,13 +30,6 @@ export default function Navbar() {
               <circle cx="11" cy="11" r="7" />
               <path d="m21 21-4.3-4.3" />
             </svg>
-          </button>
-
-          <button
-            onClick={handleReset}
-            className="text-xs text-reel-muted hover:text-reel-ink active:scale-95 transition-colors shrink-0"
-          >
-            Change source
           </button>
         </div>
       </header>
