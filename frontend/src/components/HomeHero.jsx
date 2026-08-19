@@ -30,7 +30,7 @@ export default function HomeHero({ items, loading }) {
 
   if (loading) {
     return (
-      <div className="relative w-full aspect-[3/4] sm:aspect-[21/9] max-h-[460px] bg-reel-surface2 overflow-hidden">
+      <div className="relative w-full aspect-[16/11] sm:aspect-[21/9] max-h-[280px] bg-reel-surface2 overflow-hidden rounded-2xl mx-auto max-w-6xl">
         <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
       </div>
     )
@@ -42,7 +42,7 @@ export default function HomeHero({ items, loading }) {
   const backdrop = item.background || item.poster
 
   return (
-    <div className="relative w-full aspect-[3/4] sm:aspect-[21/9] max-h-[460px] overflow-hidden bg-reel-bg">
+    <div className="relative w-full aspect-[16/11] sm:aspect-[21/9] max-h-[280px] overflow-hidden bg-reel-bg">
       {/* Each slide is stacked absolutely and cross-fades via opacity — key
           on item.id so the fade actually replays on every rotation. */}
       {list.map((slide, i) => {
@@ -70,31 +70,31 @@ export default function HomeHero({ items, loading }) {
       <div className="absolute inset-0 z-[2] bg-gradient-to-t from-reel-bg via-reel-bg/55 to-reel-bg/10" />
       <div className="absolute inset-0 z-[2] bg-gradient-to-r from-reel-bg/80 via-transparent to-transparent sm:from-reel-bg/85 sm:via-reel-bg/10" />
 
-      <div key={item.id || index} className="relative z-[3] h-full flex flex-col justify-end px-4 sm:px-6 pb-8 sm:pb-10 max-w-6xl mx-auto page-fade-in">
-        <span className="inline-flex w-fit items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/30 backdrop-blur-sm px-2.5 py-1 rounded-full mb-3">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z"/></svg>
+      <div key={item.id || index} className="relative z-[3] h-full flex flex-col justify-end px-4 sm:px-6 pb-4 sm:pb-6 max-w-6xl mx-auto page-fade-in">
+        <span className="inline-flex w-fit items-center gap-1.5 text-[9px] font-bold tracking-[0.15em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/30 backdrop-blur-sm px-2 py-0.5 rounded-full mb-2">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z"/></svg>
           Featured
         </span>
-        <h1 className="font-display text-2xl sm:text-4xl font-bold text-reel-ink drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] max-w-md sm:max-w-xl line-clamp-2">
+        <h1 className="font-display text-lg sm:text-3xl font-bold text-reel-ink drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] max-w-md sm:max-w-xl line-clamp-1">
           {item.name}
         </h1>
-        <div className="flex items-center gap-3 mt-2.5 text-xs sm:text-sm text-reel-muted">
+        <div className="flex items-center gap-3 mt-1.5 text-[11px] sm:text-sm text-reel-muted">
           {item.imdbRating ? (
             <span className="flex items-center gap-1 text-reel-gold font-semibold">★ {item.imdbRating}</span>
           ) : null}
           {item.releaseInfo ? <span>{item.releaseInfo}</span> : null}
         </div>
-        <div className="flex items-center gap-3 mt-5">
+        <div className="flex items-center gap-2.5 mt-3">
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="flex items-center gap-2 bg-reel-gold text-reel-bg font-semibold text-sm px-5 py-2.5 rounded-full active:scale-95 transition-transform shadow-[0_10px_28px_-8px_rgba(232,163,61,0.65)]"
+            className="flex items-center gap-1.5 bg-reel-gold text-reel-bg font-semibold text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform shadow-[0_10px_28px_-8px_rgba(232,163,61,0.65)]"
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             Watch Now
           </Link>
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="flex items-center gap-2 bg-white/10 backdrop-blur-sm ring-1 ring-white/15 text-reel-ink font-medium text-sm px-5 py-2.5 rounded-full active:scale-95 transition-transform hover:bg-white/[0.14]"
+            className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm ring-1 ring-white/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-white/[0.14]"
           >
             Details
           </Link>
@@ -103,14 +103,14 @@ export default function HomeHero({ items, loading }) {
         {/* Dot indicators — also tappable so users can jump straight to a
             slide instead of waiting for the auto-rotate. */}
         {list.length > 1 ? (
-          <div className="flex items-center gap-1.5 mt-5">
+          <div className="flex items-center gap-1.5 mt-3">
             {list.map((slide, i) => (
               <button
                 key={slide.id || i}
                 aria-label={`Slide ${i + 1}`}
                 onClick={() => setIndex(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === index ? 'w-6 bg-reel-gold' : 'w-1.5 bg-white/30 hover:bg-white/50'
+                  i === index ? 'w-5 bg-reel-gold' : 'w-1.5 bg-white/30 hover:bg-white/50'
                 }`}
               />
             ))}
