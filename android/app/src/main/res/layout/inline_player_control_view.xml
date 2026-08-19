@@ -16,6 +16,18 @@
     exo_progress/exo_position/exo_duration ke ids wahi purane hain (Media3 khud
     bind kar leta hai). Play/pause/prev/next ab custom ids hain — MainActivity.kt
     inhe manually wire karta hai (wajah upar comment mein hai).
+
+    Premium pass (user ne poora player aur premium maanga — reference:
+    custom_player_control_view.xml, jahan yeh treatment pehle se hai):
+      - Center play/pause ab plain icon nahi — wahi gold radial-glow "hero"
+        squircle (bg_play_button_hero) jo fullscreen player mein hai. Ye
+        clutter nahi hai kyunki sirf EK hero button hai, prev/next abhi bhi
+        plain hain (user ne unke chip-background waala clutter khud hataya tha).
+      - Progress bar ka accent color generic YouTube-red se badal ke app ka
+        apna gold brand color (#FFD700) kar diya — baaki poore app
+        (fullscreen player, web player) mein yehi gold hai, ab yahan bhi
+        consistent hai. Plain white dot ki jagah gold glow scrubber handle
+        (scrubber_handle_premium) — wahi jo fullscreen player use karta hai.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -65,13 +77,13 @@
 
         <ImageButton
             android:id="@+id/inlinePlayPauseButton"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
             android:layout_marginHorizontal="36dp"
-            android:padding="4dp"
-            android:elevation="4dp"
+            android:padding="14dp"
+            android:elevation="6dp"
             android:src="@drawable/ic_pause"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/bg_play_button_hero"
             android:contentDescription="play or pause" />
 
         <ImageButton
@@ -175,16 +187,17 @@
             <androidx.media3.ui.DefaultTimeBar
                 android:id="@id/exo_progress"
                 android:layout_width="match_parent"
-                android:layout_height="10dp"
-                app:played_color="#FF3B30"
-                app:scrubber_color="#FF3B30"
+                android:layout_height="14dp"
+                app:played_color="#FFD700"
+                app:scrubber_color="#FFD700"
                 app:unplayed_color="#4DFFFFFF"
                 app:buffered_color="#80FFFFFF"
-                app:bar_height="2dp"
-                app:touch_target_height="10dp"
-                app:scrubber_enabled_size="9dp"
+                app:bar_height="2.5dp"
+                app:touch_target_height="14dp"
+                app:scrubber_drawable="@drawable/scrubber_handle_premium"
+                app:scrubber_enabled_size="12dp"
                 app:scrubber_disabled_size="0dp"
-                app:scrubber_dragged_size="11dp" />
+                app:scrubber_dragged_size="18dp" />
 
         </LinearLayout>
 
