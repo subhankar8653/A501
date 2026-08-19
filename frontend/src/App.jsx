@@ -1,12 +1,18 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getConfig } from './api'
+import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
+import BottomNav from './components/BottomNav'
+import DownloadToast from './components/DownloadToast'
 import Setup from './pages/Setup'
 import Home from './pages/Home'
 import Search from './pages/Search'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
+import Saved from './pages/Saved'
+import Downloads from './pages/Downloads'
+import Profile from './pages/Profile'
 
 function RequireConfig({ children }) {
   const cfg = getConfig()
@@ -32,14 +38,20 @@ function ChromeForRoute({ children }) {
       {/* key={pathname} remounts on every route change, which is what
           drives the page-fade-in entrance below — a plain className alone
           wouldn't replay since the div itself never actually unmounts. */}
-      <div key={pathname} className="page-fade-in">
+      <div key={pathname} className={`page-fade-in ${!hideChrome ? 'pb-20' : ''}`}>
         {children}
       </div>
+      {!hideChrome && <DownloadToast />}
+      {!hideChrome && <BottomNav />}
     </>
   )
 }
 
 export default function App() {
+  useEffect(() => {
+    cleanupStaleDownloads()
+  }, [])
+
   return (
     <Routes>
       <Route path="/setup" element={<Setup />} />
@@ -51,6 +63,9 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/search" element={<Search />} />
+                <Route path="/saved" element={<Saved />} />
+                <Route path="/downloads" element={<Downloads />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/title/:type/:id" element={<Detail />} />
                 <Route path="/watch/:type/:id" element={<Player />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
