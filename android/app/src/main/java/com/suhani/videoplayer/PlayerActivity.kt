@@ -5314,6 +5314,10 @@ class PlayerActivity : AppCompatActivity() {
     // Jugaad-style quality switch: koi adaptive HLS/DASH switching nahi — bas
     // current position save karo, naye quality URL ka MediaItem load karo, aur
     // wahi position se resume karo. Website ke quality button jaisa hi result.
+    // BUG FIX (same as inline player — dekho MainActivity.switchInlineQuality
+    // ka comment): sirf setMediaItem()+prepare() se purana render-state carry
+    // ho sakta tha, isliye ab yahan bhi pehle stop()+clearMediaItems() se
+    // clean slate banate hain taaki naya quality URL genuinely fresh load ho.
     private fun showQualityDialog() {
         if (availableQualities.size < 2) {
             showPlayerSnackbar("Is video ke liye aur koi quality available nahi hai")
@@ -5326,6 +5330,8 @@ class PlayerActivity : AppCompatActivity() {
                 val (label, url) = availableQualities[which]
                 val resumePos = player.currentPosition
                 val wasPlaying = player.isPlaying || player.playWhenReady
+                player.stop()
+                player.clearMediaItems()
                 val item = MediaItem.Builder().setUri(Uri.parse(url)).build()
                 player.setMediaItem(item, resumePos)
                 player.prepare()
