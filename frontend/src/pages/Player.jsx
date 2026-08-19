@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getStreams, getMeta } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
-import { useLocalReactions, useLocalSaved } from '../components/localInteractions'
+import { useLocalReactions } from '../components/localInteractions'
+import { useIsSaved, toggleSaved } from '../lib/savedStore'
+import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
 // into a clean filename + list of badge lines.
@@ -64,7 +66,9 @@ export default function Player() {
 
   const storageKey = `${type}:${id}`
   const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
-  const { saved, toggle: toggleSaved } = useLocalSaved(`suhani-screen:saved:${storageKey}`)
+  // Saved is per-title (whole movie/show), not per-episode — so saving from
+  // any episode of a series shows the show once in the Saved tab.
+  const saved = useIsSaved(type, imdbId)
 
   // Drive-sourced streams occasionally fail server-side extraction. When the
   // <video> element errors out, we probe the same /dl/ URL with a manual
@@ -94,8 +98,6 @@ export default function Player() {
     }
   }
 
-  const [downloading, setDownloading] = useState(false)
-  const [dlProgress, setDlProgress] = useState(0)
   const [retryKey, setRetryKey] = useState(0)
   const [toast, setToast] = useState('')
   // Continuously tracks current playback position so that switching quality
@@ -165,6 +167,21 @@ export default function Player() {
   }, [isSeries, imdbId])
 
   const meta = useMemo(() => parseStreamMeta(active), [active])
+
+  // Title-level info (used for the Save button + in-app Downloads list) —
+  // whichever of series/movie meta is loaded for this page.
+  const titleInfo = useMemo(() => {
+    const m = isSeries ? seriesMeta : movieMeta
+    return {
+      name: m?.name || meta.filename,
+      poster: m?.poster || null,
+      releaseInfo: m?.releaseInfo || '',
+    }
+  }, [isSeries, seriesMeta, movieMeta, meta.filename])
+
+  function handleToggleSaved() {
+    toggleSaved(type, imdbId, titleInfo)
+  }
 
   const qualities = useMemo(
     () => (streams || []).map((s) => ({ ...s, label: qualityLabel(s) })),
@@ -253,43 +270,25 @@ export default function Player() {
     window.AndroidPlayer?.setAdjacentEpisodes?.(!!nextEpisode, !!prevEpisode)
   }, [nextEpisode, prevEpisode])
 
-  // Fetches the file as a blob first, then downloads from that in-memory
-  // blob — so no new tab opens and the backend's real URL never shows up
-  // in the address bar. Falls back to opening the direct link only if
-  // the fetch itself fails (e.g. network/CORS issue).
-  async function downloadFile() {
-    if (!active?.url || downloading) return
-    setDownloading(true)
-    setDlProgress(0)
-    try {
-      const res = await fetch(active.url)
-      if (!res.ok || !res.body) throw new Error('bad response')
-      const total = Number(res.headers.get('content-length')) || 0
-      const reader = res.body.getReader()
-      const chunks = []
-      let received = 0
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-        received += value.length
-        if (total) setDlProgress(Math.round((received / total) * 100))
-      }
-      const blob = new Blob(chunks)
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = meta.filename || 'download'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
-    } catch {
-      window.open(active.url, '_blank', 'noopener,noreferrer')
-    } finally {
-      setDownloading(false)
-      setDlProgress(0)
-    }
+  // Download is per-quality — one entry per stream URL, so switching
+  // quality and downloading again doesn't clash with an earlier download.
+  const thisDownloadId = activeQualityObj ? downloadId(type, imdbId, activeQualityObj.label) : null
+  const downloadEntry = useDownloadEntry(thisDownloadId)
+
+  // Kicks off an in-app managed download (progress tracked globally, file
+  // saved into IndexedDB) instead of pushing straight to the device's
+  // Downloads folder — this is what makes it show up, and stay playable
+  // offline, inside the app's own Downloads tab.
+  function downloadFile() {
+    if (!active?.url || downloadEntry?.status === 'downloading' || downloadEntry?.status === 'done') return
+    startDownload(active.url, {
+      type,
+      titleId: imdbId,
+      filename: meta.filename,
+      poster: titleInfo.poster,
+      qualityLabel: activeQualityObj?.label || '',
+    })
+    showToast('Download shuru ho gaya — Downloads tab mein dekho')
   }
 
   function shareIt() {
@@ -441,15 +440,20 @@ export default function Player() {
             </button>
             <button
               onClick={downloadFile}
-              disabled={downloading}
+              disabled={downloadEntry?.status === 'downloading'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition disabled:opacity-70"
               title="Download"
               aria-label="Download"
             >
-              {downloading ? (
+              {downloadEntry?.status === 'downloading' ? (
                 <>
                   <span className="w-3 h-3 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
-                  {dlProgress ? `${dlProgress}%` : 'Downloading…'}
+                  {downloadEntry.progress ? `${downloadEntry.progress}%` : 'Downloading…'}
+                </>
+              ) : downloadEntry?.status === 'done' ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Downloaded
                 </>
               ) : (
                 <>
@@ -469,7 +473,7 @@ export default function Player() {
               ) : null}
             </div>
             <button
-              onClick={toggleSaved}
+              onClick={handleToggleSaved}
               aria-label={saved ? 'Remove from saved' : 'Save'}
               aria-pressed={saved}
               className={`p-2 rounded-full text-xs shrink-0 active:scale-95 transition ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
