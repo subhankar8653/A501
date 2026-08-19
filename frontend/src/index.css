@@ -11,16 +11,20 @@ html, body, #root {
 }
 
 /* Bug fix (user report): a visible track/thumb scrollbar was sitting on the
-   right edge of the page — looked out of place on a mobile app (YouTube's
-   own app has none). Scrolling itself still works exactly the same; only
-   the rendered scrollbar chrome is suppressed, and only at the document
-   level — individual elements can still opt back into a visible scrollbar
-   if ever needed. */
-html {
+   right edge of the page, still reaching up alongside the video player —
+   looked out of place on a mobile app (YouTube's own app has none).
+   Root cause: html/body both have height:100% above, and Chromium ends up
+   treating BODY (not html) as the actual scrolling box in that setup — so
+   hiding it on html alone left body's scrollbar showing. Hiding it on both
+   (+ #root as a safety net) closes that gap. Scrolling itself still works
+   exactly the same; only the rendered scrollbar chrome is suppressed. */
+html, body, #root {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* old Edge/IE */
 }
-html::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
   display: none; /* Chrome/Safari/Android WebView */
 }
 
@@ -69,8 +73,8 @@ input, textarea {
 }
 
 ::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+  height: 4px;
+  width: 4px;
 }
 ::-webkit-scrollbar-track {
   background: #16151F;
