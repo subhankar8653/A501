@@ -344,6 +344,13 @@ class MainActivity : AppCompatActivity() {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.settings.allowFileAccess = false
         webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // User report: red-marked vertical bar on screen's right edge — this is
+        // the WebView's own native fading scroll indicator (an Android View
+        // property), not a browser/CSS scrollbar, so index.css alone can't
+        // remove it. XML sets android:scrollbars="none" already; setting it
+        // here too so it stays off even if the view is ever recreated in code.
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
