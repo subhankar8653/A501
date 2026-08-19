@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Premium pass: a much softer alternative to the old bg_icon_circle "chip"
+     (which had a visible gradient fill + hairline border and was removed
+     because it looked cluttered/boxy). This is just a flat, borderless
+     15%-black circle sized close to the icon itself — reads as a soft
+     shadow/vignette that lifts the icon off bright video, not as a button. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#26000000" />
+</shape>
