@@ -49,7 +49,7 @@ export default function BottomNav() {
   const activeCount = downloads.filter((d) => d.status === 'downloading').length
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-gradient-to-t from-reel-surface to-reel-surface/97 backdrop-blur-md border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.8)] pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-40 bg-reel-surface border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-6xl mx-auto grid grid-cols-4 px-2 py-1.5">
         {TABS.map((tab) => (
           <NavLink

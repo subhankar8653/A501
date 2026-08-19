@@ -7,13 +7,15 @@ export default function Navbar() {
 
   return (
     <div className="sticky top-0 z-30">
-      <header className="relative bg-gradient-to-b from-reel-surface to-reel-surface/97 backdrop-blur-md border-b border-reel-gold/[0.14] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.8)]">
+      <header className="relative bg-reel-surface border-b border-reel-gold/[0.14] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.9)]">
         {/* Soft ambient glow behind the logo — gives the header some depth
-            instead of a flat solid bar. */}
+            instead of a flat solid bar. Sits on the OPAQUE surface color
+            (not on a blurred/see-through layer), so it never picks up
+            whatever poster art happens to be scrolling underneath. */}
         <div
           aria-hidden="true"
           className="absolute top-0 left-0 w-48 h-full -z-10 pointer-events-none"
-          style={{ background: 'radial-gradient(140px 70px at 12% 50%, rgba(232,163,61,0.16), transparent)' }}
+          style={{ background: 'radial-gradient(140px 70px at 12% 50%, rgba(232,163,61,0.14), transparent)' }}
         />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
           {/* Logomark: a rounded play-badge (readable at a glance as "watch/
@@ -41,15 +43,16 @@ export default function Navbar() {
 
           <div className="flex-1" />
 
-          {/* Big, round, YouTube-style search button — opens a dedicated
-              fullscreen search screen (history + live suggestions) instead
-              of typing inline here. */}
+          {/* Premium search button: gold gradient ring + glow (echoes the
+              logo badge) instead of a flat grey circle, so it reads as a
+              primary action rather than a generic icon button. */}
           <button
             onClick={() => setSearchOpen(true)}
             aria-label="Search"
-            className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center bg-white/[0.06] ring-1 ring-white/10 text-reel-ink hover:ring-reel-gold/50 hover:text-reel-gold hover:bg-white/[0.09] active:scale-90 transition-all duration-200 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.5)]"
+            className="group/search relative shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center bg-reel-surface2 ring-1 ring-reel-gold/30 shadow-[0_4px_16px_-4px_rgba(232,163,61,0.45)] active:scale-90 transition-all duration-200 hover:ring-reel-gold/60 hover:shadow-[0_4px_20px_-3px_rgba(232,163,61,0.7)]"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-reel-gold/20 to-transparent pointer-events-none" />
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
               <circle cx="11" cy="11" r="7" />
               <path d="m21 21-4.3-4.3" />
             </svg>
