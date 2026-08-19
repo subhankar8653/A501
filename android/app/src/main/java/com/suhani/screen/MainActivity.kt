@@ -964,13 +964,28 @@ class MainActivity : AppCompatActivity() {
 
     /** Quality (resolution) badalte waqt ExoPlayer instance wahi rehta hai — sirf
      *  MediaItem badalta hai, aur purani position/playing-state wapas apply hoti
-     *  hai, taaki switch karne par video shuru se na chale. */
+     *  hai, taaki switch karne par video shuru se na chale.
+     *  BUG FIX (user report: "480p ya koi aur quality select karta hun, par
+     *  1080p hi chalta rehta hai — sirf app mein, website par sahi kaam karta
+     *  hai"): pehle sirf `setMediaItem()` + `prepare()` call hota tha — same
+     *  ExoPlayer instance par bina `stop()`/`clearMediaItems()` ke naya item
+     *  daalne se kabhi-kabhi player ka internal renderer state (especially
+     *  jab dono URLs same content-type/container ho, jaisa yahan MKV files
+     *  hain) purane item ka format/track selection carry kar leta tha, aur
+     *  naya URL fetch hone ke bawajood ExoPlayer purani hi decoded resolution
+     *  dikhata rehta tha jab tak koi bada gap (seek/pause) na ho. Ab pehle
+     *  poori tarah `stop()` + `clearMediaItems()` karke ek clean slate se naya
+     *  MediaItem load karte hain — taaki naya URL/quality genuinely fresh
+     *  prepare ho, na ki purane render-state par overlay ho.
+     */
     private fun switchInlineQuality(newUrl: String) {
         val player = inlinePlayer ?: return
         val pos = player.currentPosition
         val wasPlaying = player.playWhenReady
         inlineUri = newUrl
         SharedPlayerHolder.uri = newUrl
+        player.stop()
+        player.clearMediaItems()
         player.setMediaItem(MediaItem.fromUri(Uri.parse(newUrl)))
         player.prepare()
         player.seekTo(pos)
