@@ -168,6 +168,17 @@ export async function getStreams(type, id) {
   return data.streams || []
 }
 
+// Pulls a short "360p / 480p / 720p / 1080p" style label out of a stream's
+// name or title so quality menus show something compact instead of the full
+// filename. Shared by the player's quality menu and the Downloads
+// season/episode quality-picker sheet.
+export function qualityLabel(stream) {
+  const hay = `${stream?.name || ''} ${stream?.title || ''}`
+  const res = hay.match(/\b(2160p|4k|1440p|1080p|720p|480p|360p|240p)\b/i)
+  if (res) return res[1].toLowerCase() === '4k' ? '4K' : res[1].toLowerCase()
+  return (stream?.name || 'Auto').split('\n')[0].trim()
+}
+
 // Home page content-type tabs, in display order (Anime always first).
 export const HOME_TABS = [
   { key: 'anime', label: 'Anime' },
