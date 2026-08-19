@@ -124,6 +124,14 @@ export async function startDownload(url, meta) {
     id,
     type: meta.type,
     titleId: meta.titleId,
+    // Season-level grouping metadata (Downloads tab ke season-cover view ke
+    // liye) — series ke liye set, movies ke liye undefined/null rehta hai.
+    showId: meta.showId || null,
+    showName: meta.showName || '',
+    showPoster: meta.showPoster || meta.poster || null,
+    season: meta.season ?? null,
+    episode: meta.episode ?? null,
+    episodeTitle: meta.episodeTitle || '',
     filename: meta.filename || 'download',
     poster: meta.poster || null,
     qualityLabel: meta.qualityLabel || '',
@@ -209,4 +217,31 @@ export function useDownloadsList() {
 export function useDownloadEntry(id) {
   const list = useDownloadsList()
   return list.find((d) => d.id === id) || null
+}
+
+// Groups the flat downloads list into per-title "cards" — movies stay as a
+// single card each, series episodes get bucketed under one
+// showId:season card (so the Downloads tab can render one cover per season,
+// exactly like the show's own episode list, instead of a flat file list).
+export function groupDownloads(list) {
+  const groups = new Map()
+  for (const d of list) {
+    const key = d.type === 'series' && d.showId ? `series:${d.showId}:${d.season ?? 0}` : `movie:${d.id}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        type: d.type,
+        showId: d.showId || d.titleId,
+        showName: d.showName || d.filename,
+        showPoster: d.showPoster || d.poster,
+        season: d.season,
+        entries: [],
+        latestAddedAt: d.addedAt,
+      })
+    }
+    const g = groups.get(key)
+    g.entries.push(d)
+    if (d.addedAt > g.latestAddedAt) g.latestAddedAt = d.addedAt
+  }
+  return [...groups.values()].sort((a, b) => b.latestAddedAt - a.latestAddedAt)
 }
