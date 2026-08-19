@@ -28,7 +28,17 @@
         (fullscreen player, web player) mein yehi gold hai, ab yahan bhi
         consistent hai. Plain white dot ki jagah gold glow scrubber handle
         (scrubber_handle_premium) — wahi jo fullscreen player use karta hai.
+      - Prev/next aur fullscreen icons ab warm off-white tint (#FFF8E7) +
+        bahut halka soft-glow backdrop (bg_icon_soft_glow) lete hain — same
+        halka treatment jo top bar mein diya, boxy chip jaisa nahi.
+      - Quality text ("Auto"/"1080p") ka color plain white se badal ke gold
+        kiya — time text se alag/highlighted dikhta hai, extra background
+        chip ke bina hi thoda "premium tag" jaisa feel deta hai.
+      - Play/pause icon ka fill ab dark ink (#0B0B12), safed nahi — bright
+        gold hero background par safed icon ka contrast kam tha, dark ink
+        wahi OTT-app jaisa crisp look deta hai jo React web player mein hai.
 -->
+
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -72,7 +82,9 @@
             android:layout_height="34dp"
             android:padding="4dp"
             android:src="@drawable/ic_skip_previous"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="previous episode" />
 
         <ImageButton
@@ -83,6 +95,7 @@
             android:padding="14dp"
             android:elevation="6dp"
             android:src="@drawable/ic_pause"
+            android:tint="#0B0B12"
             android:background="@drawable/bg_play_button_hero"
             android:contentDescription="play or pause" />
 
@@ -92,7 +105,9 @@
             android:layout_height="34dp"
             android:padding="4dp"
             android:src="@drawable/ic_skip_next"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="next episode" />
 
     </LinearLayout>
@@ -164,7 +179,7 @@
                     android:padding="4dp"
                     android:foreground="?attr/selectableItemBackgroundBorderless"
                     android:text="Auto"
-                    android:textColor="#FFFFFF"
+                    android:textColor="#FFD700"
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:shadowColor="#CC000000"
@@ -178,6 +193,8 @@
                     android:layout_height="30dp"
                     android:padding="5dp"
                     android:src="@drawable/ic_fullscreen_expand"
+                    android:tint="#FFF8E7"
+                    android:background="@drawable/bg_icon_soft_glow"
                     android:foreground="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="fullscreen" />
 

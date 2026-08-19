@@ -10,6 +10,14 @@
     icons plain rakhta hai, sirf top gradient (bg_top_gradient) se contrast
     milta hai. Ab chip backgrounds hata diye — sirf icon + borderless ripple,
     thoda bada size — clean/flat look.
+
+    Premium pass (user ne icons "bahut normal" lage, premium karne ko kaha):
+    ek bahut halka borderless soft-glow backdrop (bg_icon_soft_glow — flat
+    15% black oval, koi border/gradient nahi) wapas laaya + icons ko warm
+    off-white tint (#FFF8E7) diya. Yeh purane bg_icon_circle "chip" (jo
+    heavy gradient+border ki wajah se cluttered lagta tha) se bahut zyada
+    subtle hai — sirf ek soft shadow/vignette jaisa lagta hai, button jaisa
+    nahi.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/inlineTopBarRoot"
@@ -40,6 +48,8 @@
             android:layout_height="32dp"
             android:padding="6dp"
             android:src="@drawable/ic_chevron_down_pip"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="minimize to mini player" />
 
@@ -54,6 +64,8 @@
             android:layout_height="32dp"
             android:padding="6dp"
             android:src="@drawable/ic_audiotrack"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="audio track" />
 
@@ -63,6 +75,8 @@
             android:layout_height="32dp"
             android:padding="6dp"
             android:src="@drawable/ic_subtitle"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="subtitle" />
 
@@ -72,6 +86,8 @@
             android:layout_height="32dp"
             android:padding="6dp"
             android:src="@drawable/ic_settings"
+            android:tint="#FFF8E7"
+            android:background="@drawable/bg_icon_soft_glow"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="settings" />
 
