@@ -66,21 +66,23 @@ export default function Home() {
   const groups = tabCatalogs ? groupsByTab[active] : null
   const hasCatalogsForTab = tabCatalogs ? (tabCatalogs[active] || []).length > 0 : true
 
-  // Spotlight pick for the hero banner — top item of whichever language
-  // group has the most content in the active tab.
-  const heroItem = useMemo(() => {
-    const withItems = (groups || []).find((g) => g.items && g.items.length)
-    return withItems ? withItems.items[0] : null
+  // Spotlight picks for the hero banner carousel — top item from each
+  // language group in the active tab (up to 5), so the hero auto-rotates
+  // through a handful of picks instead of showing just one static item.
+  const heroItems = useMemo(() => {
+    const picks = (groups || [])
+      .filter((g) => g.items && g.items.length)
+      .map((g) => g.items[0])
+    return picks.slice(0, 5)
   }, [groups])
   const heroLoading = !tabCatalogs || (loadingTab && !groups)
 
   return (
     <div className="pb-4">
-      <HomeHero item={heroItem} loading={heroLoading} />
-
-      {/* Category pills float up over the hero's bottom edge instead of
-          sitting below a slab of empty space. */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 -mt-6 sm:-mt-7 relative z-10 mb-7">
+      {/* Category pills sit right under the header, above the hero, so
+          they're the first thing you see and always in the same spot
+          regardless of which hero slide is showing. */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-3 relative z-10">
         <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
           {HOME_TABS.map((tab) => (
             <button
@@ -99,7 +101,9 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-0">
+      <HomeHero items={heroItems} loading={heroLoading} />
+
+      <div className="max-w-6xl mx-auto px-0 mt-6">
         <div key={active} className="page-fade-in">
           {!tabCatalogs ? (
             <Rail title="Loading…" loading items={[]} />
