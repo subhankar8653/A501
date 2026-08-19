@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- HukaTube brand yellow — sampled from the logo, used as the
+         adaptive-icon background layer so it matches the logo exactly. -->
+    <color name="ic_launcher_background">#FDD008</color>
+</resources>
