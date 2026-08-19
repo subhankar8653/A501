@@ -67,23 +67,24 @@ export default function Home() {
 
   return (
     <div className="max-w-6xl mx-auto py-8">
-      <div className="bg-reel-surface/95 border-b border-white/5 mb-6">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 sm:px-0 py-3">
+      <div className="mb-7">
+        <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-4 sm:px-0 py-1">
           {HOME_TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActive(tab.key)}
               disabled={!tabCatalogs}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 active:scale-95 border disabled:opacity-50 ${
+              className={`shrink-0 px-5 py-2 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                 active === tab.key
-                  ? 'animate-tab-pop-in bg-reel-gold text-black border-reel-gold shadow-[0_4px_16px_-4px_rgba(232,163,61,0.55)]'
-                  : 'bg-reel-surface2 text-reel-ink border-white/5 hover:border-reel-gold/50 hover:text-reel-gold'
+                  ? 'animate-tab-pop-in bg-gradient-to-b from-[#F3C067] to-reel-gold text-reel-bg shadow-[0_6px_20px_-4px_rgba(232,163,61,0.5)]'
+                  : 'bg-white/[0.04] text-reel-muted ring-1 ring-white/[0.08] backdrop-blur-sm hover:ring-reel-gold/40 hover:text-reel-ink'
               }`}
             >
               {tab.label}
             </button>
           ))}
         </div>
+        <div className="mt-3 h-px bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
       </div>
 
       <div key={active} className="page-fade-in">
