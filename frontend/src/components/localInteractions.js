@@ -41,27 +41,3 @@ export function useLocalReactions(storageKey) {
   return { reactions, react }
 }
 
-export function useLocalSaved(storageKey) {
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    try {
-      setSaved(localStorage.getItem(storageKey) === '1')
-    } catch {
-      setSaved(false)
-    }
-  }, [storageKey])
-
-  function toggle() {
-    const next = !saved
-    setSaved(next)
-    try {
-      if (next) localStorage.setItem(storageKey, '1')
-      else localStorage.removeItem(storageKey)
-    } catch {
-      /* ignore */
-    }
-  }
-
-  return { saved, toggle }
-}
