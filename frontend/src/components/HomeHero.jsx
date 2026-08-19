@@ -1,10 +1,33 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 
-// Big featured banner at the top of Home — uses the first item of the
-// active tab's top language group as the "spotlight" pick. This is what
-// fills the dead empty space that used to sit between the header and the
-// category pills, and is the single biggest lever for a "wow" first look.
-export default function HomeHero({ item, loading }) {
+// Big featured banner at the top of Home — auto-rotating carousel over the
+// top spotlight pick from each language group in the active tab. This is
+// what fills the dead empty space that used to sit between the header and
+// the category pills, and is the single biggest lever for a "wow" first
+// look — a static single card felt flat, so it now cycles on its own.
+const ROTATE_MS = 5000
+
+export default function HomeHero({ items, loading }) {
+  const [index, setIndex] = useState(0)
+  const timerRef = useRef(null)
+
+  const list = items || []
+
+  // Reset to the first slide whenever the underlying set of items changes
+  // (e.g. switching category tabs), so we never point past the end.
+  useEffect(() => {
+    setIndex(0)
+  }, [list.length ? list[0]?.id : null, list.length])
+
+  useEffect(() => {
+    if (list.length < 2) return undefined
+    timerRef.current = setInterval(() => {
+      setIndex((i) => (i + 1) % list.length)
+    }, ROTATE_MS)
+    return () => clearInterval(timerRef.current)
+  }, [list.length])
+
   if (loading) {
     return (
       <div className="relative w-full aspect-[3/4] sm:aspect-[21/9] max-h-[460px] bg-reel-surface2 overflow-hidden">
@@ -13,25 +36,41 @@ export default function HomeHero({ item, loading }) {
     )
   }
 
-  if (!item) return null
+  if (!list.length) return null
 
+  const item = list[index]
   const backdrop = item.background || item.poster
 
   return (
     <div className="relative w-full aspect-[3/4] sm:aspect-[21/9] max-h-[460px] overflow-hidden bg-reel-bg">
-      {backdrop ? (
-        <img
-          src={backdrop}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover scale-105"
-        />
-      ) : null}
+      {/* Each slide is stacked absolutely and cross-fades via opacity — key
+          on item.id so the fade actually replays on every rotation. */}
+      {list.map((slide, i) => {
+        const slideBackdrop = slide.background || slide.poster
+        return (
+          <div
+            key={slide.id || i}
+            className={`absolute inset-0 transition-opacity duration-700 ease-out ${
+              i === index ? 'opacity-100 z-[1]' : 'opacity-0 z-0'
+            }`}
+          >
+            {slideBackdrop ? (
+              <img
+                src={slideBackdrop}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover scale-105"
+              />
+            ) : null}
+          </div>
+        )
+      })}
+
       {/* Bottom-up fade into the page background, plus a side fade on wide
           screens so the text panel stays legible over busy artwork. */}
-      <div className="absolute inset-0 bg-gradient-to-t from-reel-bg via-reel-bg/55 to-reel-bg/10" />
-      <div className="absolute inset-0 bg-gradient-to-r from-reel-bg/80 via-transparent to-transparent sm:from-reel-bg/85 sm:via-reel-bg/10" />
+      <div className="absolute inset-0 z-[2] bg-gradient-to-t from-reel-bg via-reel-bg/55 to-reel-bg/10" />
+      <div className="absolute inset-0 z-[2] bg-gradient-to-r from-reel-bg/80 via-transparent to-transparent sm:from-reel-bg/85 sm:via-reel-bg/10" />
 
-      <div className="relative h-full flex flex-col justify-end px-4 sm:px-6 pb-8 sm:pb-10 max-w-6xl mx-auto">
+      <div key={item.id || index} className="relative z-[3] h-full flex flex-col justify-end px-4 sm:px-6 pb-8 sm:pb-10 max-w-6xl mx-auto page-fade-in">
         <span className="inline-flex w-fit items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/30 backdrop-blur-sm px-2.5 py-1 rounded-full mb-3">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z"/></svg>
           Featured
@@ -60,6 +99,23 @@ export default function HomeHero({ item, loading }) {
             Details
           </Link>
         </div>
+
+        {/* Dot indicators — also tappable so users can jump straight to a
+            slide instead of waiting for the auto-rotate. */}
+        {list.length > 1 ? (
+          <div className="flex items-center gap-1.5 mt-5">
+            {list.map((slide, i) => (
+              <button
+                key={slide.id || i}
+                aria-label={`Slide ${i + 1}`}
+                onClick={() => setIndex(i)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  i === index ? 'w-6 bg-reel-gold' : 'w-1.5 bg-white/30 hover:bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )
