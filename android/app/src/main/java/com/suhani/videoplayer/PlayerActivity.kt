@@ -5314,10 +5314,23 @@ class PlayerActivity : AppCompatActivity() {
     // Jugaad-style quality switch: koi adaptive HLS/DASH switching nahi — bas
     // current position save karo, naye quality URL ka MediaItem load karo, aur
     // wahi position se resume karo. Website ke quality button jaisa hi result.
-    // BUG FIX (same as inline player — dekho MainActivity.switchInlineQuality
-    // ka comment): sirf setMediaItem()+prepare() se purana render-state carry
-    // ho sakta tha, isliye ab yahan bhi pehle stop()+clearMediaItems() se
-    // clean slate banate hain taaki naya quality URL genuinely fresh load ho.
+    // ROOT-CAUSE BUG FIX (user report: "480p select karta hun par 1080p hi
+    // chalta rehta hai, sirf app mein — website par sahi kaam karta hai"):
+    // asli wajah yeh nikli — is player ka poora playback playlist-based hai
+    // (`queue: List<VideoItem>`, har VideoItem ka apna `uriString`), aur
+    // `buildPlayer()` (jo decoder switch, playback-error auto-recovery, aur
+    // orientation/PiP transitions par dobara call hota hai) HAMESHA
+    // `queue[index].uriString` se hi MediaItems banata hai — kabhi bhi player
+    // ke live/in-memory MediaItem se nahi. Pehle quality switch sirf
+    // `player.setMediaItem()` seedha call karta tha, `queue` ko kabhi update
+    // nahi karta tha. Toh switch turant to sahi dikhta tha, lekin thodi der
+    // baad koi bhi auto-rebuild trigger (network hiccup se error-recovery
+    // sabse aam) `queue` ki PURANI (asal quality-switch se pehli) URL se
+    // player dobara bana deta tha — user ko lagta "1080p hi chal raha hai"
+    // jabki asal mein woh silently wapas revert ho chuka hota tha. Fix: ab
+    // `queue` ke current item ko bhi naye URL/label se turant update karte
+    // hain, taaki koi bhi future rebuild bhi sahi (abhi-chuni-hui) quality
+    // se hi ho, kabhi purani par wapas na jump kare.
     private fun showQualityDialog() {
         if (availableQualities.size < 2) {
             showPlayerSnackbar("Is video ke liye aur koi quality available nahi hai")
@@ -5330,9 +5343,20 @@ class PlayerActivity : AppCompatActivity() {
                 val (label, url) = availableQualities[which]
                 val resumePos = player.currentPosition
                 val wasPlaying = player.isPlaying || player.playWhenReady
+                val idx = player.currentMediaItemIndex
+                if (idx in queue.indices) {
+                    // `queue` ka compile-time type `List<VideoItem>` hai (index-set
+                    // operator nahi milta), isliye copy-on-write: naya mutable list
+                    // banao, us index ka item `.copy(uriString=...)` se replace karo,
+                    // aur poori list wapas `queue` mein reassign kar do.
+                    queue = queue.toMutableList().also { it[idx] = it[idx].copy(uriString = url) }
+                }
                 player.stop()
                 player.clearMediaItems()
-                val item = MediaItem.Builder().setUri(Uri.parse(url)).build()
+                val item = MediaItem.Builder()
+                    .setUri(Uri.parse(url))
+                    .setMediaId(url)
+                    .build()
                 player.setMediaItem(item, resumePos)
                 player.prepare()
                 player.playWhenReady = wasPlaying
