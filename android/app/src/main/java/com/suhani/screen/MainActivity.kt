@@ -29,6 +29,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -817,7 +818,22 @@ class MainActivity : AppCompatActivity() {
             it.addListener(inlinePlayPauseListener)
             it.addListener(inlineErrorListener)
         }
-        player.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
+        // BUG FIX (user report: "fullscreen mein quality badalne ke baad title
+        // gayab ho ke sirf 'Video' likha aata hai"): yeh chhota/inline player kabhi
+        // apne MediaItem par title metadata set hi nahi karta tha (isko khud kabhi
+        // title dikhaana nahi hota, isliye zaroorat mehsoos nahi hui thi). Lekin
+        // fullscreen (PlayerActivity) SharedPlayerHolder ke through isi player
+        // instance/MediaItem ko reuse karta hai, aur quality-switch ke waqt title
+        // ko purane MediaItem ki metadata se hi copy karta hai — jo yahan hamesha
+        // khaali hoti thi. Ab yahan bhi hamesha sahi title metadata set karte hain,
+        // taaki fullscreen mein switch karne par asli filename hi carry ho, "Video"
+        // generic fallback kabhi na dikhe.
+        player.setMediaItem(
+            MediaItem.Builder()
+                .setUri(Uri.parse(uri))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(inlineTitle).build())
+                .build()
+        )
         player.prepare()
         // Bug fix: chhota player pehle kabhi resume position check hi nahi karta tha
         // — na apni (kyunki khud kabhi save hi nahi karta tha, neeche dekho) na
@@ -1032,13 +1048,24 @@ class MainActivity : AppCompatActivity() {
      */
     private fun switchInlineQuality(newUrl: String) {
         val player = inlinePlayer ?: return
+        // Same quality dobara tap ho to kuch mat karo — na koi reload/flicker,
+        // na hi koi galat "switch hua" impression.
+        if (newUrl == inlineUri) return
         val pos = player.currentPosition
         val wasPlaying = player.playWhenReady
         inlineUri = newUrl
         SharedPlayerHolder.uri = newUrl
         player.stop()
         player.clearMediaItems()
-        player.setMediaItem(MediaItem.fromUri(Uri.parse(newUrl)))
+        // BUG FIX (title-loss follow-up — dekho mountInlinePlayer() ka comment):
+        // yahan bhi title metadata zaroor set karo, warna isi switch ke baad
+        // fullscreen kholne par title "Video" dikhega.
+        player.setMediaItem(
+            MediaItem.Builder()
+                .setUri(Uri.parse(newUrl))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(inlineTitle).build())
+                .build()
+        )
         player.prepare()
         player.seekTo(pos)
         player.playWhenReady = wasPlaying
@@ -1354,7 +1381,14 @@ class MainActivity : AppCompatActivity() {
         inlinePlayerView?.player = fresh
         SharedPlayerHolder.player = fresh
         SharedPlayerHolder.uri = inlineUri
-        fresh.setMediaItem(MediaItem.fromUri(Uri.parse(inlineUri)))
+        // BUG FIX (title-loss follow-up): yahan bhi title metadata set karo — dekho
+        // mountInlinePlayer() ka comment.
+        fresh.setMediaItem(
+            MediaItem.Builder()
+                .setUri(Uri.parse(inlineUri))
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(inlineTitle).build())
+                .build()
+        )
         fresh.prepare()
         fresh.seekTo(pos)
         fresh.playWhenReady = wasPlaying
