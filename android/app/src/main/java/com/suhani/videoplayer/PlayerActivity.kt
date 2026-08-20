@@ -5358,8 +5358,24 @@ class PlayerActivity : AppCompatActivity() {
                 val (label, url) = availableQualities[which]
                 val resumePos = player.currentPosition
                 val wasPlaying = player.isPlaying || player.playWhenReady
-                val previousMetadata = player.currentMediaItem?.mediaMetadata
-                    ?: MediaMetadata.Builder().setTitle(playerTitleText.text).build()
+                // DEFENSE-IN-DEPTH (asli root cause ab mountInlinePlayer/
+                // switchInlineQuality mein fix ho chuka hai — dekho unke comments):
+                // pehle yahan sirf currentMediaItem NULL hone par hi fallback title
+                // use hota tha. Lekin currentMediaItem non-null ho sakta hai jabki
+                // uski mediaMetadata.title khud khaali/blank ho (jaise jab chhote
+                // inline player se aaya hua shared MediaItem kabhi title carry hi
+                // nahi karta tha) — us case mein purana code silently khaali title
+                // copy kar deta tha aur "Video" dikhta tha. Ab currentMediaItem ki
+                // metadata sirf tabhi use karte hain jab uska title genuinely khaali
+                // na ho; warna hamesha on-screen (`playerTitleText`) wale asli
+                // title par fallback karte hain — chahe currentMediaItem null ho ya
+                // sirf uski title-metadata khaali ho.
+                val existingMetadata = player.currentMediaItem?.mediaMetadata
+                val previousMetadata = if (existingMetadata?.title.isNullOrBlank()) {
+                    MediaMetadata.Builder().setTitle(playerTitleText.text).build()
+                } else {
+                    existingMetadata
+                }
 
                 // Abhi kaunsa subtitle track (position-wise) selected hai aur
                 // subtitles on/off hain — position se yaad rakho, object-reference
