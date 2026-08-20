@@ -277,6 +277,29 @@ export default function Player() {
     window.AndroidPlayer?.setAdjacentEpisodes?.(!!nextEpisode, !!prevEpisode)
   }, [nextEpisode, prevEpisode])
 
+  // BUG FIX (user report: "480p select kiya, quality button 480p dikha raha
+  // hai, lekin niche title/filename abhi bhi 1080p wala hi dikha raha hai"):
+  // chhote (inline) native player ka apna khud ka quality-picker hai
+  // (dekho MainActivity.showInlineQualityDialog/switchInlineQuality) — yeh
+  // switch PURELY Kotlin-side hota hai, website (`active` state) ko iska
+  // kabhi pata hi nahi chalta tha. Isliye page ka poora UI jo `active` par
+  // depend karta hai — filename heading, download button ki quality,
+  // activeQualityObj — hamesha wahi PEHLI/original quality dikhata rehta
+  // tha, chahe native mein user ne kuch bhi genuinely select kiya ho.
+  // Fix: native ab ek switch ke baad `window.__suhaniOnNativeQualityChange(url)`
+  // call karta hai — yahan us URL ko `streams` mein dhoondh kar `active`
+  // (asli React state) ko bhi sync kar dete hain, taaki poora page turant
+  // sahi quality reflect kare.
+  useEffect(() => {
+    window.__suhaniOnNativeQualityChange = (url) => {
+      const match = (streams || []).find((s) => s.url === url)
+      if (match) switchQuality(match)
+    }
+    return () => {
+      delete window.__suhaniOnNativeQualityChange
+    }
+  }, [streams])
+
   // Download is per-quality — one entry per stream URL, so switching
   // quality and downloading again doesn't clash with an earlier download.
   // Bug fix: pehle yahan sirf `imdbId` (season/episode ke bina) use hota tha
