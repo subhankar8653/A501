@@ -322,7 +322,12 @@ class MainActivity : AppCompatActivity() {
             loadErrorView.visibility = View.GONE
             initialLoadingView.visibility = View.VISIBLE
             startLoadingLabelPulse()
+            // Retry ka matlab hai kuch pehle fail ho gaya tha — isliye yahan
+            // bhi cache bypass karke fresh fetch karte hain (same reasoning
+            // as the cold-start load below).
+            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             webView.reload()
+            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
         startLoadingLabelPulse()
 
@@ -398,7 +403,22 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else {
+            // BUG FIX (user report: "quality switch/downloads waghera website
+            // pe fix ho gaye lekin app mein wahi purana buggy behavior dikhta
+            // rehta hai"): WebView ka default cache mode (LOAD_DEFAULT) index.html
+            // aur JS bundle ko disk par cache kar leta hai — aur pull-to-refresh
+            // bhi upar disable kiya hua hai (scroll-intercept bug ki wajah se),
+            // isliye app ke paas purani cached copy se bahar nikalne ka koi
+            // raasta hi nahi tha jab tak poora app data clear na kiya jaaye.
+            // Har naya deploy (jaise yeh quality-switch/download fixes) tab tak
+            // app mein kabhi dikhta hi nahi. Fix: sirf is ek pehli/cold load
+            // par LOAD_NO_CACHE se force karo ki HTML shell + JS/CSS assets
+            // dobara network se hi aayein (bilkul browser ka hard-refresh jaisa),
+            // phir turant wapas LOAD_DEFAULT par set kar do taaki us load ke
+            // andar ki normal in-page navigation/scroll fast hi rahe.
+            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             webView.loadUrl(SITE_URL)
+            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
     }
 
