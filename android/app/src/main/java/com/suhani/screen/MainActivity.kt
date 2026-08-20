@@ -208,6 +208,26 @@ class MainActivity : AppCompatActivity() {
     private var inlineUri: String = ""
     private var inlineTitle: String = ""
     private var inlineQualitiesJson: String = "[]"
+    // ROOT-CAUSE BUG FIX (user report: "chhote/inline player mein quality
+    // change karo, sirf number/label badalta hai, actual video kabhi nahi
+    // badalta — chahe kitni baar try karo"): `mountInlinePlayer()` (neeche)
+    // reuse-path mein bhi UNCONDITIONALLY `inlineUri = uri` kar deta tha aur
+    // player ko wahi (React-side) URL se reset kar deta tha — chahe overlay
+    // pehle se hi zinda ho. Website (React) ko user ke native qualityButton
+    // se switch karne ka pata hi nahi chalta (yeh switch purely Kotlin-side
+    // hai), toh React ke paas hamesha wahi PURANA/original src hi save
+    // rehta hai. Jab bhi `mount()` bridge dobara call hoti (naya render,
+    // resize/rotate se re-run hone wala effect, waghera), yeh purana src
+    // dobara native ko bhej deta — aur mountInlinePlayer() use blindly load
+    // kar leta, turant ussi second manual quality switch ko silently
+    // overwrite karke wapas original par le aata. Isiliye switch "kabhi
+    // hua hi nahi" jaisa lagta. Fix: yaad rakho React ne AAKHRI baar kaunsa
+    // URI bheja tha — agar naya mount() call EXACT wahi URI hai (matlab
+    // genuinely duplicate/spurious call, koi naya episode nahi), to
+    // playback/inlineUri ko chhedo hi mat, sirf qualitiesJson refresh kar
+    // do. Sach mein NAYA episode aane par (React ka src badalne par) yeh
+    // hamesha alag hoga, isliye woh case normal reload hi karega.
+    private var lastReactRequestedUri: String = ""
     private var inlineHasNextEpisode = false
     private var inlineHasPrevEpisode = false
     private var inlinePrevButtonRef: ImageButton? = null
@@ -477,6 +497,18 @@ class MainActivity : AppCompatActivity() {
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
     fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
+        // Overlay pehle se zinda hai AUR React bilkul wahi URI dobara bhej raha
+        // hai jo pichli baar bheja tha — yeh ek spurious/duplicate mount() call
+        // hai (React ko native-side quality-switch ka pata nahi, isliye woh
+        // apna purana src hi baar-baar bhejta rehta), NAYA episode nahi. Isse
+        // playback ko bilkul mat chhedo — warna abhi-abhi kiya gaya manual
+        // quality switch turant overwrite ho jaayega.
+        if (inlineOverlay != null && uri == lastReactRequestedUri) {
+            inlineQualitiesJson = qualitiesJson
+            lastReactRequestedUri = uri
+            return
+        }
+        lastReactRequestedUri = uri
         inlineUri = uri
         inlineTitle = title
         inlineQualitiesJson = qualitiesJson
