@@ -21,8 +21,14 @@ export default function DownloadToast() {
   return (
     <button
       onClick={() => navigate('/downloads')}
-      className="fixed left-2 right-2 z-40 bg-reel-surface2 ring-1 ring-white/10 rounded-xl px-3 py-2 flex items-center gap-3 text-left shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] active:scale-[0.98] transition"
-      style={{ bottom: 'calc(64px + env(safe-area-inset-bottom))' }}
+      // BUG FIX (user report: "download wali notification footer ke niche
+      // chhup ja rahi hai"): yeh aur BottomNav dono same z-40 par the — jab
+      // dono same z-index share karte hain, DOM order tay karta hai kaun
+      // upar dikhega, aur BottomNav baad mein render hota hai isliye ussi ka
+      // paint upar (is toast ke upar) chala jaata tha jahan bhi thoda-bahut
+      // overlap hota. z-45 se ab yeh hamesha nav ke upar hi dikhega.
+      className="fixed left-2 right-2 z-50 bg-reel-surface2 ring-1 ring-white/10 rounded-xl px-3 py-2 flex items-center gap-3 text-left shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] active:scale-[0.98] transition"
+      style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
     >
       <span className="w-3.5 h-3.5 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin shrink-0" />
       <span className="min-w-0 flex-1">
