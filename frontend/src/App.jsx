@@ -37,8 +37,30 @@ function ChromeForRoute({ children }) {
       {!hideChrome && <Navbar />}
       {/* key={pathname} remounts on every route change, which is what
           drives the page-fade-in entrance below — a plain className alone
-          wouldn't replay since the div itself never actually unmounts. */}
-      <div key={pathname} className={`page-fade-in ${!hideChrome ? 'pb-20' : ''}`}>
+          wouldn't replay since the div itself never actually unmounts.
+
+          BUG FIX (user report: bottom sheets/modals — like the "Download
+          Season" quality picker — were getting clipped short and appearing
+          BEHIND the bottom nav bar instead of over it): `page-fade-in`'s
+          keyframes end on `transform: translateY(0)`, and thanks to
+          `animation-fill-mode: both` that computed transform value sticks
+          around on this div even after the 260ms animation finishes. Per the
+          CSS spec, ANY element with a transform value other than the literal
+          keyword `none` — yes, even a zero translateY — becomes the
+          containing block for its `position: fixed` descendants. So every
+          fixed-position bottom sheet/modal rendered inside a page (which all
+          live inside this div) was being positioned relative to THIS div's
+          box instead of the real viewport, clipping it short and letting the
+          separately-rendered BottomNav (a true sibling outside this div, so
+          unaffected) sit visually in front of/below it. `onAnimationEnd`
+          strips the class the instant the fade-in finishes, so the lingering
+          transform disappears and every fixed element goes back to being
+          viewport-relative like normal, exactly as on the website. */}
+      <div
+        key={pathname}
+        className={`page-fade-in ${!hideChrome ? 'pb-20' : ''}`}
+        onAnimationEnd={(e) => e.currentTarget.classList.remove('page-fade-in')}
+      >
         {children}
       </div>
       {!hideChrome && <DownloadToast />}
