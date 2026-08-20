@@ -55,6 +55,7 @@ import com.suhani.videoplayer.GesturePrefs
 import com.suhani.videoplayer.AmbientGlowView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Web frontend (VideoPlayer.jsx) isi bridge se video ko YouTube-jaisa chhote
@@ -498,13 +499,17 @@ class MainActivity : AppCompatActivity() {
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
     fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
-        // Overlay pehle se zinda hai AUR React bilkul wahi URI dobara bhej raha
-        // hai jo pichli baar bheja tha — yeh ek spurious/duplicate mount() call
-        // hai (React ko native-side quality-switch ka pata nahi, isliye woh
-        // apna purana src hi baar-baar bhejta rehta), NAYA episode nahi. Isse
-        // playback ko bilkul mat chhedo — warna abhi-abhi kiya gaya manual
-        // quality switch turant overwrite ho jaayega.
-        if (inlineOverlay != null && uri == lastReactRequestedUri) {
+        // Overlay pehle se zinda hai AUR React ya to (a) bilkul wahi URI dobara
+        // bhej raha hai jo pichli baar bheja tha (spurious/duplicate mount call —
+        // React ko native-side quality-switch pehle pata nahi chalta tha), YA (b)
+        // ab (window.__suhaniOnNativeQualityChange sync hone ke baad) genuinely
+        // wahi URL bhej raha hai jo native abhi already khud switch kar chuka hai
+        // (`inlineUri`) — dono cases mein yeh NAYA episode nahi hai, sirf
+        // bookkeeping/re-render hai. Isse playback ko bilkul mat chhedo — warna
+        // abhi-abhi kiya gaya manual quality switch turant overwrite/reload ho
+        // jaayega (dobara buffering/stutter dikhega, chahe end mein sahi hi
+        // quality par wapas aa jaaye).
+        if (inlineOverlay != null && (uri == lastReactRequestedUri || uri == inlineUri)) {
             inlineQualitiesJson = qualitiesJson
             lastReactRequestedUri = uri
             return
@@ -1069,6 +1074,20 @@ class MainActivity : AppCompatActivity() {
         player.prepare()
         player.seekTo(pos)
         player.playWhenReady = wasPlaying
+
+        // BUG FIX (user report: "quality button 480p dikha raha hai lekin niche
+        // title/filename abhi bhi 1080p wala hi hai"): pehle website ko is
+        // manual (Kotlin-only) switch ka bilkul pata hi nahi chalta tha, isliye
+        // `active` stream (aur usse judi har cheez — filename heading, download
+        // button quality) hamesha original/pehli quality par atki rehti thi.
+        // Ab yahan website ko turant bata dete hain — matching handler
+        // Player.jsx mein `window.__suhaniOnNativeQualityChange` hai, jo apna
+        // `active` state isi URL wale stream se sync kar leta hai.
+        val escapedUrl = JSONObject.quote(newUrl)
+        webView.evaluateJavascript(
+            "if (window.__suhaniOnNativeQualityChange) window.__suhaniOnNativeQualityChange($escapedUrl);",
+            null
+        )
     }
 
     /** Reference (YouTube) jaisa settings bottom-sheet — gear tap karne par khulta
