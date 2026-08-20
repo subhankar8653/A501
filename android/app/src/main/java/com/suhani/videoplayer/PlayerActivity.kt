@@ -5331,6 +5331,21 @@ class PlayerActivity : AppCompatActivity() {
     // `queue` ke current item ko bhi naye URL/label se turant update karte
     // hain, taaki koi bhi future rebuild bhi sahi (abhi-chuni-hui) quality
     // se hi ho, kabhi purani par wapas na jump kare.
+    //
+    // FOLLOW-UP BUG FIX (user report: quality switch ab genuinely ho raha
+    // hai, lekin (a) caption/title box mein generic "Video" dikhne laga, aur
+    // (b) embedded subtitle track switch ke baad gayab ho jaata hai):
+    // (a) — naya MediaItem sirf URI+mediaId se banta tha, purane item ki
+    //     MediaMetadata (title) kabhi copy nahi hoti thi.
+    // (b) — embedded subtitle selection `TrackSelectionOverride` object
+    //     specific `TrackGroup` INSTANCE ko reference karta hai (dekho
+    //     addEmbeddedSubtitleTrackList). Naya MediaItem prepare() hone par
+    //     bilkul NAYE TrackGroup objects banate hain (chahe content same ho),
+    //     isliye purana override silently invalid ho jaata — subtitle turant
+    //     select nahi rehta. Fix: switch se pehle "kaunsa subtitle track
+    //     (position se, group-object se nahi)" selected tha yaad rakho, phir
+    //     naye tracks ready hote hi (onTracksChanged) usi position wale
+    //     track par override dobara (naye TrackGroup object ke saath) laga do.
     private fun showQualityDialog() {
         if (availableQualities.size < 2) {
             showPlayerSnackbar("Is video ke liye aur koi quality available nahi hai")
@@ -5343,6 +5358,18 @@ class PlayerActivity : AppCompatActivity() {
                 val (label, url) = availableQualities[which]
                 val resumePos = player.currentPosition
                 val wasPlaying = player.isPlaying || player.playWhenReady
+                val previousMetadata = player.currentMediaItem?.mediaMetadata
+                    ?: MediaMetadata.Builder().setTitle(playerTitleText.text).build()
+
+                // Abhi kaunsa subtitle track (position-wise) selected hai aur
+                // subtitles on/off hain — position se yaad rakho, object-reference
+                // se nahi (naye tracks mein wahi object exist hi nahi karega).
+                val subGroupsBefore = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                val subRefsBefore = mutableListOf<Pair<androidx.media3.common.Tracks.Group, Int>>()
+                subGroupsBefore.forEach { g -> for (i in 0 until g.length) subRefsBefore.add(g to i) }
+                val selectedSubPosition = subRefsBefore.indexOfFirst { (g, i) -> g.isTrackSelected(i) }
+                val subtitlesWereDisabled = player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+
                 val idx = player.currentMediaItemIndex
                 if (idx in queue.indices) {
                     // `queue` ka compile-time type `List<VideoItem>` hai (index-set
@@ -5356,10 +5383,37 @@ class PlayerActivity : AppCompatActivity() {
                 val item = MediaItem.Builder()
                     .setUri(Uri.parse(url))
                     .setMediaId(url)
+                    .setMediaMetadata(previousMetadata)
                     .build()
                 player.setMediaItem(item, resumePos)
                 player.prepare()
                 player.playWhenReady = wasPlaying
+
+                // Naye tracks ready hone ka intezaar karke (pehla onTracksChanged
+                // jisme koi text group mile) usi POSITION wala subtitle track wapas
+                // select karo — fir yeh listener khud ko hata leta hai (ek baar hi
+                // chalna hai, har future track-change par nahi).
+                if (selectedSubPosition >= 0 && !subtitlesWereDisabled) {
+                    val reapplyListener = object : Player.Listener {
+                        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                            val newSubGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                            if (newSubGroups.isEmpty()) return
+                            val newRefs = mutableListOf<Pair<androidx.media3.common.Tracks.Group, Int>>()
+                            newSubGroups.forEach { g -> for (i in 0 until g.length) newRefs.add(g to i) }
+                            val target = newRefs.getOrNull(selectedSubPosition)
+                            if (target != null) {
+                                val (group, trackIdx) = target
+                                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIdx))
+                                    .build()
+                            }
+                            player.removeListener(this)
+                        }
+                    }
+                    player.addListener(reapplyListener)
+                }
+
                 showPlayerSnackbar("Quality: $label")
             }
             .setNegativeButton("Cancel", null)
