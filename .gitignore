@@ -1,0 +1,3 @@
+# Frontend build gets copied here fresh by CI (.github/workflows/build-apk.yml)
+# before every APK build — don't commit the generated output.
+android/app/src/main/assets/
