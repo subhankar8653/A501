@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useDownloadsList } from '../lib/downloadsStore'
+import { useOnlineStatus } from '../lib/connectivity'
 
 const TABS = [
   {
@@ -44,39 +46,81 @@ const TABS = [
   },
 ]
 
+// Small icon shown on the Home tab in place of the house icon while
+// offline, so it visually reads as "locked" rather than just another tab.
+function LockIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="10" width="16" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
 export default function BottomNav() {
   const downloads = useDownloadsList()
+  const isOnline = useOnlineStatus()
   const activeCount = downloads.filter((d) => d.status === 'downloading').length
+  // FEATURE (user ask: Home tab "lock" ho jaana chahiye jab offline ho, aur
+  // "internet on karo" bolna chahiye) — tapping the locked Home tab doesn't
+  // navigate, it just flashes this message for a couple seconds.
+  const [showOfflineHint, setShowOfflineHint] = useState(false)
+
+  function handleHomeTap(e) {
+    if (isOnline) return
+    e.preventDefault()
+    setShowOfflineHint(true)
+    setTimeout(() => setShowOfflineHint(false), 2200)
+  }
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 bg-reel-surface border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]">
+      {showOfflineHint ? (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full bg-reel-surface2 ring-1 ring-reel-gold/25 text-xs text-reel-ink whitespace-nowrap shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] page-fade-in"
+        >
+          Internet on karo, Home dekhne ke liye
+        </div>
+      ) : null}
       <div className="max-w-6xl mx-auto grid grid-cols-4 px-2 py-1.5">
-        {TABS.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            end={tab.to === '/'}
-            className="relative flex justify-center py-1"
-          >
-            {({ isActive }) => (
-              <span
-                className={`relative flex flex-col items-center justify-center gap-0.5 w-full py-1.5 rounded-2xl text-[10.5px] font-semibold tracking-wide active:scale-95 transition-all duration-200 ${
-                  isActive
-                    ? 'bg-gradient-to-b from-[#F3C067]/15 to-reel-gold/10 text-reel-gold ring-1 ring-reel-gold/25'
-                    : 'text-reel-muted hover:text-reel-ink'
-                }`}
-              >
-                {tab.icon(isActive)}
-                {tab.label}
-                {tab.to === '/downloads' && activeCount > 0 ? (
-                  <span className="absolute top-0.5 right-[22%] w-4 h-4 rounded-full bg-reel-gold text-reel-bg text-[9px] font-bold flex items-center justify-center shadow-[0_2px_6px_-1px_rgba(232,163,61,0.7)]">
-                    {activeCount}
-                  </span>
-                ) : null}
-              </span>
-            )}
-          </NavLink>
-        ))}
+        {TABS.map((tab) => {
+          const isHome = tab.to === '/'
+          const locked = isHome && !isOnline
+          return (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={isHome}
+              onClick={isHome ? handleHomeTap : undefined}
+              aria-disabled={locked}
+              className="relative flex justify-center py-1"
+            >
+              {({ isActive }) => (
+                <span
+                  className={`relative flex flex-col items-center justify-center gap-0.5 w-full py-1.5 rounded-2xl text-[10.5px] font-semibold tracking-wide transition-all duration-200 ${
+                    locked
+                      ? 'text-reel-muted/50 active:scale-95'
+                      : 'active:scale-95'
+                  } ${
+                    isActive && !locked
+                      ? 'bg-gradient-to-b from-[#F3C067]/15 to-reel-gold/10 text-reel-gold ring-1 ring-reel-gold/25'
+                      : !locked
+                      ? 'text-reel-muted hover:text-reel-ink'
+                      : ''
+                  }`}
+                >
+                  {locked ? <LockIcon /> : tab.icon(isActive)}
+                  {tab.label}
+                  {tab.to === '/downloads' && activeCount > 0 ? (
+                    <span className="absolute top-0.5 right-[22%] w-4 h-4 rounded-full bg-reel-gold text-reel-bg text-[9px] font-bold flex items-center justify-center shadow-[0_2px_6px_-1px_rgba(232,163,61,0.7)]">
+                      {activeCount}
+                    </span>
+                  ) : null}
+                </span>
+              )}
+            </NavLink>
+          )
+        })}
       </div>
     </nav>
   )

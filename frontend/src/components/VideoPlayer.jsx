@@ -241,7 +241,22 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      // BUG FIX (black screen after navigating away mid-video — e.g. hitting
+      // Home right after watching an offline download): if this player's own
+      // container was the browser's real Fullscreen-API element and the user
+      // navigates (SPA route change) instead of tapping the fullscreen-exit
+      // button, this div gets unmounted while still "the" fullscreen element.
+      // WebView/Chromium can be left compositing a black fullscreen layer
+      // with nothing in it until something explicitly exits — no fullscreen
+      // button exists anymore once we're unmounted, so it would otherwise
+      // stay stuck black. Exiting here, on unmount, guarantees it's always
+      // cleared no matter how the player leaves the screen.
+      if (document.fullscreenElement === containerRef.current) {
+        document.exitFullscreen?.().catch(() => {})
+      }
+    }
   }, [])
 
   function togglePlay() {
