@@ -101,6 +101,34 @@ export function cleanupStaleDownloads() {
   if (changed) writeMeta(list)
 }
 
+// ROOT CAUSE FIX (user ask: "offline video player simple hai, online jaisa
+// poora-feature player chahiye"): jab app ke andar (native shell) chal rahe hain,
+// download ab yahan JS mein fetch+IndexedDB Blob ki jagah native side
+// (window.AndroidDownloader — asli file, disk par) se hota hai. Isse playback
+// ke waqt ek real `content://` URI milta hai jo `window.AndroidPlayer` (rich
+// native player — equalizer/cast/decoder-select/PiP) seedha mount kar sakta
+// hai, bilkul online stream jaisa hi — `blob:` URL (jo native player kabhi
+// mount nahi kar sakta) is path mein aata hi nahi. Plain browser (bina app ke)
+// mein yeh bridge exist nahi karta, isliye wahan neeche wala fetch/IndexedDB
+// path hi chalta hai — koi behavior change nahi.
+function hasNativeDownloader() {
+  return !!(window.AndroidDownloader && typeof window.AndroidDownloader.startDownload === 'function')
+}
+
+if (typeof window !== 'undefined') {
+  // Native side (WebDownloadInterface/NativeDownloadManager) inhi teenon global
+  // callbacks ke through progress/completion/error wapas bhejta hai.
+  window.__nativeDownloadProgress = (id, progressPct, sizeBytes) => {
+    upsert({ id, progress: progressPct, sizeBytes })
+  }
+  window.__nativeDownloadDone = (id, contentUri) => {
+    upsert({ id, status: 'done', progress: 100, nativeUri: contentUri })
+  }
+  window.__nativeDownloadError = (id) => {
+    upsert({ id, status: 'error', progress: 0 })
+  }
+}
+
 const activeControllers = new Map() // id -> AbortController
 
 export function downloadId(type, titleId, qualityLabel) {
@@ -116,9 +144,6 @@ export async function startDownload(url, meta) {
   const id = downloadId(meta.type, meta.titleId, meta.qualityLabel)
   const existing = getDownloadEntry(id)
   if (existing && (existing.status === 'downloading' || existing.status === 'done')) return id
-
-  const controller = new AbortController()
-  activeControllers.set(id, controller)
 
   upsert({
     id,
@@ -140,6 +165,16 @@ export async function startDownload(url, meta) {
     sizeBytes: 0,
     addedAt: Date.now(),
   })
+
+  if (hasNativeDownloader()) {
+    // Fire-and-forget: native side downloads to a real file and reports back
+    // via window.__nativeDownload{Progress,Done,Error} (registered above).
+    window.AndroidDownloader.startDownload(id, url)
+    return id
+  }
+
+  const controller = new AbortController()
+  activeControllers.set(id, controller)
 
   try {
     const res = await fetch(url, { signal: controller.signal })
@@ -178,6 +213,7 @@ export async function startDownload(url, meta) {
 export function cancelDownload(id) {
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
+  if (hasNativeDownloader()) window.AndroidDownloader.cancelDownload(id)
   writeMeta(readMeta().filter((d) => d.id !== id))
   idbDelete(id).catch(() => {})
 }
@@ -185,14 +221,30 @@ export function cancelDownload(id) {
 export async function deleteDownload(id) {
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
+  if (hasNativeDownloader()) window.AndroidDownloader.deleteDownload(id)
   writeMeta(readMeta().filter((d) => d.id !== id))
   await idbDelete(id).catch(() => {})
 }
 
-// Resolves a playable blob: URL for a completed download. Caller owns
-// revoking it (or just let it get GC'd on navigation — these are small
-// single-use object URLs).
-export async function getDownloadBlobUrl(id) {
+// Resolves a playable source for a completed download.
+// - Native app: a real `content://` URI (see NativeDownloadManager) — this is
+//   what lets VideoPlayer.jsx's native-bridge detection kick in, so offline
+//   downloads get the exact same rich player (equalizer/cast/decoder-select/
+//   PiP) as online streams, not the plain web <video> fallback.
+// - Plain browser (no app): falls back to a `blob:` URL from IndexedDB, same
+//   as before — caller owns revoking it (or just let it get GC'd on
+//   navigation, these are small single-use object URLs).
+export async function getDownloadPlaybackSrc(id) {
+  const entry = getDownloadEntry(id)
+  if (entry?.nativeUri) {
+    // App restart ke baad bhi file abhi disk par hai ya nahi, confirm kar lo.
+    if (hasNativeDownloader()) {
+      const uri = window.AndroidDownloader.getDownloadUri(id)
+      if (uri) return uri
+    } else {
+      return entry.nativeUri
+    }
+  }
   const blob = await idbGet(id)
   if (!blob) return null
   return URL.createObjectURL(blob)
