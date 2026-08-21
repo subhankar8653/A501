@@ -8,6 +8,7 @@ import {
   groupDownloads,
 } from '../lib/downloadsStore'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
+import VideoPlayer from '../components/VideoPlayer'
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -16,6 +17,13 @@ function formatSize(bytes) {
   return `${(mb / 1024).toFixed(2)} GB`
 }
 
+// Uses the exact same VideoPlayer component as online playback (custom
+// gestures, skip, speed, PiP, fullscreen — same "structure" as the Player
+// page) instead of a bare <video> tag. That bare tag was the actual cause
+// of the black screen: it was missing `playsInline`, which made Android
+// WebView try to hand it off to a native fullscreen surface our app never
+// wired up for generic HTML5 video — see the comment above isBlobSrc() in
+// VideoPlayer.jsx for the full root-cause writeup.
 function OfflinePlayer({ entry, onClose }) {
   const [url, setUrl] = useState(null)
   const [err, setErr] = useState(false)
@@ -39,23 +47,30 @@ function OfflinePlayer({ entry, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <p className="text-reel-ink text-sm truncate pr-3">{entry.filename}</p>
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="w-9 h-9 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-ink active:scale-90 shrink-0"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
-      </div>
-      <div className="flex-1 flex items-center justify-center px-2">
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute top-3 right-3 z-[85] w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center text-reel-ink active:scale-90 transition"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+      <div className="flex-1 min-h-0">
         {err ? (
-          <p className="text-reel-muted text-sm px-6 text-center">Yeh download offline play nahi ho paa raha.</p>
+          <div className="w-full h-full flex items-center justify-center px-6">
+            <p className="text-reel-muted text-sm text-center">Yeh download offline play nahi ho paa raha.</p>
+          </div>
         ) : url ? (
-          <video src={url} controls autoPlay className="w-full max-h-full" />
+          <VideoPlayer
+            key={url}
+            src={url}
+            title={entry.filename}
+            onEnded={onClose}
+            onFatalError={() => setErr(true)}
+          />
         ) : (
-          <span className="w-8 h-8 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="w-8 h-8 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+          </div>
         )}
       </div>
     </div>
