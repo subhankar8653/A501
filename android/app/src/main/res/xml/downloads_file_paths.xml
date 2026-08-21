@@ -1,1 +1,11 @@
-
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Offline downloads yahin (app-private internal storage ke andar
+  "native_downloads/" folder) save hote hain — dekho NativeDownloadManager.kt.
+  FileProvider isi folder ko content:// URI ke through window.AndroidPlayer
+  (native ExoPlayer bridge) ko expose karta hai, taaki offline playback bhi
+  online jaisa hi rich native player istemal kare.
+-->
+<paths>
+    <files-path name="native_downloads" path="native_downloads/" />
+</paths>
