@@ -230,6 +230,30 @@ class MainActivity : AppCompatActivity() {
     // do. Sach mein NAYA episode aane par (React ka src badalne par) yeh
     // hamesha alag hoga, isliye woh case normal reload hi karega.
     private var lastReactRequestedUri: String = ""
+    // ROOT-CAUSE BUG FIX (user report: "chhote player mein quality change karne ke
+    // baad video/caption update nahi hote — website par sahi kaam karta hai, app
+    // mein nahi"): asli wajah in dono fixes (upar wala aur switchInlineQuality())
+    // ke BAAWJOOD bhi bug bane rehne ki — switchInlineQuality() end mein React ko
+    // `window.__suhaniOnNativeQualityChange(newUrl)` se sync karta hai (dekho neeche),
+    // aur Player.jsx us URL se apna `active` state update karta hai. Lekin VideoPlayer
+    // ko `key={active.url}` diya gaya hai (React-side, taaki normal/website quality-
+    // switch par instance fresh reset ho) — matlab `active` badalte hi poora
+    // VideoPlayer COMPONENT hi unmount+remount ho jaata hai, chahe switch kahin se
+    // bhi (native ho ya web) trigger hua ho. Iska side-effect: unmount hote hi
+    // `window.AndroidPlayer.unmount()` call hoti hai (`unmountInlinePlayer()` — pause
+    // + overlay fade-hide), phir turant remount par `window.AndroidPlayer.mount()`
+    // (same, ab-switched URL ke saath) — lekin `mountInlinePlayer()` ka upar wala
+    // "duplicate URI" guard isko spurious samajh kar SEEDHA return kar deta hai
+    // (bilkul sahi, kyunki genuinely koi naya video nahi hai) — magar isse pehle wale
+    // unmount() ka pause+hide kabhi undo nahi hota! Result: overlay GONE reh jaata
+    // hai aur player paused reh jaata hai — user ko lagta hai "kuch nahi hua/atak
+    // gaya", jabki neeche chhupa hua plain HTML5 <video> (jo embedded MKV subtitle
+    // tracks decode hi nahi kar sakta — isliye caption bhi gayab) hi ab dikh raha
+    // hota hai. Fix: switchInlineQuality() JS ko sync karne se THEEK PEHLE is flag ko
+    // set karta hai; unmountInlinePlayer() ise dekh kar is EK spurious call ko
+    // completely ignore kar deta hai (na pause, na hide) — genuine "page chhodo"
+    // unmount (jahan yeh flag false hi hoga) pehle jaisa hi normal kaam karta hai.
+    private var suppressNextInlineUnmount = false
     private var inlineHasNextEpisode = false
     private var inlineHasPrevEpisode = false
     private var inlinePrevButtonRef: ImageButton? = null
@@ -1083,6 +1107,11 @@ class MainActivity : AppCompatActivity() {
         // Ab yahan website ko turant bata dete hain — matching handler
         // Player.jsx mein `window.__suhaniOnNativeQualityChange` hai, jo apna
         // `active` state isi URL wale stream se sync kar leta hai.
+        // Is JS call ke jawab mein React `active` badal kar VideoPlayer ko
+        // key={active.url} se remount karega, jo turant ek spurious
+        // unmount()+mount() round-trip bhejega — usse pehle flag laga do
+        // (dekho `suppressNextInlineUnmount` ka comment).
+        suppressNextInlineUnmount = true
         val escapedUrl = JSONObject.quote(newUrl)
         webView.evaluateJavascript(
             "if (window.__suhaniOnNativeQualityChange) window.__suhaniOnNativeQualityChange($escapedUrl);",
@@ -1315,6 +1344,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun unmountInlinePlayer() {
+        // Dekho `suppressNextInlineUnmount` ki declaration ke paas ka comment —
+        // yeh call genuinely "page/video chhodi" ki wajah se nahi, balki humaari
+        // apni switchInlineQuality() ki React-sync se aayi ek spurious round-trip
+        // hai. Ignore karo — playback jaisi hai waisi hi rehne do, overlay bhi
+        // visible rehne do; is ke turant baad aane wala mount() call bhi khud hi
+        // no-op ho jaayega (same URI guard).
+        if (suppressNextInlineUnmount) {
+            suppressNextInlineUnmount = false
+            return
+        }
         inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
         saveInlineWatchProgress()
         inlinePlayer?.pause()
