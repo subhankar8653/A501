@@ -62,6 +62,10 @@ dependencies {
     // --- A501 (WebView shell) ke original deps ---
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
+    // WebViewAssetLoader — app-shell (HTML/JS/CSS) ko APK ke andar bundled
+    // assets se serve karne ke liye, taaki app bina kisi internet ke bhi
+    // khule (koi live URL fetch nahi karta ab shell load ke liye).
+    implementation "androidx.webkit:webkit:1.12.1"
 
     // --- Sisisisi video player ke deps ---
     implementation 'androidx.core:core-ktx:1.12.0'
