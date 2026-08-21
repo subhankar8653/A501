@@ -91,19 +91,30 @@ import org.json.JSONObject
  * - qualitiesJson = website ke jaisa hi quality list: '[{"url":"...","label":"480p"},...]'
  */
 class WebAppInterface(private val activity: MainActivity) {
+    // Crash fix: WebView JS-thread se yeh @JavascriptInterface calls activity ke
+    // finish()/destroy ho chuke hone ke baad bhi aa sakti hain (WebView apni JS
+    // thread par chalta rehta hai jab tak destroy() poora na ho). Us case mein
+    // runOnUiThread post to safe hai, lekin andar mountInlinePlayer() jaisa view
+    // inflate/attach karne wala kaam ek dead window par crash karta — isliye
+    // isFinishing/isDestroyed check karke silently drop karte hain.
+    private inline fun runOnUiThreadSafely(crossinline action: () -> Unit) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        activity.runOnUiThread { if (!activity.isFinishing && !activity.isDestroyed) action() }
+    }
+
     @JavascriptInterface
     fun mount(uri: String, title: String, qualitiesJson: String) {
-        activity.runOnUiThread { activity.mountInlinePlayer(uri, title, qualitiesJson) }
+        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson) }
     }
 
     @JavascriptInterface
     fun updateRect(left: Double, top: Double, width: Double, height: Double) {
-        activity.runOnUiThread { activity.updateInlinePlayerRect(left, top, width, height) }
+        runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height) }
     }
 
     @JavascriptInterface
     fun unmount() {
-        activity.runOnUiThread { activity.unmountInlinePlayer() }
+        runOnUiThreadSafely { activity.unmountInlinePlayer() }
     }
 
     // Web page (Player.jsx) yeh call karta hai jab bhi pata chale ki agla/pichla
@@ -114,7 +125,7 @@ class WebAppInterface(private val activity: MainActivity) {
     // (isliye title/Up-Next-list/comments waghera bhi sync rehte hain).
     @JavascriptInterface
     fun setAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
-        activity.runOnUiThread { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
+        runOnUiThreadSafely { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
     }
 
 }
@@ -143,13 +154,19 @@ class WebDownloadInterface(private val activity: MainActivity) {
             id = id,
             url = url,
             onProgress = { pct, bytes ->
-                activity.runOnUiThread { activity.notifyDownloadProgress(id, pct, bytes) }
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    activity.runOnUiThread { activity.notifyDownloadProgress(id, pct, bytes) }
+                }
             },
             onDone = { contentUri ->
-                activity.runOnUiThread { activity.notifyDownloadDone(id, contentUri) }
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    activity.runOnUiThread { activity.notifyDownloadDone(id, contentUri) }
+                }
             },
             onError = { message ->
-                activity.runOnUiThread { activity.notifyDownloadError(id, message) }
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    activity.runOnUiThread { activity.notifyDownloadError(id, message) }
+                }
             },
         )
     }
@@ -1205,7 +1222,14 @@ class MainActivity : AppCompatActivity() {
     // events ko web frontend (downloadsStore.js) ke registered callbacks tak pahunchate
     // hain. Optional-chaining (`?.`) isliye taaki agar web page abhi tak load hi na hui
     // ho (ya reload ho rahi ho) to evaluateJavascript silently no-op ho, crash na kare.
+    // Crash fix: NativeDownloadManager download background thread par independently
+    // chalta hai — user download shuru karke app band/finish() kar sakta hai us se
+    // pehle hi download poora ho jaaye. onDestroy() mein webView.destroy() ho chuka
+    // hota hai, aur ek destroyed WebView par evaluateJavascript() call karne se
+    // crash ("WebView is destroyed"/IllegalStateException) hota — isliye ab yahan
+    // isFinishing/isDestroyed check karke us callback ko silently drop kar dete hain.
     fun notifyDownloadProgress(id: String, progressPct: Int, sizeBytes: Long) {
+        if (isFinishing || isDestroyed) return
         val idLit = JSONObject.quote(id)
         webView.evaluateJavascript(
             "window.__nativeDownloadProgress?.($idLit, $progressPct, $sizeBytes)", null
@@ -1213,6 +1237,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun notifyDownloadDone(id: String, contentUri: String) {
+        if (isFinishing || isDestroyed) return
         val idLit = JSONObject.quote(id)
         val uriLit = JSONObject.quote(contentUri)
         webView.evaluateJavascript(
@@ -1221,6 +1246,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun notifyDownloadError(id: String, message: String) {
+        if (isFinishing || isDestroyed) return
         val idLit = JSONObject.quote(id)
         val msgLit = JSONObject.quote(message)
         webView.evaluateJavascript(
