@@ -7153,10 +7153,28 @@ class PlayerActivity : AppCompatActivity() {
             // Foreground service start karo taaki Android process ko background
             // me kill/suspend na kare — isi ke bina pehle sirf thodi der audio
             // chalta tha ya screen off hote hi ruk jaata tha.
-            val title = player.currentMediaItem?.mediaMetadata?.title?.toString()
-                ?: queue.getOrNull(player.currentMediaItemIndex)?.title
-                ?: "Video"
-            BackgroundPlaybackService.start(this, title)
+            //
+            // CRASH FIX (PiP mein jaate hi app crash): yeh call pehle bina
+            // try/catch ke thi. Android 12+ par agar is exact PiP-transition
+            // ke moment par system ko lagta hai ki app abhi "visible/foreground"
+            // exemption ke liye eligible nahi hai (background-service-start
+            // restriction), to `startForegroundService()`/`startForeground()`
+            // seedha `ForegroundServiceStartNotAllowedException` (ya kuch OEMs
+            // par `SecurityException`/`IllegalStateException`) throw karta hai —
+            // yeh crash sabse zyada online/streaming videos par dikhta hai kyunki
+            // wahan buffering/network state changes ke saath extra onPause()/
+            // onResume() cycles chalte hain, jisse timing-sensitive is restriction
+            // ke andar aane ke chances badh jaate hain. Ab isse pakad kar ignore
+            // karte hain — worst case sirf itna hota hai ki background-kill-
+            // protection is baar nahi milti (jo crash se kahin behtar hai), PiP
+            // window aur playback khud unaffected rehte hain.
+            try {
+                val title = player.currentMediaItem?.mediaMetadata?.title?.toString()
+                    ?: queue.getOrNull(player.currentMediaItemIndex)?.title
+                    ?: "Video"
+                BackgroundPlaybackService.start(this, title)
+            } catch (_: Exception) {
+            }
         }
     }
 
