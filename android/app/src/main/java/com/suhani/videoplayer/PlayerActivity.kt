@@ -2754,6 +2754,18 @@ class PlayerActivity : AppCompatActivity() {
      * Bug fix: pehle ye button sirf "coming soon" bolta tha, kuch karta nahi tha.
      */
     private fun showOnlineSubtitleSearch() {
+        // User ask: offline mein wahi rich player chahiye, bas jo feature internet
+        // maange woh gracefully off ho — yeh ek aisa hi feature hai (OpenSubtitles.com
+        // ko live query karta hai), isliye seedha yahin clear message ke saath rok do
+        // (naya "Searching..." dialog dikha kar phir timeout par fail hone se behtar).
+        if (!NetworkStatus.isAvailable(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("Online subtitles")
+                .setMessage("Iske liye internet connection chahiye. Downloaded subtitle file already ho to \"Load subtitle file\" se load kar sakte hain.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
         if (!OpenSubtitlesClient.isConfigured()) {
             AlertDialog.Builder(this)
                 .setTitle("Online subtitles")
@@ -5534,6 +5546,9 @@ class PlayerActivity : AppCompatActivity() {
         if (autoSubtitleAttemptedForCurrentItem) return
         if (!GesturePrefs.isAutoSubtitleEnabled(this)) return
         if (!OpenSubtitlesClient.isConfigured()) return
+        // Offline (jaise ek downloaded video dekhte waqt) yeh feature chup-chaap
+        // skip ho jaana chahiye, na ki background mein retry/timeout karta rahe.
+        if (!NetworkStatus.isAvailable(this)) return
         if (subtitleLoaded) return
         if (!::player.isInitialized) return
         val hasEmbeddedText = player.currentTracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
