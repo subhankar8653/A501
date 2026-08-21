@@ -7,12 +7,16 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Huka Tube</title>
     <meta name="description" content="Your Telegram library, on the big screen." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- BUG FIX (offline black-screen): Google Fonts yahan pehle ek external
+         (fonts.googleapis.com) <link> se load hoti thi. Yeh koi bhi bundler
+         inline nahi kar sakta (cross-origin), isliye offline pe yeh hamesha
+         fail hoti — aur Android WebView APK build mein ab poori index.html
+         hi Kotlin se ek single self-contained string ke roop mein liya jaata
+         hai (dekho vite.config.js + MainActivity.kt), isliye is fail hoti
+         request ko waise hi rehne dena risky tha. Ab display/body font
+         seedha tailwind.config.js ke fallback stack (serif / sans-serif) par
+         chalte hain — koi network dependency nahi, offline 100% reliable. -->
+    
   </head>
   <body class="bg-reel-bg text-reel-ink font-body">
     <div id="root"></div>
