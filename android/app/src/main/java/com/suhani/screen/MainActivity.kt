@@ -3,6 +3,8 @@ package com.suhani.screen
 import android.content.Intent
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +17,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
@@ -130,6 +135,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var initialLoadingView: View
     private lateinit var loadErrorView: View
+    private lateinit var loadErrorTitle: TextView
+    private lateinit var loadErrorMessage: TextView
     private var hasLoadedOnce = false
     // Premium polish: loading label ab static 0.6-alpha text nahi, halka
     // "breathing" pulse leta hai (0.4 <-> 0.85 alpha loop) jab tak page load
@@ -356,6 +363,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // BUG FIX (user report + screenshot: app offline reopen par WebView's own
+    // generic "Webpage not available / net::ERR_INTERNET_DISCONNECTED" page
+    // dikhata tha, hamara branded loadErrorView kabhi nahi dikhta tha).
+    // Root cause: WebViewClient.onReceivedError(view, errorCode, description,
+    // failingUrl) — jo neeche override kiya hua tha — woh 4-argument overload
+    // hai jo API 23 mein hi deprecate ho gaya tha. Is app ka minSdk 24 hai,
+    // isliye HAR real device par (koi bhi API 23 se neeche nahi chalta) woh
+    // purana overload cabhi call hi nahi hota — sirf naya
+    // onReceivedError(view, WebResourceRequest, WebResourceError) overload
+    // call hota hai (dekho neeche). Us naye overload ko kabhi override hi
+    // nahi kiya gaya tha, isliye default WebViewClient behavior chalta
+    // raha — jo khud Chromium ka apna built-in "Webpage not available"
+    // interstitial WebView ke andar load kar deta hai. Humara custom
+    // loadErrorView isliye kabhi dikh hi nahi paata tha, chahe uska code
+    // sahi tha.
+    private fun isDeviceOnline(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    // Cold-start/retry cache mode: jab tak internet hai, LOAD_NO_CACHE se
+    // hamesha fresh shell/JS bundle mangwate hain (taaki naye deploy turant
+    // dikhein). Jab internet na ho, LOAD_CACHE_ELSE_NETWORK se jo bhi
+    // WebView ke apne HTTP cache mein pehle se ho use turant serve karo —
+    // isse purani cached copy hi sahi, offline bhi app khulta hai (blank/
+    // error screen ke bajaye). Frontend ka apna Service Worker
+    // (public/sw.js) is se aage jaakar poori app-shell + har route ko
+    // reliably cache/serve karta hai — yeh sirf ek extra safety net hai
+    // agar SW abhi register/activate nahi hua ho.
+    private fun offlineAwareCacheMode(): Int =
+        if (isDeviceOnline()) android.webkit.WebSettings.LOAD_NO_CACHE
+        else android.webkit.WebSettings.LOAD_CACHE_ELSE_NETWORK
+
+    // loadErrorView ka title+message device ki asli connectivity ke hisaab
+    // se set karta hai — "No internet connection" (device hi offline hai)
+    // vs "Server crashed" (internet hai lekin backend/hosting down hai,
+    // jaise Railway crash) — English mein, jaisa user ne bola tha.
+    private fun showLoadError() {
+        initialLoadingView.visibility = View.GONE
+        if (isDeviceOnline()) {
+            loadErrorTitle.text = "Server crashed"
+            loadErrorMessage.text = "Our server is temporarily down. Please wait a bit and try again."
+        } else {
+            loadErrorTitle.text = "No internet connection"
+            loadErrorMessage.text = "Please check your connection and try again."
+        }
+        loadErrorView.visibility = View.VISIBLE
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -364,14 +423,17 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipe_refresh)
         initialLoadingView = findViewById(R.id.initialLoadingView)
         loadErrorView = findViewById(R.id.loadErrorView)
+        loadErrorTitle = findViewById(R.id.loadErrorTitle)
+        loadErrorMessage = findViewById(R.id.loadErrorMessage)
         findViewById<View>(R.id.loadErrorRetryButton).setOnClickListener {
             loadErrorView.visibility = View.GONE
             initialLoadingView.visibility = View.VISIBLE
             startLoadingLabelPulse()
-            // Retry ka matlab hai kuch pehle fail ho gaya tha — isliye yahan
-            // bhi cache bypass karke fresh fetch karte hain (same reasoning
-            // as the cold-start load below).
-            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            // Retry ka matlab hai kuch pehle fail ho gaya tha — agar ab bhi
+            // offline hain to cache-fallback try karo (bilkul cold-start
+            // jaisa), warna online hone par fresh fetch karo.
+            val mode = offlineAwareCacheMode()
+            webView.settings.cacheMode = mode
             webView.reload()
             webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
@@ -418,16 +480,37 @@ class MainActivity : AppCompatActivity() {
                 fadeOutLoadingView()
             }
 
-            override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
-                super.onReceivedError(view, errorCode, description, failingUrl)
+            // Naya overload (WebResourceRequest/WebResourceError) — yehi hai jo
+            // API 24+ (yaani is app ke minSdk se upar har device) par main-frame
+            // network errors (DNS fail, connection refused, offline, timeout) ke
+            // liye asal mein call hota hai. Purana 4-arg onReceivedError overload
+            // (jo pehle yahan tha) API 23 mein deprecate ho chuka tha aur modern
+            // devices par kabhi trigger hi nahi hota — isi wajah se pehle branded
+            // error screen ki jagah WebView ka apna default "Webpage not
+            // available" interstitial dikhta tha (screenshot wahi tha).
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame != true) return // sub-resource (image/analytics) failure, page ko na todo
                 swipeRefresh.isRefreshing = false
-                // Pull-to-refresh se aaya error chhota/silent rehne dete hain (user
-                // already jaanta hai wo kya kar raha hai) — sirf pehli/cold load
-                // fail hone par poori-screen branded error+retry dikhate hain.
-                if (!hasLoadedOnce) {
-                    initialLoadingView.visibility = View.GONE
-                    loadErrorView.visibility = View.VISIBLE
-                }
+                if (!hasLoadedOnce) showLoadError()
+            }
+
+            // HTTP-level failures (backend crash → Vercel/Railway 5xx, gateway
+            // timeout waghera) onReceivedError se nahi, isse aate hain — pehle
+            // yeh bhi handle hi nahi hota tha, to server-down case mein bhi
+            // WebView blank/default page dikhata tha.
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                if (request?.isForMainFrame != true) return
+                if (!hasLoadedOnce) showLoadError()
             }
         }
         webView.webChromeClient = WebChromeClient()
@@ -462,7 +545,17 @@ class MainActivity : AppCompatActivity() {
             // dobara network se hi aayein (bilkul browser ka hard-refresh jaisa),
             // phir turant wapas LOAD_DEFAULT par set kar do taaki us load ke
             // andar ki normal in-page navigation/scroll fast hi rahe.
-            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            //
+            // BUG FIX #2 (offline reopen): upar wali LOAD_NO_CACHE hamesha force
+            // hoti thi, chahe device offline hi kyun na ho — matlab jab bhi app
+            // poori tarah band karke offline dobara khola jaata tha, yeh line khud
+            // hi cache ko ignore karke seedha network try karti thi aur fail ho
+            // jaati thi. Ab offlineAwareCacheMode() sirf online hone par hi
+            // LOAD_NO_CACHE karta hai; offline hone par LOAD_CACHE_ELSE_NETWORK
+            // se WebView ke apne HTTP cache se pehle se load ho chuki shell serve
+            // ho jaati hai. (Frontend ka Service Worker — public/sw.js — ab isse
+            // bhi zyada reliably yehi kaam karta hai; yeh sirf ek extra fallback hai.)
+            webView.settings.cacheMode = offlineAwareCacheMode()
             webView.loadUrl(SITE_URL)
             webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
