@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getMeta } from '../api'
+import { useOnlineStatus } from '../lib/connectivity'
 import {
   useDownloadsList,
   cancelDownload,
@@ -335,15 +336,40 @@ function SeasonCard({ group, onPlay }) {
   )
 }
 
+// FEATURE (user ask): while offline, Home redirects here and its tab shows
+// locked — this banner is the "bolna chahiye internet on karo" part, so it's
+// clear on the Downloads screen itself *why* you landed here / when Home
+// will open back up.
+function OfflineBanner() {
+  return (
+    <div className="mb-4 flex items-center gap-2.5 rounded-xl bg-reel-surface2 ring-1 ring-reel-gold/20 px-3.5 py-2.5">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold shrink-0">
+        <line x1="2" y1="2" x2="22" y2="22" />
+        <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+        <path d="M5 12.9a10 10 0 0 1 3.5-2.4" />
+        <path d="M19 12.9a10 10 0 0 0 -2.2-1.8" />
+        <path d="M1.5 8.5A16 16 0 0 1 6 5.5" />
+        <path d="M22.5 8.5a16 16 0 0 0 -6-3.4" />
+        <line x1="12" y1="20" x2="12.01" y2="20" />
+      </svg>
+      <p className="text-xs text-reel-muted">
+        Internet on karo, Home dekhne ke liye — abhi sirf downloads offline play ho sakte hain.
+      </p>
+    </div>
+  )
+}
+
 export default function Downloads() {
   const list = useDownloadsList()
   const [playing, setPlaying] = useState(null)
+  const isOnline = useOnlineStatus()
 
   const groups = groupDownloads(list)
 
   if (!groups.length) {
     return (
       <div className="max-w-6xl mx-auto py-16 px-4 text-center">
+        {!isOnline ? <OfflineBanner /> : null}
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
         </div>
@@ -357,6 +383,7 @@ export default function Downloads() {
 
   return (
     <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6">
+      {!isOnline ? <OfflineBanner /> : null}
       <h1 className="font-display text-2xl text-reel-ink mb-4">Downloads</h1>
       <div className="space-y-3">
         {groups.map((g) =>

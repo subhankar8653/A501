@@ -1,10 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { getManifest, groupCatalogsByTab, loadTabByLanguage, HOME_TABS } from '../api'
+import { useOnlineStatus } from '../lib/connectivity'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 import HomeHero from '../components/HomeHero'
 
 export default function Home() {
+  // FEATURE (user ask: "jab offline ho toh sidha download page mein open
+  // hona chahiye, aur home page pe lock ho jana chahiye"): Home needs live
+  // data (manifest + catalogs), so it's useless offline — before this it
+  // still tried to render, hit a failed fetch, and (combined with other
+  // offline-render edge cases) could end up as a blank/black screen instead
+  // of something useful. Now Home simply never renders while offline — it
+  // bounces straight to Downloads (the one tab that's fully usable offline),
+  // and BottomNav shows the "internet on karo" message + a locked icon on
+  // the Home tab so it's clear *why*.
+  const isOnline = useOnlineStatus()
+  if (!isOnline) return <Navigate to="/downloads" replace />
+
+  return <HomeContent />
+}
+
+function HomeContent() {
   const [tabCatalogs, setTabCatalogs] = useState(null) // { anime: [...], movie: [...], ... }
   const [active, setActive] = useState('anime')
   const [groupsByTab, setGroupsByTab] = useState({}) // cache: { [tab]: [{language, items}] }
