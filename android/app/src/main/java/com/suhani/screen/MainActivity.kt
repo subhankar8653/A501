@@ -119,6 +119,59 @@ class WebAppInterface(private val activity: MainActivity) {
 
 }
 
+/**
+ * ROOT CAUSE FIX (user ask: "offline video player simple hai, online jaisa
+ * poora-feature player chahiye — bas jo internet maange woh feature off kar
+ * do"): downloadsStore.js (web frontend) pehle download ko fetch() se JS
+ * memory mein le kar seedha IndexedDB Blob mein save karta tha, aur playback
+ * ek `blob:` object URL se hoti thi — jo `window.AndroidPlayer` (rich native
+ * player) kabhi mount nahi kar paata (blob: sirf WebView JS-process ke andar
+ * hi valid hai), isliye offline downloads ek simple web `<video>` fallback
+ * par gir jaate the.
+ *
+ * Is bridge se ab download hi native side par (asli file ke roop mein) hota
+ * hai — completion par ek `content://` URI milta hai jo `window.AndroidPlayer`
+ * seedha mount kar sakta hai, bilkul online stream jaisa hi. Progress/done/
+ * error sab JS ko `window.__nativeDownload*` callbacks (main.jsx/downloadsStore.js
+ * mein registered) ke through evaluateJavascript se wapas bheja jaata hai.
+ */
+class WebDownloadInterface(private val activity: MainActivity) {
+    @JavascriptInterface
+    fun startDownload(id: String, url: String) {
+        NativeDownloadManager.start(
+            context = activity,
+            id = id,
+            url = url,
+            onProgress = { pct, bytes ->
+                activity.runOnUiThread { activity.notifyDownloadProgress(id, pct, bytes) }
+            },
+            onDone = { contentUri ->
+                activity.runOnUiThread { activity.notifyDownloadDone(id, contentUri) }
+            },
+            onError = { message ->
+                activity.runOnUiThread { activity.notifyDownloadError(id, message) }
+            },
+        )
+    }
+
+    @JavascriptInterface
+    fun cancelDownload(id: String) {
+        NativeDownloadManager.cancel(id)
+    }
+
+    @JavascriptInterface
+    fun deleteDownload(id: String) {
+        NativeDownloadManager.delete(activity, id)
+    }
+
+    /** Purane/existing downloads (app restart ke baad) ke liye — playback shuru karne se
+     *  pehle web side confirm kar leta hai ki file abhi bhi disk par maujood hai. */
+    @JavascriptInterface
+    fun getDownloadUri(id: String): String {
+        return NativeDownloadManager.contentUriFor(activity, id) ?: ""
+    }
+}
+
 class MainActivity : AppCompatActivity() {
 
     // ARCHITECTURE CHANGE (user demand: "app offline mein bhi chalna chahiye,
@@ -582,6 +635,9 @@ class MainActivity : AppCompatActivity() {
         // Native player bridge — frontend isse pehchan kar HTML5 <video> ki jagah
         // seedha native Sisisisi (chhota inline, fullscreen-expandable) player khol sakta hai.
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidPlayer")
+        // Offline downloads ke liye native file-download bridge — dekho WebDownloadInterface
+        // aur NativeDownloadManager ke doc comments (blob: URL vs content:// URI ka issue).
+        webView.addJavascriptInterface(WebDownloadInterface(this), "AndroidDownloader")
 
         // BUG FIX (user report): pull-to-refresh (neeche-swipe-se-reload) hi
         // "upar scroll nahi ho raha" issue ki asli wajah nikla — SwipeRefreshLayout
@@ -1143,6 +1199,33 @@ class MainActivity : AppCompatActivity() {
         inlineHasNextEpisode = hasNext
         inlineHasPrevEpisode = hasPrev
         applyInlineAdjacentButtonState()
+    }
+
+    // WebDownloadInterface (NativeDownloadManager) se aane wale progress/done/error
+    // events ko web frontend (downloadsStore.js) ke registered callbacks tak pahunchate
+    // hain. Optional-chaining (`?.`) isliye taaki agar web page abhi tak load hi na hui
+    // ho (ya reload ho rahi ho) to evaluateJavascript silently no-op ho, crash na kare.
+    fun notifyDownloadProgress(id: String, progressPct: Int, sizeBytes: Long) {
+        val idLit = JSONObject.quote(id)
+        webView.evaluateJavascript(
+            "window.__nativeDownloadProgress?.($idLit, $progressPct, $sizeBytes)", null
+        )
+    }
+
+    fun notifyDownloadDone(id: String, contentUri: String) {
+        val idLit = JSONObject.quote(id)
+        val uriLit = JSONObject.quote(contentUri)
+        webView.evaluateJavascript(
+            "window.__nativeDownloadDone?.($idLit, $uriLit)", null
+        )
+    }
+
+    fun notifyDownloadError(id: String, message: String) {
+        val idLit = JSONObject.quote(id)
+        val msgLit = JSONObject.quote(message)
+        webView.evaluateJavascript(
+            "window.__nativeDownloadError?.($idLit, $msgLit)", null
+        )
     }
 
     private fun applyInlineAdjacentButtonState() {
