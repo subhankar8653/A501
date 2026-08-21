@@ -15,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -525,6 +526,55 @@ class MainActivity : AppCompatActivity() {
                 super.onReceivedHttpError(view, request, errorResponse)
                 if (request?.isForMainFrame != true) return
                 if (!hasLoadedOnce) showLoadError()
+            }
+
+            // BUG FIX — THE actual root cause of the reopen-while-offline
+            // black screen (user screenshots: app reopened after being fully
+            // closed/backgrounded, nothing at all shows — no loading spinner,
+            // no branded error screen, not even React ever getting a chance
+            // to run its own offline redirect. Just flat black, forever).
+            //
+            // What's happening: on a low-memory/low-battery moment (both
+            // screenshots show the device around 12-20% battery, a classic
+            // trigger for Android's memory pressure killing background
+            // work), the OS can kill just the WebView's separate renderer
+            // process while this Activity's process itself survives in the
+            // background. That renderer process is where ALL of our page —
+            // HTML, CSS, and every line of the React app — actually lives
+            // and runs. When the user reopens the app, Android brings this
+            // Activity back via onResume() (not onCreate() — the Activity
+            // itself was never killed, so none of our loadDataWithBaseURL /
+            // offline-redirect / error-screen logic in onCreate() re-runs
+            // at all), but the WebView is now just an empty shell pointed at
+            // a renderer that no longer exists. Nothing was ever "loading"
+            // to fail or error out — there's simply nobody left to paint
+            // anything, so the WebView shows nothing and the plain black
+            // root-layout background (#0B0B0F, activity_main.xml) is all
+            // that's ever visible. This is exactly why the React-side
+            // offline/downloads fix alone can never fix this particular
+            // case: JS never gets to run again until something notices the
+            // renderer is gone and explicitly reloads it.
+            //
+            // WebViewClient has a dedicated callback for exactly this,
+            // onRenderProcessGone() (API 26+) — it was never overridden
+            // here before, so the system fell back to its own default
+            // handling. For a foreground/important WebView, that default is
+            // usually to silently leave the dead view on screen (what we
+            // saw) or, on some OEM builds, kill the whole app outright.
+            //
+            // Fix: detect it, tear down the now-unusable WebView instance
+            // (an app is NOT allowed to keep using a WebView after its
+            // renderer has gone — must remove + destroy + rebuild), and
+            // recreate() the Activity so the exact same safe boot path from
+            // onCreate() (bundled-assets load, offline-safe by construction)
+            // runs fresh. Returning true tells Android WE handled the crash,
+            // so it must not additionally kill the app process itself.
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail?): Boolean {
+                if (view !== webView) return false
+                (webView.parent as? ViewGroup)?.removeView(webView)
+                webView.destroy()
+                recreate()
+                return true
             }
         }
         webView.webChromeClient = WebChromeClient()
