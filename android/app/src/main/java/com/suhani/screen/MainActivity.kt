@@ -546,13 +546,48 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else {
-            // Ab shell hamesha bundled assets se milta hai (kabhi network
-            // round-trip nahi) — isliye ab yahan koi online/offline cache-mode
-            // dance ki zaroorat nahi (woh purana LOAD_NO_CACHE / LOAD_CACHE_
-            // ELSE_NETWORK logic sirf tab maayne rakhta tha jab hum har baar
-            // live https://a501.vercel.app/ fetch karte the). App ab device
-            // kabhi bhi online hua ho ya na ho, hamesha khulega.
-            webView.loadUrl(APP_URL)
+            // BUG FIX (asli root cause of the offline "black screen", user report
+            // + confirmed pattern seen with WebViewAssetLoader-based apps): webView
+            // .loadUrl(APP_URL) is a real top-level NAVIGATION. Chromium (jo WebView
+            // ko power karta hai) kabhi-kabhi is level par ek OS network-state check
+            // karta hai UNSE PEHLE hi ki request kabhi shouldInterceptRequest tak
+            // pahunche — matlab agar device par bilkul network na ho (Airplane
+            // mode / SIM+WiFi dono off), Chromium poori navigation hi seedha
+            // net::ERR_INTERNET_DISCONNECTED de kar reject kar sakta hai, chahe
+            // target URL 100% locally-intercepted (appassets.androidplatform.net)
+            // hi kyun na ho. Isi se onReceivedError() -> showLoadError() trigger
+            // hota tha, jiska dark (#0B0B0F) near-black background + chhota
+            // warning-icon/text hi effectively user ko "black screen" jaisa
+            // dikhta tha — HAR baar jab device genuinely offline hota, na ki sirf
+            // kabhi-kabhi.
+            //
+            // Fix: loadUrl() (top-level navigation) ki jagah index.html ka content
+            // seedha loadDataWithBaseURL() se WebView ko "inject" karo. Yeh ek
+            // navigation nahi hai (koi network request hi nahi banta is pehle
+            // load ke liye), isliye upar wala connectivity pre-check bilkul bypass
+            // ho jaata hai — chahe device abhi Airplane mode mein hi kyun na ho.
+            // baseURL wahi virtual origin (https://appassets.androidplatform.net/)
+            // rakha hai, isliye HTML ke andar ke saare relative paths (/assets/*.js,
+            // /assets/*.css, /favicon.png, waghera) bilkul pehle jaisa hi assetLoader
+            // ke through resolve/serve hote hain — yeh SUB-resource requests hain,
+            // top-level navigation nahi, isliye inke liye woh connectivity
+            // pre-check lagta hi nahi (yeh already reliably offline kaam karta tha,
+            // isko chheda nahi gaya).
+            try {
+                val html = assets.open("index.html").bufferedReader().use { it.readText() }
+                webView.loadDataWithBaseURL(
+                    "https://appassets.androidplatform.net/",
+                    html,
+                    "text/html",
+                    "UTF-8",
+                    null
+                )
+            } catch (e: Exception) {
+                // Extremely unlikely (would mean assets/index.html khud missing/
+                // corrupt build) — is genuine case mein hi ab purana loadUrl()
+                // fallback ke roop mein istemal hota hai.
+                webView.loadUrl(APP_URL)
+            }
         }
     }
 
