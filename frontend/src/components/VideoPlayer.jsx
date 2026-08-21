@@ -40,23 +40,20 @@ function fmt(t) {
 function detectNativeBridge() {
   return !!(window.AndroidPlayer && typeof window.AndroidPlayer.mount === 'function')
 }
-// BUG FIX (offline download playback showing a black screen): the native
-// AndroidPlayer bridge is an app-side ExoPlayer instance — it can only be
-// handed a real fetchable URI (http/https/file/content). It has no way to
-// read a `blob:` URL, because blob: URLs only exist inside this WebView's
-// own in-memory registry, unreachable from the native/app process. Offline
-// downloads are stored as IndexedDB Blobs and played back via exactly such
-// a `blob:` object URL (see lib/downloadsStore.js -> getDownloadBlobUrl).
-// Previously the Downloads tab didn't even use this component — it rendered
-// its own bare <video> without `playsInline`, which made Android WebView try
-// to hand the video off to a native fullscreen surface our WebChromeClient
-// never wired up for generic HTML5 video (only for the AndroidPlayer bridge),
-// producing a plain black screen. Routing offline playback through this same
-// component (as requested) fixes both problems at once: `playsInline` is set
-// below, and blob: sources are detected here so we skip the native bridge
-// (which would silently fail to mount a blob: URI anyway) and use this
-// component's own fully custom web <video> controls — the exact same skin,
-// gestures, speed/PiP/fullscreen controls used for online playback.
+// ROOT CAUSE (offline download playback used to fall back to a plain web
+// player): the native AndroidPlayer bridge is an app-side ExoPlayer instance —
+// it can only be handed a real fetchable URI (http/https/file/content). It has
+// no way to read a `blob:` URL, because blob: URLs only exist inside this
+// WebView's own in-memory registry, unreachable from the native/app process.
+// FIX: inside the app, downloads are now saved to a real file natively
+// (window.AndroidDownloader) and resolve to a `content://` URI (see
+// lib/downloadsStore.js -> getDownloadPlaybackSrc), so offline playback goes
+// through the exact same native bridge — same equalizer/cast/decoder-select/
+// PiP-featured player — as online streaming. `blob:` URLs only remain as a
+// fallback for plain-browser (no native app) usage, where there's no
+// AndroidPlayer bridge to begin with; isBlobSrc() below exists purely to keep
+// that browser-only path on the web <video> controls instead of trying (and
+// silently failing) to hand a blob: URI to a native bridge that isn't there.
 function isBlobSrc(src) {
   return typeof src === 'string' && src.startsWith('blob:')
 }

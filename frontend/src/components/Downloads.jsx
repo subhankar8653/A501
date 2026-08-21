@@ -5,7 +5,7 @@ import {
   useDownloadsList,
   cancelDownload,
   deleteDownload,
-  getDownloadBlobUrl,
+  getDownloadPlaybackSrc,
   groupDownloads,
 } from '../lib/downloadsStore'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
@@ -32,11 +32,11 @@ function OfflinePlayer({ entry, onClose }) {
   useEffect(() => {
     let cancelled = false
     let objectUrl = null
-    getDownloadBlobUrl(entry.id)
+    getDownloadPlaybackSrc(entry.id)
       .then((u) => {
         if (cancelled) return
         if (!u) return setErr(true)
-        objectUrl = u
+        if (u.startsWith('blob:')) objectUrl = u
         setUrl(u)
       })
       .catch(() => !cancelled && setErr(true))
