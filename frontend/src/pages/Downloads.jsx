@@ -5,7 +5,7 @@ import {
   useDownloadsList,
   cancelDownload,
   deleteDownload,
-  getDownloadBlobUrl,
+  getDownloadPlaybackSrc,
   groupDownloads,
 } from '../lib/downloadsStore'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
@@ -28,9 +28,10 @@ function formatSize(bytes) {
 // with the filename, badges, like/dislike/share/save row, and comments
 // below it. Rebuilt this to be that same page layout (reusing the exact
 // same pieces — VideoPlayer, Comments, useLocalReactions), just fed from
-// the local downloaded file (blob URL) instead of a network stream. Same
-// look whether you're online watching a stream or offline watching a
-// download.
+// the local downloaded file — a native content:// URI when running inside
+// the app (same rich player as online, see downloadsStore.js), or a blob:
+// URL as a plain-browser fallback. Same look whether you're online watching
+// a stream or offline watching a download.
 function OfflinePlayer({ entry, onClose }) {
   const [url, setUrl] = useState(null)
   const [err, setErr] = useState(false)
@@ -40,11 +41,11 @@ function OfflinePlayer({ entry, onClose }) {
   useEffect(() => {
     let cancelled = false
     let objectUrl = null
-    getDownloadBlobUrl(entry.id)
+    getDownloadPlaybackSrc(entry.id)
       .then((u) => {
         if (cancelled) return
         if (!u) return setErr(true)
-        objectUrl = u
+        if (u.startsWith('blob:')) objectUrl = u
         setUrl(u)
       })
       .catch(() => !cancelled && setErr(true))
