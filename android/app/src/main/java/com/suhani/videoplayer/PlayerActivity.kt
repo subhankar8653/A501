@@ -303,6 +303,26 @@ class PlayerActivity : AppCompatActivity() {
     // Web frontend se aayi quality list (label -> url) — More menu ke "Quality"
     // option se yahi list dikhti hai, jugaad-style: bas mediaItem swap + resume.
     private var availableQualities: List<Pair<String, String>> = emptyList()
+    // ROOT-CAUSE BUG FIX (user report, persists despite the earlier one-shot-listener
+    // fix below in showQualityDialog: "quality change karne ke baad caption nahi
+    // dikhta, sirf 'Video' likha aata hai"): the earlier fix used a ONE-TIME
+    // `Player.Listener` added straight to `player` right after the quality switch,
+    // hoping the very next `onTracksChanged` (once the new quality's tracks are
+    // known) would reapply the subtitle override, then remove itself. Problem:
+    // `onPlayerError` (see `playerListener` below) can call `buildPlayer()` to
+    // recover from a decoder/network hiccup — extremely common right after a
+    // quality switch, since the new URL has to buffer from scratch. `buildPlayer()`
+    // creates a BRAND NEW ExoPlayer instance and only re-attaches the PERSISTENT
+    // `playerListener` (see `player.addListener(playerListener)` inside it) — our
+    // one-shot listener was attached to the OLD (now-discarded) instance, so it
+    // never fires on the new one, and the subtitle is never restored: it silently
+    // stays off, which is exactly the reported "caption gayab" symptom. Fix: keep
+    // the restore intent in persistent fields (not a listener tied to one instance)
+    // and check/apply it from `playerListener.onTracksChanged` (added below) —
+    // that listener is re-attached on every `buildPlayer()` rebuild, so the
+    // restore survives however many rebuilds happen before tracks are ready.
+    private var pendingSubtitleRestorePosition = -1
+    private var pendingSubtitleRestoreUri: String? = null
     // Audio Track / Subtitle jaisa koi bhi overlay panel khula hai to count yahan track hota hai
     // (nested panels — jaise Subtitle -> Settings — ke liye), taaki sirf pehla panel khulne par
     // shrink ho aur sirf aakhri panel band hone par hi wapas normal size mein aaye.
@@ -1891,6 +1911,38 @@ class PlayerActivity : AppCompatActivity() {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             syncPlayPauseIcon()
             rescheduleControlsHideIfVisible()
+        }
+
+        // Dekho `pendingSubtitleRestorePosition` ki declaration ke paas ka comment —
+        // quality-switch ke baad subtitle POSITION-wise wapas select karta hai, jab
+        // bhi (aur jitni baar bhi, chahe beech mein player rebuild ho jaaye) naye
+        // MediaItem ke text tracks ready hote hain.
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+            val restorePos = pendingSubtitleRestorePosition
+            if (restorePos < 0) return
+            // Sirf usi URL ke liye jiske liye restore pending kiya tha — agar isi
+            // beech user ne khud dobara switch/seek kar diya to stale restore kabhi
+            // apply mat karo.
+            val currentUri = player.currentMediaItem?.localConfiguration?.uri?.toString()
+            if (currentUri != null && currentUri != pendingSubtitleRestoreUri) {
+                pendingSubtitleRestorePosition = -1
+                pendingSubtitleRestoreUri = null
+                return
+            }
+            val newSubGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+            if (newSubGroups.isEmpty()) return
+            val newRefs = mutableListOf<Pair<androidx.media3.common.Tracks.Group, Int>>()
+            newSubGroups.forEach { g -> for (i in 0 until g.length) newRefs.add(g to i) }
+            val target = newRefs.getOrNull(restorePos)
+            if (target != null) {
+                val (group, trackIdx) = target
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIdx))
+                    .build()
+            }
+            pendingSubtitleRestorePosition = -1
+            pendingSubtitleRestoreUri = null
         }
     }
 
@@ -5405,29 +5457,19 @@ class PlayerActivity : AppCompatActivity() {
                 player.prepare()
                 player.playWhenReady = wasPlaying
 
-                // Naye tracks ready hone ka intezaar karke (pehla onTracksChanged
-                // jisme koi text group mile) usi POSITION wala subtitle track wapas
-                // select karo — fir yeh listener khud ko hata leta hai (ek baar hi
-                // chalna hai, har future track-change par nahi).
+                // Naye tracks ready hone ka intezaar karo — usi POSITION wala subtitle
+                // track wapas select karna hai. Yeh ab ek instance-tied one-shot listener
+                // ki jagah persistent fields mein store hota hai (dekho unki declaration
+                // ke paas ka comment) — taaki agar `buildPlayer()` beech mein ek naya
+                // player instance bana de (jaise error-recovery se), tab bhi restore ho
+                // jaaye, kyunki `playerListener.onTracksChanged` har naye instance par
+                // dobara attach hota hai aur yahi fields check karta hai.
                 if (selectedSubPosition >= 0 && !subtitlesWereDisabled) {
-                    val reapplyListener = object : Player.Listener {
-                        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                            val newSubGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-                            if (newSubGroups.isEmpty()) return
-                            val newRefs = mutableListOf<Pair<androidx.media3.common.Tracks.Group, Int>>()
-                            newSubGroups.forEach { g -> for (i in 0 until g.length) newRefs.add(g to i) }
-                            val target = newRefs.getOrNull(selectedSubPosition)
-                            if (target != null) {
-                                val (group, trackIdx) = target
-                                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIdx))
-                                    .build()
-                            }
-                            player.removeListener(this)
-                        }
-                    }
-                    player.addListener(reapplyListener)
+                    pendingSubtitleRestorePosition = selectedSubPosition
+                    pendingSubtitleRestoreUri = url
+                } else {
+                    pendingSubtitleRestorePosition = -1
+                    pendingSubtitleRestoreUri = null
                 }
 
                 showPlayerSnackbar("Quality: $label")
