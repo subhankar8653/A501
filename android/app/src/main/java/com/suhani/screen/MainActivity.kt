@@ -3,8 +3,6 @@ package com.suhani.screen
 import android.content.Intent
 import android.graphics.Rect
 import android.graphics.Typeface
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -50,6 +48,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.webkit.WebViewAssetLoader
 import com.suhani.videoplayer.EqualizerAudioProcessor
 import com.suhani.videoplayer.FfmpegRenderersFactory
 import com.suhani.videoplayer.PlayerActivity
@@ -121,7 +120,29 @@ class WebAppInterface(private val activity: MainActivity) {
 
 class MainActivity : AppCompatActivity() {
 
-    private val SITE_URL = "https://a501.vercel.app/"
+    // ARCHITECTURE CHANGE (user demand: "app offline mein bhi chalna chahiye,
+    // sirf website fix karne se kaam nahi chalega"): pehle yeh Activity sirf
+    // ek WebView tha jo har cold-start par https://a501.vercel.app/ (live
+    // hosted frontend) fetch karta tha — offline hone par sirf WebView ke apne
+    // fragile HTTP-cache fallback (offlineAwareCacheMode() neeche) par bharosa
+    // tha, jo agar cache miss/evict ho jaaye to poora app hi nahi khulta tha.
+    // Ab poora built frontend (frontend/dist/*) CI build ke waqt seedha APK ke
+    // andar (app/src/main/assets/) bundle hota hai — is Activity ko ab kisi
+    // bhi network call ki zaroorat NAHI hai app-shell dikhane ke liye, chahe
+    // device kabhi online hua hi na ho. Sirf live search/streaming (API calls,
+    // Player.jsx ke andar) ke liye ab bhi internet chahiye — woh alag se JS ke
+    // apne connectivity/error handling se handle hota hai.
+    //
+    // Raw file:// URL load nahi kar rahe (bhale hi WebSettings.allowFileAccess
+    // se possible hota) kyunki file:// origin par WebView by default JS ko
+    // remote XHR/fetch (yaani backend API calls) karne se rok deta hai
+    // (universal file-access restriction) — isse Search/Streams poori tarah
+    // tootT jaate. Google ka official solution WebViewAssetLoader hai: yeh
+    // bundled assets ko ek proper https-jaisi virtual origin
+    // (https://appassets.androidplatform.net/) se serve karta hai, isliye
+    // fetch()/CORS bilkul normal hosted-website jaisa hi behave karta hai.
+    private val APP_URL = "https://appassets.androidplatform.net/index.html"
+    private lateinit var assetLoader: WebViewAssetLoader
     private val REQUEST_FULLSCREEN_PLAYER = 9001
     private val resizeModes = intArrayOf(
         AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -378,40 +399,15 @@ class MainActivity : AppCompatActivity() {
     // interstitial WebView ke andar load kar deta hai. Humara custom
     // loadErrorView isliye kabhi dikh hi nahi paata tha, chahe uska code
     // sahi tha.
-    private fun isDeviceOnline(): Boolean {
-        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
-
-    // Cold-start/retry cache mode: jab tak internet hai, LOAD_NO_CACHE se
-    // hamesha fresh shell/JS bundle mangwate hain (taaki naye deploy turant
-    // dikhein). Jab internet na ho, LOAD_CACHE_ELSE_NETWORK se jo bhi
-    // WebView ke apne HTTP cache mein pehle se ho use turant serve karo —
-    // isse purani cached copy hi sahi, offline bhi app khulta hai (blank/
-    // error screen ke bajaye). Frontend ka apna Service Worker
-    // (public/sw.js) is se aage jaakar poori app-shell + har route ko
-    // reliably cache/serve karta hai — yeh sirf ek extra safety net hai
-    // agar SW abhi register/activate nahi hua ho.
-    private fun offlineAwareCacheMode(): Int =
-        if (isDeviceOnline()) android.webkit.WebSettings.LOAD_NO_CACHE
-        else android.webkit.WebSettings.LOAD_CACHE_ELSE_NETWORK
-
-    // loadErrorView ka title+message device ki asli connectivity ke hisaab
-    // se set karta hai — "No internet connection" (device hi offline hai)
-    // vs "Server crashed" (internet hai lekin backend/hosting down hai,
-    // jaise Railway crash) — English mein, jaisa user ne bola tha.
+    // Shell ab bundled assets se load hota hai, isliye yeh screen ab
+    // "no internet" ka matlab kabhi nahi hoga — sirf ek genuine local-load
+    // anomaly (jaise corrupt/incomplete install) ka signal hai. Internet-
+    // dependent errors (search/streaming) apni jagah React side
+    // (lib/connectivity.js / ConnectionOverlay.jsx) handle karta hai.
     private fun showLoadError() {
         initialLoadingView.visibility = View.GONE
-        if (isDeviceOnline()) {
-            loadErrorTitle.text = "Server crashed"
-            loadErrorMessage.text = "Our server is temporarily down. Please wait a bit and try again."
-        } else {
-            loadErrorTitle.text = "No internet connection"
-            loadErrorMessage.text = "Please check your connection and try again."
-        }
+        loadErrorTitle.text = "Couldn't load the app"
+        loadErrorMessage.text = "Something went wrong opening the app. Please try again, or reinstall if this keeps happening."
         loadErrorView.visibility = View.VISIBLE
     }
 
@@ -426,16 +422,13 @@ class MainActivity : AppCompatActivity() {
         loadErrorTitle = findViewById(R.id.loadErrorTitle)
         loadErrorMessage = findViewById(R.id.loadErrorMessage)
         findViewById<View>(R.id.loadErrorRetryButton).setOnClickListener {
+            // Shell ab kabhi network-fail nahi hota (bundled assets se aata
+            // hai) — yeh screen ab sirf tabhi dikhega agar koi asli anomaly ho
+            // (jaise APK corrupt install). Simple reload hi kaafi hai.
             loadErrorView.visibility = View.GONE
             initialLoadingView.visibility = View.VISIBLE
             startLoadingLabelPulse()
-            // Retry ka matlab hai kuch pehle fail ho gaya tha — agar ab bhi
-            // offline hain to cache-fallback try karo (bilkul cold-start
-            // jaisa), warna online hone par fresh fetch karo.
-            val mode = offlineAwareCacheMode()
-            webView.settings.cacheMode = mode
             webView.reload()
-            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
         startLoadingLabelPulse()
 
@@ -450,6 +443,14 @@ class MainActivity : AppCompatActivity() {
             view.setPadding(bars.left, bars.top, bars.right, 0)
             insets
         }
+
+        // "/" -> app/src/main/assets/ ke poore contents ko domain-root se serve
+        // karta hai (index.html, /assets/*.js, /favicon.png waghera) — exactly
+        // wahi absolute-path structure jo Vite build normally banata hai,
+        // isliye frontend code mein koi path change nahi karna pada.
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -466,6 +467,19 @@ class MainActivity : AppCompatActivity() {
         webView.isHorizontalScrollBarEnabled = false
 
         webView.webViewClient = object : WebViewClient() {
+            // Har request (index.html, hashed JS/CSS, favicon, ...) yahan se
+            // guzarti hai — assetLoader wahi cheez APK ke bundled assets se
+            // seedha serve kar deta hai, koi network round-trip nahi. Sirf
+            // asset-loader ke apne "/" prefix se match na hone waali requests
+            // (jaise API backend ki https:// calls) yahan se pass-through ho
+            // kar normal network path lengi.
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 // Reload (retry/pull-to-refresh) par bhi purani error screen turant
@@ -532,32 +546,13 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else {
-            // BUG FIX (user report: "quality switch/downloads waghera website
-            // pe fix ho gaye lekin app mein wahi purana buggy behavior dikhta
-            // rehta hai"): WebView ka default cache mode (LOAD_DEFAULT) index.html
-            // aur JS bundle ko disk par cache kar leta hai — aur pull-to-refresh
-            // bhi upar disable kiya hua hai (scroll-intercept bug ki wajah se),
-            // isliye app ke paas purani cached copy se bahar nikalne ka koi
-            // raasta hi nahi tha jab tak poora app data clear na kiya jaaye.
-            // Har naya deploy (jaise yeh quality-switch/download fixes) tab tak
-            // app mein kabhi dikhta hi nahi. Fix: sirf is ek pehli/cold load
-            // par LOAD_NO_CACHE se force karo ki HTML shell + JS/CSS assets
-            // dobara network se hi aayein (bilkul browser ka hard-refresh jaisa),
-            // phir turant wapas LOAD_DEFAULT par set kar do taaki us load ke
-            // andar ki normal in-page navigation/scroll fast hi rahe.
-            //
-            // BUG FIX #2 (offline reopen): upar wali LOAD_NO_CACHE hamesha force
-            // hoti thi, chahe device offline hi kyun na ho — matlab jab bhi app
-            // poori tarah band karke offline dobara khola jaata tha, yeh line khud
-            // hi cache ko ignore karke seedha network try karti thi aur fail ho
-            // jaati thi. Ab offlineAwareCacheMode() sirf online hone par hi
-            // LOAD_NO_CACHE karta hai; offline hone par LOAD_CACHE_ELSE_NETWORK
-            // se WebView ke apne HTTP cache se pehle se load ho chuki shell serve
-            // ho jaati hai. (Frontend ka Service Worker — public/sw.js — ab isse
-            // bhi zyada reliably yehi kaam karta hai; yeh sirf ek extra fallback hai.)
-            webView.settings.cacheMode = offlineAwareCacheMode()
-            webView.loadUrl(SITE_URL)
-            webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+            // Ab shell hamesha bundled assets se milta hai (kabhi network
+            // round-trip nahi) — isliye ab yahan koi online/offline cache-mode
+            // dance ki zaroorat nahi (woh purana LOAD_NO_CACHE / LOAD_CACHE_
+            // ELSE_NETWORK logic sirf tab maayne rakhta tha jab hum har baar
+            // live https://a501.vercel.app/ fetch karte the). App ab device
+            // kabhi bhi online hua ho ya na ho, hamesha khulega.
+            webView.loadUrl(APP_URL)
         }
     }
 
