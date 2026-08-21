@@ -40,8 +40,28 @@ function fmt(t) {
 function detectNativeBridge() {
   return !!(window.AndroidPlayer && typeof window.AndroidPlayer.mount === 'function')
 }
+// BUG FIX (offline download playback showing a black screen): the native
+// AndroidPlayer bridge is an app-side ExoPlayer instance — it can only be
+// handed a real fetchable URI (http/https/file/content). It has no way to
+// read a `blob:` URL, because blob: URLs only exist inside this WebView's
+// own in-memory registry, unreachable from the native/app process. Offline
+// downloads are stored as IndexedDB Blobs and played back via exactly such
+// a `blob:` object URL (see lib/downloadsStore.js -> getDownloadBlobUrl).
+// Previously the Downloads tab didn't even use this component — it rendered
+// its own bare <video> without `playsInline`, which made Android WebView try
+// to hand the video off to a native fullscreen surface our WebChromeClient
+// never wired up for generic HTML5 video (only for the AndroidPlayer bridge),
+// producing a plain black screen. Routing offline playback through this same
+// component (as requested) fixes both problems at once: `playsInline` is set
+// below, and blob: sources are detected here so we skip the native bridge
+// (which would silently fail to mount a blob: URI anyway) and use this
+// component's own fully custom web <video> controls — the exact same skin,
+// gestures, speed/PiP/fullscreen controls used for online playback.
+function isBlobSrc(src) {
+  return typeof src === 'string' && src.startsWith('blob:')
+}
 export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError }) {
-  const isNative = useRef(detectNativeBridge()).current
+  const isNative = useRef(detectNativeBridge() && !isBlobSrc(src)).current
   const videoRef = useRef(null)
   const containerRef = useRef(null)
   const slotRef = useRef(null)
