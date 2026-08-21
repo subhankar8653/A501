@@ -399,6 +399,20 @@ class PlayerActivity : AppCompatActivity() {
     // baaki executors jaisa hi single-thread pattern, taaki network call UI ko block na kare.
     private val onlineSubtitleExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
+    /** Crash fix: background executors (scrub preview, subtitle search/download,
+     *  chapter analysis, trim/screenshot) post results back via runOnUiThread, but
+     *  the user can back-out / finish() the Activity before that post runs. Touching
+     *  views or showing/dismissing an AlertDialog after the window is gone throws
+     *  WindowManager$BadTokenException / "not attached to window manager" and kills
+     *  the whole app. This wraps every such callback with an isFinishing/isDestroyed
+     *  guard, checked both when posting and again right before running. */
+    private fun runOnUiThreadSafely(action: () -> Unit) {
+        if (isFinishing || isDestroyed) return
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) action()
+        }
+    }
+
     // --- Smart Chapters (naya premium feature): frame-sampling se scene-cut
     // detect karke timeline par chapter markers dikhata hai — background
     // thread par (scrubPreviewExecutor jaisa hi single-thread pattern).
@@ -1350,7 +1364,7 @@ class PlayerActivity : AppCompatActivity() {
                     android.media.MediaMetadataRetriever.OPTION_CLOSEST
                 )
                 if (requestId == scrubPreviewRequestId) {
-                    runOnUiThread {
+                    runOnUiThreadSafely {
                         if (requestId == scrubPreviewRequestId) {
                             if (frame != null) {
                                 scrubPreviewImage.setImageBitmap(frame)
@@ -1402,7 +1416,7 @@ class PlayerActivity : AppCompatActivity() {
 
         chapterAnalysisExecutor.execute {
             val markers = detectSceneChapters(uri, duration)
-            runOnUiThread {
+            runOnUiThreadSafely {
                 isAnalyzingChapters = false
                 chapterAnalyzedUri = uri
                 chapterMarkersMs = markers.toMutableList()
@@ -2822,7 +2836,7 @@ class PlayerActivity : AppCompatActivity() {
         onlineSubtitleExecutor.execute {
             try {
                 val results = OpenSubtitlesClient.search(query)
-                runOnUiThread {
+                runOnUiThreadSafely {
                     progress.dismiss()
                     if (results.isEmpty()) {
                         showGestureFeedback("Koi subtitle nahi mila")
@@ -2831,7 +2845,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread {
+                runOnUiThreadSafely {
                     progress.dismiss()
                     showGestureFeedback(e.message ?: "Subtitle search fail ho gayi")
                 }
@@ -2862,12 +2876,12 @@ class PlayerActivity : AppCompatActivity() {
                 val dir = File(cacheDir, "online_subtitles").apply { if (!exists()) mkdirs() }
                 val destFile = File(dir, "sub_${result.fileId}.srt")
                 OpenSubtitlesClient.download(result.fileId, destFile)
-                runOnUiThread {
+                runOnUiThreadSafely {
                     progress.dismiss()
                     attachSubtitle(Uri.fromFile(destFile))
                 }
             } catch (e: Exception) {
-                runOnUiThread {
+                runOnUiThreadSafely {
                     progress.dismiss()
                     showGestureFeedback(e.message ?: "Subtitle download fail ho gaya")
                 }
@@ -5571,7 +5585,7 @@ class PlayerActivity : AppCompatActivity() {
                 val dir = File(cacheDir, "online_subtitles").apply { if (!exists()) mkdirs() }
                 val destFile = File(dir, "auto_${top.fileId}.srt")
                 OpenSubtitlesClient.download(top.fileId, destFile)
-                runOnUiThread {
+                runOnUiThreadSafely {
                     if (!subtitleLoaded) {
                         attachSubtitle(Uri.fromFile(destFile))
                         showGestureFeedback("Subtitle auto-added: ${top.releaseName}")
@@ -5714,13 +5728,13 @@ class PlayerActivity : AppCompatActivity() {
 
                 MediaScannerConnection.scanFile(this, arrayOf(outFile.absolutePath), null, null)
 
-                runOnUiThread {
+                runOnUiThreadSafely {
                     showGestureFeedback("Trimmed video saved: ${outFile.name}")
                     cutPointA = -1L
                     cutPointB = -1L
                 }
             } catch (e: Exception) {
-                runOnUiThread {
+                runOnUiThreadSafely {
                     showPlayerSnackbar(
                         "Cut fail ho gaya (format shayad support nahi karta): ${e.message}",
                         isError = true
@@ -5836,12 +5850,12 @@ class PlayerActivity : AppCompatActivity() {
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
             }
             MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("image/jpeg"), null)
-            runOnUiThread {
+            runOnUiThreadSafely {
                 hapticTick()
                 showGestureFeedback("Screenshot saved")
             }
         } catch (e: Exception) {
-            runOnUiThread { showGestureFeedback("Save fail: ${e.message}") }
+            runOnUiThreadSafely { showGestureFeedback("Save fail: ${e.message}") }
         }
     }
 
