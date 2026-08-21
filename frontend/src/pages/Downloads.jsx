@@ -246,23 +246,53 @@ function SeasonCard({ group, onPlay }) {
   const [expanded, setExpanded] = useState(false)
   const [allEpisodes, setAllEpisodes] = useState(null) // null = not loaded yet
   const [downloadTarget, setDownloadTarget] = useState(null)
+  const isOnline = useOnlineStatus()
 
   const doneCount = group.entries.filter((d) => d.status === 'done').length
 
+  // BUG FIX (offline: expanding a season card showed nothing — "1/0
+  // episode downloaded" and an empty list, even for the episode that WAS
+  // sitting there downloaded and playable). Root cause: this always called
+  // getMeta() to get the season's full episode list, same as when online.
+  // Offline, that fetch just fails, and the .catch() fell back to an EMPTY
+  // array — wiping out even the already-downloaded episodes from view,
+  // since the whole list here was solely getMeta's, never the local
+  // downloads themselves. Fix: build the list straight from what's actually
+  // downloaded (group.entries) whenever we're offline or getMeta fails, so
+  // downloaded episodes always show and stay playable no matter what. Only
+  // when online + getMeta succeeds do we still show the fuller list that
+  // includes not-yet-downloaded episodes (dimmed, with a Download action).
+  function episodesFromLocalEntries() {
+    return group.entries
+      .slice()
+      .sort((a, b) => (a.episode || 0) - (b.episode || 0))
+      .map((d) => ({
+        id: d.id,
+        season: d.season,
+        episode: d.episode,
+        title: d.episodeTitle || d.filename,
+        thumbnail: d.poster || group.showPoster,
+      }))
+  }
+
   useEffect(() => {
     if (!expanded || allEpisodes) return
+    if (!isOnline) {
+      setAllEpisodes(episodesFromLocalEntries())
+      return
+    }
     let cancelled = false
     getMeta('series', group.showId)
       .then((m) => {
         if (cancelled) return
         const eps = (m?.videos || []).filter((v) => v.season === group.season)
-        setAllEpisodes(eps)
+        setAllEpisodes(eps.length ? eps : episodesFromLocalEntries())
       })
-      .catch(() => !cancelled && setAllEpisodes([]))
+      .catch(() => !cancelled && setAllEpisodes(episodesFromLocalEntries()))
     return () => {
       cancelled = true
     }
-  }, [expanded, allEpisodes, group.showId, group.season])
+  }, [expanded, allEpisodes, isOnline, group.showId, group.season])
 
   return (
     <div className="rounded-lg overflow-hidden bg-reel-surface ring-1 ring-white/5">
