@@ -5,6 +5,7 @@ import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import DownloadToast from './components/DownloadToast'
+import ConnectionOverlay from './components/ConnectionOverlay'
 import Setup from './pages/Setup'
 import Home from './pages/Home'
 import Search from './pages/Search'
@@ -75,27 +76,30 @@ export default function App() {
   }, [])
 
   return (
-    <Routes>
-      <Route path="/setup" element={<Setup />} />
-      <Route
-        path="/*"
-        element={
-          <RequireConfig>
-            <ChromeForRoute>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/search" element={<Search />} />
-                <Route path="/saved" element={<Saved />} />
-                <Route path="/downloads" element={<Downloads />} />
-                <Route path="/profile" element={<Profile />} />
-                <Route path="/title/:type/:id" element={<Detail />} />
-                <Route path="/watch/:type/:id" element={<Player />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </ChromeForRoute>
-          </RequireConfig>
-        }
-      />
-    </Routes>
+    <>
+      <ConnectionOverlay />
+      <Routes>
+        <Route path="/setup" element={<Setup />} />
+        <Route
+          path="/*"
+          element={
+            <RequireConfig>
+              <ChromeForRoute>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/search" element={<Search />} />
+                  <Route path="/saved" element={<Saved />} />
+                  <Route path="/downloads" element={<Downloads />} />
+                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/title/:type/:id" element={<Detail />} />
+                  <Route path="/watch/:type/:id" element={<Player />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </ChromeForRoute>
+            </RequireConfig>
+          }
+        />
+      </Routes>
+    </>
   )
 }
