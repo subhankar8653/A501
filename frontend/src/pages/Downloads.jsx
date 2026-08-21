@@ -10,6 +10,8 @@ import {
 } from '../lib/downloadsStore'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VideoPlayer from '../components/VideoPlayer'
+import Comments from '../components/Comments'
+import { useLocalReactions } from '../components/localInteractions'
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -18,16 +20,22 @@ function formatSize(bytes) {
   return `${(mb / 1024).toFixed(2)} GB`
 }
 
-// Uses the exact same VideoPlayer component as online playback (custom
-// gestures, skip, speed, PiP, fullscreen — same "structure" as the Player
-// page) instead of a bare <video> tag. That bare tag was the actual cause
-// of the black screen: it was missing `playsInline`, which made Android
-// WebView try to hand it off to a native fullscreen surface our app never
-// wired up for generic HTML5 video — see the comment above isBlobSrc() in
-// VideoPlayer.jsx for the full root-cause writeup.
+// BUG FIX (user report: "offline wala player jyada hi fullscreen kar diya,
+// online jaisa chahiye"): this used to be a `fixed inset-0` overlay that
+// covered the ENTIRE screen edge-to-edge with the video stretched to fit
+// whatever space was left — nothing like the real Player page, which keeps
+// the video in a normal 16:9 box at the top of an actual scrollable page
+// with the filename, badges, like/dislike/share/save row, and comments
+// below it. Rebuilt this to be that same page layout (reusing the exact
+// same pieces — VideoPlayer, Comments, useLocalReactions), just fed from
+// the local downloaded file (blob URL) instead of a network stream. Same
+// look whether you're online watching a stream or offline watching a
+// download.
 function OfflinePlayer({ entry, onClose }) {
   const [url, setUrl] = useState(null)
   const [err, setErr] = useState(false)
+  const storageKey = `download:${entry.id}`
+  const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
 
   useEffect(() => {
     let cancelled = false
@@ -46,33 +54,89 @@ function OfflinePlayer({ entry, onClose }) {
     }
   }, [entry.id])
 
+  const badges = [
+    entry.qualityLabel,
+    formatSize(entry.sizeBytes),
+    'Offline',
+  ].filter(Boolean)
+
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      <button
-        onClick={onClose}
-        aria-label="Close"
-        className="absolute top-3 right-3 z-[85] w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center text-reel-ink active:scale-90 transition"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-      </button>
-      <div className="flex-1 min-h-0">
-        {err ? (
-          <div className="w-full h-full flex items-center justify-center px-6">
-            <p className="text-reel-muted text-sm text-center">Yeh download offline play nahi ho paa raha.</p>
+    <div className="fixed inset-0 z-50 bg-reel-bg overflow-y-auto">
+      <div className="max-w-3xl mx-auto pb-6">
+        <div className="relative sticky top-0 z-30 bg-reel-bg">
+          <button
+            onClick={onClose}
+            aria-label="Back"
+            className="absolute top-3 left-3 z-[85] w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center text-reel-ink active:scale-90 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <div className="relative aspect-video bg-black overflow-hidden">
+            {err ? (
+              <div className="w-full h-full flex items-center justify-center px-6">
+                <p className="text-reel-muted text-sm text-center">Yeh download offline play nahi ho paa raha.</p>
+              </div>
+            ) : url ? (
+              <VideoPlayer
+                key={url}
+                src={url}
+                title={entry.filename}
+                onEnded={onClose}
+                onFatalError={() => setErr(true)}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="w-8 h-8 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+              </div>
+            )}
           </div>
-        ) : url ? (
-          <VideoPlayer
-            key={url}
-            src={url}
-            title={entry.filename}
-            onEnded={onClose}
-            onFatalError={() => setErr(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span className="w-8 h-8 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+        </div>
+
+        <div className="px-4 sm:px-6">
+          <div className="mt-4">
+            <h1 className="font-display text-lg text-reel-ink break-words">{entry.filename}</h1>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {badges.map((b, i) => (
+                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
+                  {b}
+                </span>
+              ))}
+            </div>
           </div>
-        )}
+
+          <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
+            <button
+              onClick={() => react('like')}
+              aria-label="Like"
+              aria-pressed={reactions.mine === 'like'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 active:scale-95 transition ${
+                reactions.mine === 'like' ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" /></svg>
+              {reactions.likes}
+            </button>
+            <button
+              onClick={() => react('dislike')}
+              aria-label="Dislike"
+              aria-pressed={reactions.mine === 'dislike'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 active:scale-95 transition ${
+                reactions.mine === 'dislike' ? 'bg-reel-rust text-reel-ink font-semibold' : 'bg-reel-surface2 text-reel-muted'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" /></svg>
+              {reactions.dislikes}
+            </button>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+              Downloaded
+            </span>
+          </div>
+
+          <div className="mt-6">
+            <Comments storageKey={`suhani-screen:comments:${storageKey}`} />
+          </div>
+        </div>
       </div>
     </div>
   )
