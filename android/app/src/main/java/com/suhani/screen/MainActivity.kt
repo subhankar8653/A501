@@ -543,51 +543,42 @@ class MainActivity : AppCompatActivity() {
         // apna scroll (upar ho ya neeche) hamesha bina rukawat ke chalega.
         swipeRefresh.isEnabled = false
 
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
-        } else {
-            // BUG FIX (asli root cause of the offline "black screen", user report
-            // + confirmed pattern seen with WebViewAssetLoader-based apps): webView
-            // .loadUrl(APP_URL) is a real top-level NAVIGATION. Chromium (jo WebView
-            // ko power karta hai) kabhi-kabhi is level par ek OS network-state check
-            // karta hai UNSE PEHLE hi ki request kabhi shouldInterceptRequest tak
-            // pahunche — matlab agar device par bilkul network na ho (Airplane
-            // mode / SIM+WiFi dono off), Chromium poori navigation hi seedha
-            // net::ERR_INTERNET_DISCONNECTED de kar reject kar sakta hai, chahe
-            // target URL 100% locally-intercepted (appassets.androidplatform.net)
-            // hi kyun na ho. Isi se onReceivedError() -> showLoadError() trigger
-            // hota tha, jiska dark (#0B0B0F) near-black background + chhota
-            // warning-icon/text hi effectively user ko "black screen" jaisa
-            // dikhta tha — HAR baar jab device genuinely offline hota, na ki sirf
-            // kabhi-kabhi.
-            //
-            // Fix: loadUrl() (top-level navigation) ki jagah index.html ka content
-            // seedha loadDataWithBaseURL() se WebView ko "inject" karo. Yeh ek
-            // navigation nahi hai (koi network request hi nahi banta is pehle
-            // load ke liye), isliye upar wala connectivity pre-check bilkul bypass
-            // ho jaata hai — chahe device abhi Airplane mode mein hi kyun na ho.
-            // baseURL wahi virtual origin (https://appassets.androidplatform.net/)
-            // rakha hai, isliye HTML ke andar ke saare relative paths (/assets/*.js,
-            // /assets/*.css, /favicon.png, waghera) bilkul pehle jaisa hi assetLoader
-            // ke through resolve/serve hote hain — yeh SUB-resource requests hain,
-            // top-level navigation nahi, isliye inke liye woh connectivity
-            // pre-check lagta hi nahi (yeh already reliably offline kaam karta tha,
-            // isko chheda nahi gaya).
-            try {
-                val html = assets.open("index.html").bufferedReader().use { it.readText() }
-                webView.loadDataWithBaseURL(
-                    "https://appassets.androidplatform.net/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
-            } catch (e: Exception) {
-                // Extremely unlikely (would mean assets/index.html khud missing/
-                // corrupt build) — is genuine case mein hi ab purana loadUrl()
-                // fallback ke roop mein istemal hota hai.
-                webView.loadUrl(APP_URL)
-            }
+        // BUG FIX #2 (root cause of "fix #1 ke baad bhi offline black screen aa
+        // raha hai" — user ne screenshots se confirm kiya): fix #1 ne sirf COLD
+        // START (savedInstanceState == null, jaise APK ka pehla launch) ko
+        // loadDataWithBaseURL() se navigation-free bana diya tha — lekin
+        // savedInstanceState != null wala branch bilkul chhua hi nahi tha, aur
+        // WASTAV mein REAL-WORLD offline-reopen scenario yehi branch hai: user
+        // app use karta hai, kuch der ke liye chhodta hai, Android low-memory
+        // mein background process ko kill kar deta hai (task/back-stack bana
+        // rehta hai) — phir jab user icon se wapas kholta hai, Android
+        // onCreate() ko EK SAVED savedInstanceState ke saath dobara call karta
+        // hai. Us purane code mein yahan `webView.restoreState(savedInstanceState)`
+        // chalta tha — jo apni history ke last URL ko phir se ek REAL NAVIGATION
+        // ke through reload karta hai (bilkul loadUrl() jaisa hi), isliye wahi
+        // connectivity pre-check hang/error dubara laga deta — is baar cold-start
+        // ke fix se bilkul bachte hue.
+        // Fix: dono cases (fresh launch ho ya process-death ke baad restore) mein
+        // ab hamesha wahi safe loadDataWithBaseURL() path chalta hai — WebView ke
+        // native restoreState() par ab kabhi bharosa nahi karte. Trade-off: agar
+        // process genuinely beech mein kill hua ho, user exact usi in-app page
+        // (jaise kisi movie ke detail page) par restore nahi hoga, seedha Home se
+        // khulega — lekin app HAMESHA khulega, offline ho ya online, yeahi
+        // asli maang thi.
+        try {
+            val html = assets.open("index.html").bufferedReader().use { it.readText() }
+            webView.loadDataWithBaseURL(
+                "https://appassets.androidplatform.net/",
+                html,
+                "text/html",
+                "UTF-8",
+                null
+            )
+        } catch (e: Exception) {
+            // Extremely unlikely (would mean assets/index.html khud missing/
+            // corrupt build) — is genuine case mein hi ab purana loadUrl()
+            // fallback ke roop mein istemal hota hai.
+            webView.loadUrl(APP_URL)
         }
     }
 
