@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getManifest, groupCatalogsByTab, loadTabByLanguage, HOME_TABS } from '../api'
+import {
+  getManifest,
+  groupCatalogsByTab,
+  loadTabByLanguage,
+  HOME_TABS,
+  loadHomeCache,
+  saveHomeCache,
+} from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
@@ -22,50 +29,136 @@ export default function Home() {
   return <HomeContent />
 }
 
+const PULL_THRESHOLD = 70 // px of drag before letting go triggers a refresh
+const PULL_MAX = 96 // visual cap so the indicator doesn't drag forever
+
 function HomeContent() {
-  const [tabCatalogs, setTabCatalogs] = useState(null) // { anime: [...], movie: [...], ... }
+  // Hydrate straight from the persisted cache (if any) so returning to Home
+  // — from Saved/Downloads/Profile, or after fully closing and reopening the
+  // app — shows the last-loaded content INSTANTLY, no "Loading…" flash.
+  const cacheRef = useRef(loadHomeCache())
+  const [tabCatalogs, setTabCatalogs] = useState(cacheRef.current?.tabCatalogs || null)
   const [active, setActive] = useState('anime')
-  const [groupsByTab, setGroupsByTab] = useState({}) // cache: { [tab]: [{language, items}] }
+  const [groupsByTab, setGroupsByTab] = useState(cacheRef.current?.groupsByTab || {})
   const [loadingTab, setLoadingTab] = useState(false)
   const [error, setError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
+  // Only ever shown for a manual pull-to-refresh — the automatic
+  // background catch-up (see effects below) stays silent on purpose.
+  const [pullRefreshing, setPullRefreshing] = useState(false)
 
-  // Load the manifest once, sort catalogs into tabs.
+  // Keep the cache in sync with whatever's on screen, so the NEXT visit
+  // (tab switch or app reopen) starts from here. Old entry is simply
+  // overwritten — nothing stacks up.
+  useEffect(() => {
+    if (!tabCatalogs) return
+    saveHomeCache({ tabCatalogs, groupsByTab })
+  }, [tabCatalogs, groupsByTab])
+
+  // Load the manifest once (and again on Retry). If cached content is
+  // already on screen this runs quietly in the background — the user sees
+  // nothing change until fresher data is actually ready, at which point it
+  // just quietly swaps in (see the tab-loading effect below).
   useEffect(() => {
     let cancelled = false
-    setError('')
+    const hadCache = !!tabCatalogs
+    if (!hadCache) setError('')
     getManifest()
       .then((manifest) => {
         if (cancelled) return
         setTabCatalogs(groupCatalogsByTab(manifest.catalogs))
       })
       .catch(() => {
-        if (!cancelled) setError('Library load nahi ho payi. Setup check karo.')
+        if (!cancelled && !hadCache) setError('Library load nahi ho payi. Setup check karo.')
       })
     return () => {
       cancelled = true
     }
   }, [retryKey])
 
-  // Whenever the active tab changes, load (and cache) that tab's content.
+  // Whenever the active tab changes (or the manifest refreshes underneath
+  // it), load that tab's content:
+  //  - not cached yet -> normal loading spinner, same as before.
+  //  - already cached -> cached content stays on screen as-is, and a
+  //    silent background fetch replaces it once done (this is also what
+  //    picks up brand-new content someone just added on the server,
+  //    without the user having to do anything).
   useEffect(() => {
     if (!tabCatalogs) return
-    if (groupsByTab[active]) return // already cached
+    const hasCache = !!groupsByTab[active]
 
     let cancelled = false
-    setLoadingTab(true)
-    loadTabByLanguage(tabCatalogs[active])
-      .then((groups) => {
-        if (cancelled) return
-        setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTab(false)
-      })
+    if (hasCache) {
+      loadTabByLanguage(tabCatalogs[active])
+        .then((groups) => {
+          if (!cancelled) setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+        })
+        .catch(() => {
+          // keep showing the cached groups — a failed silent refresh
+          // shouldn't disturb what's already on screen
+        })
+    } else {
+      setLoadingTab(true)
+      loadTabByLanguage(tabCatalogs[active])
+        .then((groups) => {
+          if (cancelled) return
+          setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingTab(false)
+        })
+    }
     return () => {
       cancelled = true
     }
   }, [active, tabCatalogs])
+
+  // Manual pull-to-refresh: re-fetches the manifest + the active tab and
+  // overwrites whatever was cached for them. Nothing else is touched, so
+  // other tabs keep their own cache until you pull-to-refresh there too.
+  async function forceRefresh() {
+    setPullRefreshing(true)
+    try {
+      const manifest = await getManifest()
+      const nextTabCatalogs = groupCatalogsByTab(manifest.catalogs)
+      setTabCatalogs(nextTabCatalogs)
+      const groups = await loadTabByLanguage(nextTabCatalogs[active])
+      setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+    } catch {
+      // keep whatever was already on screen — a failed refresh shouldn't blank it
+    } finally {
+      setPullRefreshing(false)
+    }
+  }
+
+  // --- pull-to-refresh gesture (only arms when already scrolled to top) ---
+  const [pullY, setPullY] = useState(0)
+  const touchStartY = useRef(null)
+  const pulling = useRef(false)
+
+  function onTouchStart(e) {
+    if (window.scrollY > 0) return
+    touchStartY.current = e.touches[0].clientY
+    pulling.current = true
+  }
+  function onTouchMove(e) {
+    if (!pulling.current || touchStartY.current == null) return
+    const delta = e.touches[0].clientY - touchStartY.current
+    if (delta > 0 && window.scrollY <= 0) {
+      setPullY(Math.min(delta * 0.5, PULL_MAX))
+    } else {
+      pulling.current = false
+      setPullY(0)
+    }
+  }
+  function onTouchEnd() {
+    if (pulling.current && pullY > PULL_THRESHOLD && !pullRefreshing) {
+      forceRefresh()
+    }
+    pulling.current = false
+    touchStartY.current = null
+    setPullY(0)
+  }
 
   if (error) {
     return (
@@ -96,7 +189,27 @@ function HomeContent() {
   const heroLoading = !tabCatalogs || (loadingTab && !groups)
 
   return (
-    <div className="pb-4">
+    <div
+      className="pb-4"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Pull-to-refresh indicator — only visible while actively dragging
+          down from the top, or while a pull-triggered refresh is in flight. */}
+      {(pullY > 0 || pullRefreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden transition-[height] duration-150"
+          style={{ height: pullRefreshing ? 40 : pullY }}
+        >
+          <div
+            className={`w-5 h-5 rounded-full border-2 border-reel-gold border-t-transparent ${
+              pullRefreshing || pullY > PULL_THRESHOLD ? 'animate-spin' : ''
+            }`}
+          />
+        </div>
+      )}
+
       {/* Category pills sit right under the header, above the hero, so
           they're the first thing you see and always in the same spot
           regardless of which hero slide is showing. */}

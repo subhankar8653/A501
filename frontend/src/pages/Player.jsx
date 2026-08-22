@@ -20,6 +20,20 @@ function parseStreamMeta(stream) {
   return { filename, badges }
 }
 
+// Default playback quality should be the LOWEST available (360p over 480p
+// over 720p... etc), not whatever the backend happens to list first — user
+// ask: data-friendly default, let them manually bump it up if they want.
+// Streams with no parseable resolution (odd/"Auto" names) sort after every
+// known resolution since we can't tell where they actually rank.
+function lowestQualityStream(list) {
+  const rank = (stream) => {
+    const label = qualityLabel(stream)
+    const match = label.match(/(\d+)/)
+    return match ? Number(match[1]) : Infinity
+  }
+  return [...list].sort((a, b) => rank(a) - rank(b))[0]
+}
+
 export default function Player() {
   const { type, id } = useParams()
   const navigate = useNavigate()
@@ -119,7 +133,7 @@ export default function Player() {
           return
         }
         setStreams(list)
-        setActive(list[0])
+        setActive(lowestQualityStream(list))
       })
       .catch(() => setError('Stream load nahi hui.'))
   }, [type, id, retryKey])

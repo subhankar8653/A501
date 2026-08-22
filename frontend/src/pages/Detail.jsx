@@ -29,7 +29,12 @@ export default function Detail() {
         }
         setMeta(m)
         if (m.videos && m.videos.length) {
-          setSeason(m.videos[0].season)
+          // Default to Season 1 (not whatever happens to be first in the
+          // raw list) — season 0 is the "Combined" bucket and must never
+          // be picked as the initial tab, only reachable by tapping it.
+          const nums = [...new Set(m.videos.map((v) => v.season))]
+          const sorted = nums.sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+          setSeason(sorted[0])
         }
       })
       .catch(() => setError('Details load nahi hue.'))
