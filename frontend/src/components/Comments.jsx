@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
+import { getProfile } from '../api'
 
 const NICK_KEY = 'suhani-screen:nick'
 const NICKNAMES = ['CinemaFan', 'MovieBuff', 'StreamKing', 'FilmLover', 'NightWatch', 'CoolViewer', 'HindiFilms', 'StarWatcher']
 
+// Signed-in users comment under their real (Telegram) profile name; only a
+// device with no profile (old manual-token setup) falls back to a random
+// per-device nickname.
 function getNick() {
+  const profile = getProfile()
+  if (profile?.name) return profile.name
   try {
     let n = localStorage.getItem(NICK_KEY)
     if (!n) {
