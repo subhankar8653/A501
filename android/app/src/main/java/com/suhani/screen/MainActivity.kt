@@ -315,6 +315,30 @@ class MainActivity : AppCompatActivity() {
     // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
     // browser history state par bharosa nahi.
     private var pipReturnPath: String? = null
+    // BUG FIX (user report + screenshot: "expand ke baad video Home page ke
+    // upar hi atka reh jaata hai, apni jagah par nahi"): neeche wale
+    // onActivityResult ka "normal return" branch pehle HAMESHA turant
+    // `inlineOverlay.visibility = VISIBLE` kar deta tha — apne ANTIM/purane
+    // (PiP-se-pehle wale) rect par, chahe WebView us waqt genuinely wapas
+    // watch page par pahunchi ho ya nahi. `mountInlinePlayer()` ka apna
+    // same-URI dedupe guard (upar dekho) is se koi rishta nahi rakhta — wo
+    // sirf overlay CREATE/reuse control karta hai, iski VISIBILITY yahin se
+    // aati hai. Result: agar `pipReturnPath` wali navigation abhi poori nahi
+    // hui (ya kisi wajah se fail ho gayi), video turant dikh jaata — lekin
+    // apni PURANI jagah (jahan Player.jsx pehle tha) par, jo ab galat page
+    // (jaise Home) ke upar overlap kar rahi hoti.
+    // Fix: jab yeh return ek real-PiP-se-navigate-away session ke baad ho
+    // (`didNavigateBackForPip` true tha), overlay ko turant show mat karo —
+    // iske bajaye wait karo JS ke agle genuine `updateInlinePlayerRect()`
+    // bridge call ka (jo sirf Player.jsx ke sahi route par dobara mount hone
+    // ke baad hi aata hai — dekho VideoPlayer.jsx ka rect-effect). Wahi call
+    // ab overlay ko sahi, FRESH rect par show karega. Agar navigation kisi
+    // wajah se poori kabhi nahi hoti, ek chhota safety-net timeout (neeche)
+    // fir bhi ise show kar dega — taaki video hamesha ke liye chhupa na reh
+    // jaaye, sirf thoda late dikhe (galat jagah par turant dikhne se behtar).
+    private var awaitingRectAfterPipReturn = false
+    private val awaitingRectHandler = Handler(Looper.getMainLooper())
+    private var awaitingRectTimeoutRunnable: Runnable? = null
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -1640,6 +1664,25 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
+    // Dekho `awaitingRectAfterPipReturn` field ka comment upar — is ek chhoti
+    // fade-in animation ko ek helper mein nikaal diya hai taaki normal-return
+    // path AUR updateInlinePlayerRect() (real-PiP-return path) dono ise
+    // istemal kar sakein.
+    private fun showInlineOverlayWithFade() {
+        inlineOverlay?.let { overlay ->
+            overlay.animate().cancel()
+            overlay.alpha = 0f
+            overlay.scaleX = 0.96f
+            overlay.scaleY = 0.96f
+            overlay.visibility = View.VISIBLE
+            overlay.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(180)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+        }
+    }
+
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
     fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
@@ -1652,6 +1695,16 @@ class MainActivity : AppCompatActivity() {
         params.leftMargin = (left * density).toInt()
         params.topMargin = statusBarInsetPx + (top * density).toInt()
         overlay.layoutParams = params
+        // BUG FIX (dekho `awaitingRectAfterPipReturn` field ka comment): yeh
+        // pakka signal hai ki JS ab WAAKI (sahi) page par dobara mount ho
+        // chuki hai aur is video ke container ka asli, current rect bhej
+        // chuki hai — ab safely (aur sahi jagah par) overlay dikhao.
+        if (awaitingRectAfterPipReturn) {
+            awaitingRectAfterPipReturn = false
+            awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+            awaitingRectTimeoutRunnable = null
+            showInlineOverlayWithFade()
+        }
     }
 
     fun unmountInlinePlayer() {
@@ -1955,6 +2008,10 @@ class MainActivity : AppCompatActivity() {
         if (didNavigateBackForPip) {
             webView.goBack()
         }
+        // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
+        // isi (genuinely-navigated-away) case mein overlay ka turant show
+        // hona rokna hai.
+        awaitingRectAfterPipReturn = didNavigateBackForPip
         val intent = Intent(this, PlayerActivity::class.java).apply {
             putExtra("video_uri", inlineUri)
             putExtra("video_title", inlineTitle)
@@ -2051,6 +2108,9 @@ class MainActivity : AppCompatActivity() {
             if (pipGenuinelyClosed) {
                 didNavigateBackForPip = false
                 pipReturnPath = null
+                awaitingRectAfterPipReturn = false
+                awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+                awaitingRectTimeoutRunnable = null
                 inlinePlayer?.playWhenReady = false
                 inlinePlayer?.pause()
                 if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
@@ -2150,17 +2210,26 @@ class MainActivity : AppCompatActivity() {
             // Premium polish: ab baaki dono jagah (mountInlinePlayer/unmountInlinePlayer)
             // jaisa hi halka scale bhi hai — teeno jagah ka overlay show/hide motion
             // ab consistent hai, poore app mein ek hi "material" feel.
-            inlineOverlay?.let { overlay ->
-                overlay.animate().cancel()
-                overlay.alpha = 0f
-                overlay.scaleX = 0.96f
-                overlay.scaleY = 0.96f
-                overlay.visibility = View.VISIBLE
-                overlay.animate()
-                    .alpha(1f).scaleX(1f).scaleY(1f)
-                    .setDuration(180)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .start()
+            // BUG FIX (dekho `awaitingRectAfterPipReturn` field ka comment): agar
+            // yeh return ek real-PiP-navigate-away session ke baad hai, overlay ko
+            // yahan turant mat dikhao — WebView abhi tak sahi (watch) page par
+            // wapas pahunchi hi nahi hai (async navigate() abhi chal raha hai).
+            // updateInlinePlayerRect() (JS ke fresh mount ke baad) hi ab ise sahi
+            // rect ke saath dikhayega. Ek safety-net timeout bhi laga do — agar
+            // kisi wajah se woh call kabhi na aaye, video hamesha ke liye chhupa
+            // na reh jaaye.
+            awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+            if (awaitingRectAfterPipReturn) {
+                val timeoutRunnable = Runnable {
+                    if (awaitingRectAfterPipReturn) {
+                        awaitingRectAfterPipReturn = false
+                        showInlineOverlayWithFade()
+                    }
+                }
+                awaitingRectTimeoutRunnable = timeoutRunnable
+                awaitingRectHandler.postDelayed(timeoutRunnable, 1500L)
+            } else {
+                showInlineOverlayWithFade()
             }
         }
     }
