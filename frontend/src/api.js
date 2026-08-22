@@ -26,6 +26,68 @@ export function clearConfig() {
   localStorage.removeItem(STORAGE_KEY)
 }
 
+// The one backend this build of the app talks to. Set this before building
+// the app (or override at build time with VITE_BACKEND_URL in a .env file)
+// so the in-app "Sign up with Telegram" button knows where to reach the
+// bot/backend — the user is never asked to type a backend URL anymore.
+export const DEFAULT_BACKEND_URL = (
+  import.meta.env.VITE_BACKEND_URL || 'https://your-app.up.railway.app'
+).replace(/\/+$/, '')
+
+// ---------------------------------------------------------------------
+// Signed-in profile (name/username/photo pulled from Telegram during the
+// "Sign up with Telegram" flow). Separate from `config` (backendUrl+token)
+// so Profile.jsx has something nicer to show than "Guest".
+// ---------------------------------------------------------------------
+const PROFILE_KEY = 'huka-tube:profile'
+
+export function getProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveProfile(profile) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  return profile
+}
+
+export function clearProfile() {
+  localStorage.removeItem(PROFILE_KEY)
+}
+
+// ---------------------------------------------------------------------
+// "Sign up with Telegram" flow — see backend routes under /api/app/*.
+// ---------------------------------------------------------------------
+export async function getBotUsername() {
+  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/bot-username`)
+  if (data.status !== 'success') throw new Error(data.message || 'Bot not reachable')
+  return data.data.username
+}
+
+export async function createSignupCode() {
+  const res = await fetch(`${DEFAULT_BACKEND_URL}/api/app/signup/create`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Request failed (${res.status})`)
+  const data = await res.json()
+  if (data.status !== 'success') throw new Error(data.message || 'Could not start sign-up')
+  return data.data.code
+}
+
+// Returns { state: 'pending' | 'verified' | 'expired' | 'invalid', ... }
+export async function getSignupStatus(code) {
+  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/signup/${code}`)
+  if (data.status !== 'success') throw new Error(data.message || 'Could not check sign-up status')
+  return data.data
+}
+
+export function avatarUrl(userId) {
+  if (!userId) return null
+  return `${DEFAULT_BACKEND_URL}/api/app/avatar/${userId}`
+}
+
 // Search history for the full-screen search overlay (YouTube-style "recent
 // searches" list shown before the user types anything).
 const RECENT_SEARCHES_KEY = 'huka-tube:recent-searches'
