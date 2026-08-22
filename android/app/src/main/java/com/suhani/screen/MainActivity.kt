@@ -147,37 +147,35 @@ class WebAppInterface(private val activity: MainActivity) {
  * mein registered) ke through evaluateJavascript se wapas bheja jaata hai.
  */
 class WebDownloadInterface(private val activity: MainActivity) {
+    // BUG FIX (user report: "download pe lagata hu, kisi aur app mein
+    // chala jaata hu to yahan download cancel ho jaata hai, notification bar
+    // mein bhi progress nahi dikhta"): pehle yahin seedha
+    // `NativeDownloadManager.start()` ek plain background Thread ke saath
+    // call hota tha — koi foreground service nahi, isliye app background
+    // jaate hi (khaaskar aggressive battery-saver OEM phones par) poora
+    // process hi kill ho jaata aur download ke saath-saath ruk jaata, aur
+    // kabhi koi notification bhi nahi thi. Ab download `DownloadService`
+    // (foreground service + ongoing progress notification) ke andar chalta
+    // hai — dekho uska doc comment. `title` naya param hai (video/episode ka
+    // naam) — notification mein dikhane ke liye; JS side (downloadsStore.js)
+    // ab isko bhejta hai.
     @JavascriptInterface
-    fun startDownload(id: String, url: String) {
-        NativeDownloadManager.start(
-            context = activity,
-            id = id,
-            url = url,
-            onProgress = { pct, bytes ->
-                if (!activity.isFinishing && !activity.isDestroyed) {
-                    activity.runOnUiThread { activity.notifyDownloadProgress(id, pct, bytes) }
-                }
-            },
-            onDone = { contentUri ->
-                if (!activity.isFinishing && !activity.isDestroyed) {
-                    activity.runOnUiThread { activity.notifyDownloadDone(id, contentUri) }
-                }
-            },
-            onError = { message ->
-                if (!activity.isFinishing && !activity.isDestroyed) {
-                    activity.runOnUiThread { activity.notifyDownloadError(id, message) }
-                }
-            },
-        )
+    fun startDownload(id: String, url: String, title: String) {
+        DownloadService.start(activity, id, url, title)
     }
 
     @JavascriptInterface
     fun cancelDownload(id: String) {
-        NativeDownloadManager.cancel(id)
+        DownloadService.cancel(activity, id)
     }
 
     @JavascriptInterface
     fun deleteDownload(id: String) {
+        // Agar yeh abhi download ho hi raha ho, pehle DownloadService ko cancel
+        // karo (taaki notification/foreground state bhi sahi se saaf ho), fir
+        // file delete karo. Already-complete downloads ke liye cancel() no-op
+        // hai (active map mein hai hi nahi).
+        DownloadService.cancel(activity, id)
         NativeDownloadManager.delete(activity, id)
     }
 
@@ -189,7 +187,7 @@ class WebDownloadInterface(private val activity: MainActivity) {
     }
 }
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     // ARCHITECTURE CHANGE (user demand: "app offline mein bhi chalna chahiye,
     // sirf website fix karne se kaam nahi chalega"): pehle yeh Activity sirf
@@ -521,6 +519,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // DownloadService ke saath registration — dekho onDownloadProgress/
+        // Done/Error overrides ka comment aur DownloadService.kt.
+        DownloadService.listener = this
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webview)
@@ -1290,6 +1291,22 @@ class MainActivity : AppCompatActivity() {
     // hota hai, aur ek destroyed WebView par evaluateJavascript() call karne se
     // crash ("WebView is destroyed"/IllegalStateException) hota — isliye ab yahan
     // isFinishing/isDestroyed check karke us callback ko silently drop kar dete hain.
+    // BUG FIX (dekho DownloadService.kt ka doc comment — "background jaate hi
+    // download cancel, notification bar mein progress nahi"): downloads ab
+    // DownloadService (foreground service) ke andar chalte hain, na ki seedha
+    // WebDownloadInterface se. Yeh teeno `DownloadService.ProgressListener`
+    // interface overrides hain — jab bhi app foreground mein ho (MainActivity
+    // zinda ho aur listener registered ho, dekho onCreate/onDestroy), service
+    // inhi ke through JS ko bhi progress forward karta hai. App background mein
+    // ho to bhi service khud chalta rehta hai aur notification update karta
+    // rehta hai — sirf yeh JS-forwarding skip hoti hai (kyunki WebView tab tak
+    // paused/inactive hota hai), UI wapas foreground aane par (listener
+    // dobara register hoke) turant sync ho jaata hai (downloadsStore.js apna
+    // saved state already IndexedDB/localStorage se rakhta hai).
+    override fun onDownloadProgress(id: String, pct: Int, bytes: Long) = notifyDownloadProgress(id, pct, bytes)
+    override fun onDownloadDone(id: String, contentUri: String) = notifyDownloadDone(id, contentUri)
+    override fun onDownloadError(id: String, message: String) = notifyDownloadError(id, message)
+
     fun notifyDownloadProgress(id: String, progressPct: Int, sizeBytes: Long) {
         if (isFinishing || isDestroyed) return
         val idLit = JSONObject.quote(id)
@@ -2313,6 +2330,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Sirf apna hi listener registration hataao — agar kisi wajah se ek
+        // naya MainActivity instance already dobara registered ho chuka hai
+        // (jaise fast recreate), uska registration na chheeno.
+        if (DownloadService.listener === this) DownloadService.listener = null
         loadingLabelPulse?.cancel()
         saveInlineWatchProgress()
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
