@@ -43,6 +43,11 @@ class Telegram:
     HTTP_PROXY_URL                = getenv("HTTP_Proxy_URL", "")
     SHOW_PROXY_AND_NON_PROXY_BOTH = getenv("SHOW_ProxyAndNonProxyBoth", "false").lower() == "true"
 
+    #----- App sign-up log channel: chat id (e.g. -100xxxxxxxxxx) that gets a
+    #----- notification every time someone signs up in the Huka Tube app via
+    #----- the "Sign up with Telegram" button. Leave blank to disable.
+    APP_SIGNUP_LOG_CHANNEL        = getenv("APP_SIGNUP_LOG_CHANNEL", "")
+
     #----- Google Drive: base URL of the Vercel project (frontend/src/api/*.js)
     #----- used to fetch Drive file titles and resolve direct stream URLs.
     GDRIVE_RESOLVER_BASE          = getenv("GDRIVE_RESOLVER_BASE", "").rstrip("/")
