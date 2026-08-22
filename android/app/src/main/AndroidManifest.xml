@@ -20,6 +20,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- BUG FIX (user report: "app background jaate hi download cancel ho
+         jaata hai, notification bar mein progress nahi dikhta"): downloads ab
+         DownloadService (foreground service) ke andar chalte hain — dekho
+         DownloadService.kt. Android 14+ (API 34) par har foreground service
+         ko apna type declare karna zaroori hai; download/file-transfer ke
+         liye "dataSync" sahi type hai, aur usse match karti permission bhi. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application
         android:allowBackup="true"
         android:label="Huka Tube"
@@ -60,6 +68,14 @@
             android:name="com.suhani.videoplayer.BackgroundPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- BUG FIX (user report: "download background mein cancel ho jaata
+             hai, notification bar mein progress nahi dikhta") — dekho
+             DownloadService.kt ka doc comment. -->
+        <service
+            android:name="com.suhani.screen.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Offline download files (NativeDownloadManager) ko content:// URI ke
              through window.AndroidPlayer tak pahunchane ke liye — isi se offline
