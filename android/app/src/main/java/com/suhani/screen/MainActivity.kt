@@ -302,6 +302,19 @@ class MainActivity : AppCompatActivity() {
     // le jaana hai (aur video resume karna hai), lekin genuine PiP "X" close par
     // kuchh bhi nahi karna — na forward navigate, na koi playback background mein.
     private var didNavigateBackForPip = false
+    // BUG FIX (user report: "PiP expand karne par Home page par khul jaata hai,
+    // asli watch page par nahi"): `didNavigateBackForPip` + `webView.goForward()`
+    // is assumption par tika tha ki PiP floating rehte waqt WebView ki forward-
+    // history bilkul waisi hi rahegi jaisi goBack() karte waqt thi. Lekin PiP ke
+    // dauraan user WebView mein kahin bhi normally ghoom sakta hai (Home tab,
+    // koi doosra title) — koi bhi naya client-side navigate() us forward-entry
+    // ko turant discard kar deta hai, isliye goForward() expand par ya to kuch
+    // nahi karta ya galat page par le jaata — result: "Home par hi khula reh
+    // jaana", bilkul jaisa report hua. Fix: exact watch-page path yahan yaad
+    // rakho (goBack() se theek pehle capture karke) aur expand par isi ko
+    // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
+    // browser history state par bharosa nahi.
+    private var pipReturnPath: String? = null
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -1932,6 +1945,12 @@ class MainActivity : AppCompatActivity() {
         // real PiP wale trigger (pip button/chevron/swipe/home-button) ke liye,
         // plain "fullscreen" button (enterPipImmediately=false) page ko chhedta
         // nahi — wahan user seedha isi page par wapas aana chahta hai.
+        // Bug fix (dekho `pipReturnPath` field ka comment): browser forward-
+        // history par bharosa karne se pehle, is watch page ka exact path
+        // (pathname + query) yahin, goBack() se theek pehle, capture kar lo —
+        // taaki expand par ise history state se independent, direct navigate()
+        // se wapas laaya jaa sake.
+        pipReturnPath = if (enterPipImmediately) currentWebViewPathOrNull() else null
         didNavigateBackForPip = enterPipImmediately && webView.canGoBack()
         if (didNavigateBackForPip) {
             webView.goBack()
@@ -1981,6 +2000,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Bug fix (dekho `pipReturnPath` field ka comment): WebView ke current
+    // loaded URL (jo SPA route ke saath hamesha in-sync rehta hai — React
+    // Router BrowserRouter asli address bar URL hi use karta hai) se sirf
+    // path + query nikaal deta hai, taaki React Router ke apne navigate() ko
+    // seedha wahi diya jaa sake (poora origin/scheme uske liye zaroori nahi).
+    private fun currentWebViewPathOrNull(): String? {
+        val url = webView.url ?: return null
+        return try {
+            val uri = Uri.parse(url)
+            val path = uri.path?.takeIf { it.isNotBlank() } ?: "/"
+            val query = uri.query
+            if (!query.isNullOrEmpty()) "$path?$query" else path
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -2014,6 +2050,7 @@ class MainActivity : AppCompatActivity() {
             // PlayerActivity.handlePipGenuineClose()).
             if (pipGenuinelyClosed) {
                 didNavigateBackForPip = false
+                pipReturnPath = null
                 inlinePlayer?.playWhenReady = false
                 inlinePlayer?.pause()
                 if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
@@ -2049,7 +2086,28 @@ class MainActivity : AppCompatActivity() {
             // position/playing-state ke saath, YouTube jaisa, resume ho.
             if (didNavigateBackForPip) {
                 didNavigateBackForPip = false
-                if (webView.canGoForward()) webView.goForward()
+                // BUG FIX (dekho `pipReturnPath` field ka comment upar —
+                // "PiP expand karne par Home par khul jaata hai"): purana
+                // `webView.goForward()` PiP ke dauraan WebView mein hui kisi
+                // bhi navigation (Home tab tap, waghera) se silently toot
+                // jaata tha, kyunki wo forward-history entry hi discard ho
+                // chuki hoti thi. Ab exact capture kiya gaya path seedha
+                // (history state se independent) navigate karo — yehi hamesha
+                // theek page par le jaata hai, chahe user ne PiP ke dauraan
+                // WebView mein kahin bhi ghoom liya ho.
+                val target = pipReturnPath
+                pipReturnPath = null
+                if (target != null) {
+                    webView.evaluateJavascript(
+                        "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(target)});",
+                        null
+                    )
+                } else if (webView.canGoForward()) {
+                    // Fallback: agar kisi wajah se watch-page path capture
+                    // nahi ho paya (bahut purana WebView state, ya url null),
+                    // purana behavior hi try karo, kuch na hone se behtar.
+                    webView.goForward()
+                }
             }
 
             // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
