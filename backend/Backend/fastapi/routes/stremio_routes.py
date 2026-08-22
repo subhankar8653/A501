@@ -189,31 +189,37 @@ async def _apply_fanart(meta: dict, item: dict) -> None:
         meta["background"] = art["background"]
 
 
-#----- Collect every quality/episode release filename stored on a doc
-def _quality_names(item: dict) -> list:
-    names = []
+#----- One representative release filename for a doc: for a series, the
+#----- first episode that has a release (checking every episode's filename
+#----- and merging them pulled in unrelated tokens — a different episode's
+#----- fansub/subtitle tag could get misread as this title's audio
+#----- language); for a movie, its own first release.
+def _first_quality_name(item: dict):
     if item.get("media_type") == "tv":
         for season in item.get("seasons", []) or []:
             for episode in season.get("episodes", []) or []:
                 for q in episode.get("telegram", []) or []:
                     if q.get("name"):
-                        names.append(q["name"])
+                        return q["name"]
     else:
         for q in item.get("telegram", []) or []:
             if q.get("name"):
-                names.append(q["name"])
-    return names
+                return q["name"]
+    return None
 
 
-#----- Every language available for a title — detected from its release filenames
-#----- (handles multi-audio releases), falling back to TMDB's original_language
-#----- when nothing could be detected from filenames.
+#----- The language for a title — detected from a single representative
+#----- release filename (one episode for a series, the movie's own file for
+#----- a movie), falling back to TMDB's original_language when nothing could
+#----- be detected. Deliberately NOT aggregated across every episode/quality
+#----- on the doc: doing that used to surface a stray subtitle-language tag
+#----- from one unrelated release (e.g. "Korean", "Persian" subs bundled
+#----- into some other episode's file) even though the title's actual audio
+#----- was Japanese — one clean filename is a more reliable signal than many
+#----- noisy ones.
 def item_languages(item: dict) -> list:
-    found = []
-    for name in _quality_names(item):
-        for label in detect_languages(name):
-            if label not in found:
-                found.append(label)
+    name = _first_quality_name(item)
+    found = detect_languages(name) if name else []
     if not found:
         fallback = language_label_for_code(item.get("original_language"))
         if fallback:
