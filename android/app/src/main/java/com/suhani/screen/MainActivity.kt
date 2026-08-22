@@ -642,6 +642,51 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 return assetLoader.shouldInterceptRequest(request.url)
             }
 
+            // BUG FIX (user report: "Sign up with Telegram" -> "Open Telegram"
+            // par click karne par "Webpage not available / net::ERR_UNKNOWN_
+            // URL_SCHEME (tg:resolve?...)" dikhta tha): koi shouldOverrideUrlLoading
+            // hi nahi tha, isliye WebView har link (chahe https://t.me/... ho
+            // ya Telegram ka apna JS-redirect kiya hua tg: deep-link) khud
+            // apne andar hi load karne ki koshish karta tha. tg: scheme WebView
+            // samajhta hi nahi (sirf http/https handle karta hai) — isliye
+            // seedha error screen. Fix: t.me links aur kisi bhi non-http(s)
+            // scheme (tg:, intent:, mailto:, waghera) ko yahin pakad kar
+            // asli Android OS ko de do (Intent.ACTION_VIEW) — woh khud sahi
+            // app choose karega (installed Telegram app, ya agar install
+            // nahi hai to Play Store / chooser). Baaki normal http(s) page
+            // navigation (apna hi bundled frontend) bilkul pehle jaisa hi
+            // WebView ke andar rehta hai.
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+                val url = request.url
+                val scheme = url.scheme?.lowercase()
+                val host = url.host?.lowercase()
+                val isTelegramLink = host == "t.me" || host == "telegram.me" || scheme == "tg"
+                if (isTelegramLink || (scheme != "http" && scheme != "https")) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, url))
+                    } catch (e: android.content.ActivityNotFoundException) {
+                        // Telegram app hi installed nahi hai — Play Store par
+                        // uska listing khol do taaki user install kar sake.
+                        try {
+                            startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("market://details?id=org.telegram.messenger")
+                                )
+                            )
+                        } catch (e2: android.content.ActivityNotFoundException) {
+                            // Play Store bhi nahi — chup-chaap ignore, at least
+                            // crash ya broken error page nahi dikhega.
+                        }
+                    }
+                    return true
+                }
+                return false
+            }
+
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 // Reload (retry/pull-to-refresh) par bhi purani error screen turant
