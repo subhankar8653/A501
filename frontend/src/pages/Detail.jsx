@@ -15,6 +15,8 @@ export default function Detail() {
   // (either one episode, or the whole current season).
   const [epMenuOpen, setEpMenuOpen] = useState(null) // episode id | null
   const [downloadTarget, setDownloadTarget] = useState(null) // [episode] | allEpisodesInSeason | null
+  const [seasonPickerOpen, setSeasonPickerOpen] = useState(false) // top-level download button's season-choose step
+  const [descExpanded, setDescExpanded] = useState(false)
 
   useEffect(() => {
     setMeta(null)
@@ -92,94 +94,134 @@ export default function Detail() {
 
   const isSeries = type === 'series'
 
+  // Top-level small download button (next to genres/languages):
+  //  - movie            -> straight to quality picker for the movie itself
+  //  - series, 1 season -> straight to quality picker for that season's episodes
+  //  - series, 2+ seasons -> season-choose sheet first, then quality picker
+  function openMainDownload() {
+    if (!isSeries) {
+      setDownloadTarget([{ id, title: meta.name, filename: meta.name }])
+      return
+    }
+    if (!meta.videos?.length) return
+    if (seasons.length <= 1) {
+      setDownloadTarget(meta.videos.filter((v) => v.season === seasons[0]))
+      return
+    }
+    setSeasonPickerOpen(true)
+  }
+
+  function pickSeasonForDownload(s) {
+    setSeasonPickerOpen(false)
+    setDownloadTarget((meta.videos || []).filter((v) => v.season === s))
+  }
+
+  const showReadMore = meta.description && meta.description.length > 110
+
   return (
     <div>
       <div
-        className="w-full h-[42vh] sm:h-[52vh] bg-cover bg-center relative"
+        className="w-full h-[30vh] sm:h-[38vh] bg-cover bg-center relative"
         style={{ backgroundImage: `linear-gradient(to top, #0B0B12 5%, rgba(11,11,18,0.4)), url(${meta.background || meta.poster})` }}
       >
         <BackButton className="absolute top-4 left-4 z-20" />
-        <div className="absolute bottom-0 left-0 right-0 max-w-6xl mx-auto px-4 sm:px-6 pb-6 flex items-end gap-5">
+        <div className="absolute bottom-0 left-0 right-0 max-w-6xl mx-auto px-4 sm:px-6 pb-4 flex items-end gap-4">
           {meta.poster ? (
             <img
               src={meta.poster}
               alt={meta.name}
-              className="hidden sm:block w-32 rounded-lg ring-1 ring-white/10 shadow-xl shrink-0"
+              className="hidden sm:block w-24 rounded-lg ring-1 ring-white/10 shadow-xl shrink-0"
             />
           ) : null}
           <div>
-            <h1 className="font-display text-3xl sm:text-4xl font-semibold">{meta.name}</h1>
-            <p className="text-reel-muted text-sm mt-1">
+            <h1 className="font-display text-2xl sm:text-3xl font-semibold leading-tight">{meta.name}</h1>
+            <p className="text-reel-muted text-xs mt-1">
               {meta.releaseInfo} {meta.runtime ? `· ${meta.runtime}` : ''} {meta.imdbRating ? `· ★ ${meta.imdbRating}` : ''}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-        {meta.genres?.length ? (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {meta.genres.map((g) => (
-              <span key={g} className="text-xs bg-reel-surface2 text-reel-muted px-2.5 py-1 rounded-full">
-                {g}
-              </span>
-            ))}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
+        {meta.genres?.length || meta.languages?.length ? (
+          <div className="flex items-center gap-2 mb-2.5">
+            <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+              {meta.genres?.map((g) => (
+                <span key={`genre-${g}`} className="text-[11px] bg-reel-surface2 text-reel-muted px-2 py-0.5 rounded-full">
+                  {g}
+                </span>
+              ))}
+              {meta.languages?.map((l) => (
+                <span
+                  key={`lang-${l}`}
+                  className="text-[11px] border border-reel-gold/40 text-reel-gold px-2 py-0.5 rounded-full"
+                >
+                  {l}
+                </span>
+              ))}
+            </div>
+            <button
+              onClick={openMainDownload}
+              aria-label="Download"
+              className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/10 text-reel-ink active:scale-90 transition"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            </button>
           </div>
         ) : null}
 
-        <p className="text-reel-ink/90 max-w-2xl leading-relaxed">{meta.description}</p>
+        <p className={`text-reel-ink/90 max-w-2xl text-sm leading-snug ${descExpanded ? '' : 'line-clamp-2'}`}>
+          {meta.description}
+        </p>
+        {showReadMore ? (
+          <button
+            onClick={() => setDescExpanded((v) => !v)}
+            className="text-xs text-reel-gold mt-1 font-medium"
+          >
+            {descExpanded ? 'Kam dikhao' : 'Aur padho'}
+          </button>
+        ) : null}
 
         {!isSeries ? (
           <button
             onClick={() => navigate(`/watch/${type}/${encodeURIComponent(id)}`)}
-            className="mt-6 bg-reel-gold text-reel-bg font-semibold px-6 py-2.5 rounded-lg hover:brightness-110 active:scale-95 transition"
+            className="mt-4 bg-reel-gold text-reel-bg font-semibold px-6 py-2.5 rounded-lg hover:brightness-110 active:scale-95 transition"
           >
             ▶ Play
           </button>
         ) : (
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1">
-                {seasons.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSeason(s)}
-                    className={`px-4 py-1.5 rounded-full text-sm shrink-0 transition ${
-                      s === season
-                        ? 'bg-reel-gold text-reel-bg font-semibold'
-                        : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
-                    }`}
-                  >
-                    {s === 0 ? 'Combined' : `Season ${s}`}
-                  </button>
-                ))}
-              </div>
-              {episodes.length > 0 ? (
+          <div className="mt-4">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
+              {seasons.map((s) => (
                 <button
-                  onClick={() => setDownloadTarget(episodes)}
-                  className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition"
+                  key={s}
+                  onClick={() => setSeason(s)}
+                  className={`px-4 py-1.5 rounded-full text-sm shrink-0 transition ${
+                    s === season
+                      ? 'bg-reel-gold text-reel-bg font-semibold'
+                      : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
+                  }`}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Season
+                  {s === 0 ? 'Combined' : `Season ${s}`}
                 </button>
-              ) : null}
+              ))}
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {episodes.map((ep) => (
                 <div
                   key={ep.id}
-                  className="relative w-full flex gap-4 bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-white/5"
+                  className="relative w-full flex gap-3 bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-2 ring-1 ring-white/5"
                 >
                   <button
                     onClick={() => navigate(`/watch/${type}/${encodeURIComponent(ep.id)}`)}
-                    className="flex gap-4 text-left min-w-0 flex-1"
+                    className="flex gap-3 text-left min-w-0 flex-1"
                   >
                     <img
                       src={ep.thumbnail}
                       alt={ep.title}
                       loading="lazy"
-                      className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
+                      className="w-24 sm:w-32 aspect-video object-cover rounded-md shrink-0"
                     />
                     <div className="min-w-0">
                       <p className="font-medium text-sm">
@@ -218,6 +260,31 @@ export default function Detail() {
           </div>
         )}
       </div>
+
+      {seasonPickerOpen ? (
+        <div className="fixed inset-0 z-[95] flex items-end justify-center" onClick={() => setSeasonPickerOpen(false)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-6 px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
+          >
+            <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+            <p className="text-reel-ink font-semibold mb-1">Season chuno</p>
+            <p className="text-reel-muted text-xs mb-4">Download karne ke liye pehle season select karo.</p>
+            <div className="flex flex-wrap gap-2">
+              {seasons.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => pickSeasonForDownload(s)}
+                  className="px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition"
+                >
+                  {s === 0 ? 'Combined' : `Season ${s}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <DownloadQualitySheet
         open={!!downloadTarget}
