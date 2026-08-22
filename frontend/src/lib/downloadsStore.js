@@ -122,14 +122,40 @@ function hasNativeDownloader() {
 if (typeof window !== 'undefined') {
   // Native side (WebDownloadInterface/NativeDownloadManager) inhi teenon global
   // callbacks ke through progress/completion/error wapas bhejta hai.
+  //
+  // ROOT CAUSE FIX (user report: "download beech mein Cancel karo to bhi thodi
+  // der baad wapas list mein 'X MB · Offline available' + dustbin ke saath
+  // dikhne lagta hai, seedha delete hona chahiye"): cancelDownload() JS side
+  // par turant meta list se entry hata deta hai, lekin native background
+  // Thread ek hi waqt mein already ek chunk padh chuka ho sakta hai aur uska
+  // onProgress callback mainHandler par POST ho chuka ho sakta hai — yeh
+  // callback cancel ke THODI DER BAAD bhi JS tak pahunch sakta hai. Us waqt
+  // `upsert()` ko entry na milne par (kyunki abhi-abhi cancel karke hataya
+  // tha) woh use `status` field ke bina hi list mein wapas jod deta tha — aur
+  // status na hone par UI usse "done" maan kar "Offline available" +
+  // dustbin dikhati thi. Fix: agar entry pehle se list mein nahi hai (yaani
+  // cancel/delete ho chuka hai), koi bhi late progress/done/error callback
+  // use wapas resurrect nahi karega — bas ignore ho jaayega.
   window.__nativeDownloadProgress = (id, progressPct, sizeBytes) => {
+    if (!getDownloadEntry(id)) return
     upsert({ id, progress: progressPct, sizeBytes })
   }
   window.__nativeDownloadDone = (id, contentUri) => {
+    if (!getDownloadEntry(id)) {
+      // Cancel ke baad bhi native side download poora kar chuka — us adhoori
+      // (ab-anaathi) file ko disk se bhi hata do, list mein kabhi aayegi hi nahi.
+      if (hasNativeDownloader()) window.AndroidDownloader.deleteDownload(id)
+      processQueue()
+      return
+    }
     upsert({ id, status: 'done', progress: 100, nativeUri: contentUri })
     processQueue()
   }
   window.__nativeDownloadError = (id) => {
+    if (!getDownloadEntry(id)) {
+      processQueue()
+      return
+    }
     upsert({ id, status: 'error', progress: 0 })
     processQueue()
   }
