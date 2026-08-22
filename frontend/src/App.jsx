@@ -11,6 +11,7 @@ import Detail from './pages/Detail'
 import Player from './pages/Player'
 import Saved from './pages/Saved'
 import Downloads from './pages/Downloads'
+import { LanguageProvider } from './i18n/LanguageContext'
 import Profile from './pages/Profile'
 
 // FEATURE (user ask: "app bina login/verify ke seedha khul jaaye — Saved
@@ -111,7 +112,7 @@ export default function App() {
   }, [navigate])
 
   return (
-    <>
+    <LanguageProvider>
       <ConnectionOverlay />
       <Routes>
         {/* Direct-link fallback only — normal flow ab kabhi yahan force
@@ -136,6 +137,6 @@ export default function App() {
           }
         />
       </Routes>
-    </>
+    </LanguageProvider>
   )
 }

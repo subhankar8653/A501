@@ -73,6 +73,23 @@ export function isVerified() {
 }
 
 // ---------------------------------------------------------------------
+// App language preference (user ask: Profile page se app ki language
+// badalne ka option — Hinglish/Hindi/English/Bangla/Urdu/Tamil/Telugu).
+// Sirf ek localStorage preference hai; components isko lib/i18n ke
+// useT() hook se padhte hain.
+// ---------------------------------------------------------------------
+const LANGUAGE_KEY = 'a501_language'
+export const DEFAULT_LANGUAGE = 'hinglish'
+
+export function getLanguage() {
+  return localStorage.getItem(LANGUAGE_KEY) || DEFAULT_LANGUAGE
+}
+
+export function saveLanguage(code) {
+  localStorage.setItem(LANGUAGE_KEY, code)
+}
+
+// ---------------------------------------------------------------------
 // "Sign up with Telegram" flow — see backend routes under /api/app/*.
 // ---------------------------------------------------------------------
 export async function getBotUsername() {
