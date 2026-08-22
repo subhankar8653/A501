@@ -7,11 +7,13 @@ import {
   HOME_TABS,
   loadHomeCache,
   saveHomeCache,
+  isVerified,
 } from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 import HomeHero from '../components/HomeHero'
+import VerifyGate from '../components/VerifyGate'
 
 export default function Home() {
   // FEATURE (user ask: "jab offline ho toh sidha download page mein open
@@ -25,6 +27,15 @@ export default function Home() {
   // the Home tab so it's clear *why*.
   const isOnline = useOnlineStatus()
   if (!isOnline) return <Navigate to="/downloads" replace />
+
+  // FEATURE (user ask: "app bina login khule, par Home library-locked rahe
+  // jab tak Profile se verify na ho"): pehle isVerified() check kiye bina
+  // hi catalog fetch shuru ho jaata (aur token na hone par fail ho jaata).
+  // Ab verify na hone par catalog fetch try hi nahi hota — seedha locked
+  // popup card dikha dete hain.
+  if (!isVerified()) {
+    return <VerifyGate message="Library dekhne ke liye pehle khud ko verify karo." />
+  }
 
   return <HomeContent />
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getMeta } from '../api'
+import { getMeta, isVerified } from '../api'
 import BackButton from '../components/BackButton'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
+import VerifyGate from '../components/VerifyGate'
 
 export default function Detail() {
   const { type, id } = useParams()
@@ -17,8 +18,10 @@ export default function Detail() {
   const [downloadTarget, setDownloadTarget] = useState(null) // [episode] | allEpisodesInSeason | null
   const [seasonPickerOpen, setSeasonPickerOpen] = useState(false) // top-level download button's season-choose step
   const [descExpanded, setDescExpanded] = useState(false)
+  const verified = isVerified()
 
   useEffect(() => {
+    if (!verified) return
     setMeta(null)
     setError('')
     getMeta(type, id)
@@ -38,7 +41,7 @@ export default function Detail() {
         }
       })
       .catch(() => setError('Details load nahi hue.'))
-  }, [type, id, retryKey])
+  }, [type, id, retryKey, verified])
 
   const seasons = useMemo(() => {
     if (!meta?.videos) return []
@@ -55,6 +58,10 @@ export default function Detail() {
     if (!meta?.videos) return []
     return meta.videos.filter((v) => v.season === season)
   }, [meta, season])
+
+  if (!verified) {
+    return <VerifyGate message="Yeh title dekhne ke liye pehle khud ko verify karo." />
+  }
 
   if (error) {
     return (

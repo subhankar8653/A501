@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel } from '../api'
+import { getStreams, getMeta, qualityLabel, isVerified } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
+import VerifyGate from '../components/VerifyGate'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
 // into a clean filename + list of badge lines.
@@ -40,6 +41,7 @@ export default function Player() {
   const [streams, setStreams] = useState(null)
   const [active, setActive] = useState(null)
   const [error, setError] = useState('')
+  const verified = isVerified()
 
   const isSeries = type === 'series'
   const [imdbId, seasonStr, episodeStr] = isSeries ? id.split(':') : [id, null, null]
@@ -120,6 +122,7 @@ export default function Player() {
   }
 
   useEffect(() => {
+    if (!verified) return
     setStreams(null)
     setActive(null)
     setError('')
@@ -136,10 +139,10 @@ export default function Player() {
         setActive(lowestQualityStream(list))
       })
       .catch(() => setError('Stream load nahi hui.'))
-  }, [type, id, retryKey])
+  }, [type, id, retryKey, verified])
 
   useEffect(() => {
-    if (!isSeries) {
+    if (!verified || !isSeries) {
       setSeriesMeta(null)
       return
     }
@@ -152,10 +155,10 @@ export default function Player() {
     return () => {
       cancelled = true
     }
-  }, [isSeries, imdbId])
+  }, [verified, isSeries, imdbId])
 
   useEffect(() => {
-    if (isSeries) {
+    if (!verified || isSeries) {
       setMovieMeta(null)
       return
     }
@@ -168,7 +171,7 @@ export default function Player() {
     return () => {
       cancelled = true
     }
-  }, [isSeries, imdbId])
+  }, [verified, isSeries, imdbId])
 
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
@@ -360,6 +363,10 @@ export default function Player() {
         .then(() => showToast('Link copied!'))
         .catch(() => {})
     }
+  }
+
+  if (!verified) {
+    return <VerifyGate message="Yeh video play karne ke liye pehle khud ko verify karo." />
   }
 
   return (

@@ -1,7 +1,8 @@
-import { clearConfig, clearProfile, getProfile, avatarUrl } from '../api'
+import { clearConfig, clearProfile, getProfile, avatarUrl, isVerified } from '../api'
 import { useNavigate } from 'react-router-dom'
 import { useSavedList } from '../lib/savedStore'
 import { useDownloadsList } from '../lib/downloadsStore'
+import TelegramSignup from '../components/TelegramSignup'
 
 export default function Profile() {
   const navigate = useNavigate()
@@ -9,13 +10,41 @@ export default function Profile() {
   const downloads = useDownloadsList()
   const doneDownloads = downloads.filter((d) => d.status === 'done').length
   const profile = getProfile()
+  const verified = isVerified()
   const displayName = profile?.name || 'Guest'
   const handle = profile?.username ? `@${profile.username}` : null
 
   function handleLogout() {
     clearConfig()
     clearProfile()
-    navigate('/setup')
+    // BUG FIX (user ask): logout ke baad ab poore app ko force-signup screen
+    // par nahi bhejna — bas isi Profile page par wapas "Verify" card dikhna
+    // chahiye, aur Home/Detail/Player khud-ba-khud locked ho jaayenge
+    // (dekho VerifyGate — sab isVerified() par based hain).
+    navigate('/profile', { replace: true })
+  }
+
+  // FEATURE (user ask: "app bina login ke khul jaaye, Profile se hi verify
+  // ho — verify hone tak Home/Detail/Player locked rahein, Saved/Downloads
+  // hamesha khule rahein"): agar abhi tak verify nahi hua, Profile ka poora
+  // page hi wahi "Sign up with Telegram" card ban jaata hai (bilkul jaisa
+  // pehle app-launch par Setup.jsx mein dikhta tha) — verify hote hi yeh
+  // khud reload ho kar normal profile view dikha dega.
+  if (!verified) {
+    return (
+      <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
+          </div>
+          <h1 className="font-display text-xl text-reel-ink">Verify karo</h1>
+          <p className="text-reel-muted text-sm mt-1">
+            Library dekhne ke liye ek baar Telegram se apni ID verify karo.
+          </p>
+        </div>
+        <TelegramSignup onDone={() => navigate('/')} />
+      </div>
+    )
   }
 
   return (
@@ -43,14 +72,12 @@ export default function Profile() {
         </div>
       </div>
 
-      {profile ? (
-        <button
-          onClick={handleLogout}
-          className="w-full text-sm px-4 py-3 rounded-lg bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-[0.98] transition"
-        >
-          Log out
-        </button>
-      ) : null}
+      <button
+        onClick={handleLogout}
+        className="w-full text-sm px-4 py-3 rounded-lg bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-[0.98] transition"
+      >
+        Log out
+      </button>
     </div>
   )
 }

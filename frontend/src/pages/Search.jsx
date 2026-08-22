@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getCatalogAllPages } from '../api'
+import { getCatalogAllPages, isVerified } from '../api'
 import MediaCard from '../components/MediaCard'
+import VerifyGate from '../components/VerifyGate'
 
 export default function Search() {
   const [params] = useSearchParams()
@@ -9,8 +10,10 @@ export default function Search() {
   const [results, setResults] = useState(null)
   const [failed, setFailed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const verified = isVerified()
 
   useEffect(() => {
+    if (!verified) return
     if (!q) {
       setResults([])
       setFailed(false)
@@ -27,7 +30,11 @@ export default function Search() {
         setResults([])
         setFailed(true)
       })
-  }, [q, retryKey])
+  }, [q, retryKey, verified])
+
+  if (!verified) {
+    return <VerifyGate message="Search karne ke liye pehle khud ko verify karo." />
+  }
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-0">
