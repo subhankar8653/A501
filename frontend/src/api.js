@@ -237,3 +237,42 @@ export async function loadTabByLanguage(catalogsForTab) {
     .sort((a, b) => b[1].length - a[1].length)
     .map(([language, items]) => ({ language, items }))
 }
+
+// ---------------------------------------------------------------------
+// Home page cache — persisted to localStorage so switching tabs (Saved /
+// Downloads / Profile) and back, or fully closing and reopening the app,
+// shows the last-loaded home content INSTANTLY instead of a blank
+// "Loading…" every single time. Home.jsx still does a silent background
+// refresh on top of this (stale-while-revalidate) so new content added on
+// the server eventually shows up on its own, and a manual pull-to-refresh
+// forces an immediate one — either way the old cache entry is simply
+// overwritten by the new one, never left stacking up.
+// ---------------------------------------------------------------------
+const HOME_CACHE_KEY = 'huka-tube:home-cache-v1'
+
+export function loadHomeCache() {
+  try {
+    const raw = localStorage.getItem(HOME_CACHE_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function saveHomeCache(cache) {
+  try {
+    localStorage.setItem(HOME_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // storage full/unavailable — cache is a nice-to-have, fine to skip
+  }
+}
+
+export function clearHomeCache() {
+  try {
+    localStorage.removeItem(HOME_CACHE_KEY)
+  } catch {
+    // ignore
+  }
+}
