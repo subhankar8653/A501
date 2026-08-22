@@ -2115,6 +2115,63 @@ class Database:
             return convert_objectid_to_str(existing)
         return await self.add_api_token(name or f"User {user_id}", user_id=user_id)
 
+    #========================================================================
+    # App sign-up flow (Huka Tube "tap to sign up with Telegram" onboarding)
+    #
+    # A short-lived "code" is created when the app opens the sign-up screen.
+    # The app builds a t.me deep-link out of it; when the user taps
+    # Start in Telegram, the bot resolves the code, links the Telegram
+    # identity (name/username/photo) + an API token to it, and the app
+    # (which is polling) picks that up and logs the user straight in.
+    #========================================================================
+    SIGNUP_CODE_TTL_MINUTES = 15
+
+    async def create_app_signup(self, code: str) -> dict:
+        doc = {
+            "_id": code,
+            "status": "pending",
+            "created_at": datetime.utcnow(),
+        }
+        await self.dbs["tracking"]["app_signups"].insert_one(doc)
+        return doc
+
+    async def get_app_signup(self, code: str) -> Optional[dict]:
+        doc = await self.dbs["tracking"]["app_signups"].find_one({"_id": code})
+        if not doc:
+            return None
+        if doc.get("status") == "pending":
+            age = datetime.utcnow() - doc.get("created_at", datetime.utcnow())
+            if age.total_seconds() > self.SIGNUP_CODE_TTL_MINUTES * 60:
+                doc["status"] = "expired"
+        return doc
+
+    #----- Called by the bot's /start handler once the Telegram user is verified
+    async def complete_app_signup(self, code: str, user_id: int, token: str, profile: dict) -> Optional[dict]:
+        result = await self.dbs["tracking"]["app_signups"].update_one(
+            {"_id": code},
+            {"$set": {
+                "status": "verified",
+                "user_id": user_id,
+                "token": token,
+                "verified_at": datetime.utcnow(),
+            }}
+        )
+        await self.upsert_app_profile(user_id, profile)
+        if result.matched_count == 0:
+            return None
+        return await self.get_app_signup(code)
+
+    #----- Durable profile store (name/username/photo), keyed by Telegram user id
+    async def upsert_app_profile(self, user_id: int, profile: dict) -> None:
+        await self.dbs["tracking"]["app_profiles"].update_one(
+            {"_id": user_id},
+            {"$set": {**profile, "updated_at": datetime.utcnow()}},
+            upsert=True,
+        )
+
+    async def get_app_profile(self, user_id: int) -> Optional[dict]:
+        return await self.dbs["tracking"]["app_profiles"].find_one({"_id": user_id})
+
     async def align_token_with_subscription(self, user_id: int) -> None:
         if not SettingsManager.current().subscription:
             return
