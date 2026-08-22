@@ -189,37 +189,39 @@ async def _apply_fanart(meta: dict, item: dict) -> None:
         meta["background"] = art["background"]
 
 
-#----- One representative release filename for a doc: for a series, the
-#----- first episode that has a release (checking every episode's filename
-#----- and merging them pulled in unrelated tokens — a different episode's
-#----- fansub/subtitle tag could get misread as this title's audio
-#----- language); for a movie, its own first release.
-def _first_quality_name(item: dict):
+#----- Every release filename belonging to ONE representative episode: for a
+#----- series, the first episode that has releases (its full quality list —
+#----- 360p/480p/720p/1080p/etc — since those are all the same underlying
+#----- source, so combining them is safe); for a movie, its own quality list.
+#----- Deliberately scoped to a single episode rather than every episode on
+#----- the doc: merging filenames across DIFFERENT episodes used to surface
+#----- a stray subtitle-language tag from one unrelated release (e.g.
+#----- "Korean", "Persian" subs bundled into some other episode's file) even
+#----- though the title's actual audio was Japanese — one episode's own
+#----- releases are a reliable signal, many unrelated ones aren't.
+def _representative_quality_names(item: dict) -> list:
     if item.get("media_type") == "tv":
         for season in item.get("seasons", []) or []:
             for episode in season.get("episodes", []) or []:
-                for q in episode.get("telegram", []) or []:
-                    if q.get("name"):
-                        return q["name"]
-    else:
-        for q in item.get("telegram", []) or []:
-            if q.get("name"):
-                return q["name"]
-    return None
+                names = [q["name"] for q in episode.get("telegram", []) or [] if q.get("name")]
+                if names:
+                    return names
+        return []
+    return [q["name"] for q in item.get("telegram", []) or [] if q.get("name")]
 
 
-#----- The language for a title — detected from a single representative
-#----- release filename (one episode for a series, the movie's own file for
-#----- a movie), falling back to TMDB's original_language when nothing could
-#----- be detected. Deliberately NOT aggregated across every episode/quality
-#----- on the doc: doing that used to surface a stray subtitle-language tag
-#----- from one unrelated release (e.g. "Korean", "Persian" subs bundled
-#----- into some other episode's file) even though the title's actual audio
-#----- was Japanese — one clean filename is a more reliable signal than many
-#----- noisy ones.
+#----- Every language a title's audio is actually in, detected from one
+#----- representative episode's/movie's release filenames — a multi-audio
+#----- release (e.g. a filename literally listing "Hindi English Japanese")
+#----- correctly returns all of them, so the title shows up under every one
+#----- of those language sections on the home page, not just one. Falls back
+#----- to TMDB's original_language when nothing could be detected at all.
 def item_languages(item: dict) -> list:
-    name = _first_quality_name(item)
-    found = detect_languages(name) if name else []
+    found = []
+    for name in _representative_quality_names(item):
+        for label in detect_languages(name):
+            if label not in found:
+                found.append(label)
     if not found:
         fallback = language_label_for_code(item.get("original_language"))
         if fallback:
