@@ -1018,11 +1018,29 @@ class PlayerActivity : AppCompatActivity() {
         // jo abhi already load/playing hai, to kuch bhi rebuild na karo — bas turant return.
         val incomingUri = intent.getStringExtra("video_uri")
         if (::player.isInitialized && incomingUri != null && incomingUri == currentLoadedUri) {
+            // BUG FIX (user report: "PiP se expand karne par fullscreen page ki
+            // jagah home page par (inline) expand ho jaata hai"): yahan pehle
+            // sirf tabhi `pipOriginFromInline = true` set hota tha jab is naye
+            // intent mein bhi `enter_pip_immediately` maanga gaya ho — agar nahi
+            // maanga gaya (matlab yeh ek GENUINE fullscreen open hai, jaise
+            // fullscreenButton se, isi video ke liye jo already is (singleTask)
+            // Activity mein reused ho rahi hai), to variable ko kabhi false
+            // reset hi nahi kiya jaata tha. Matlab agar kabhi pehle (isi video
+            // ke liye) PiP button/Home-press se `pipOriginFromInline = true` ho
+            // chuka ho, to woh stale/purana `true` hamesha ke liye chipka reh
+            // jaata — chahe user ab genuinely fullscreen dekh raha ho. Baad mein
+            // PiP → expand karne par `handlePipExpand()` isi stale flag ko dekh
+            // kar galti se "yeh kabhi fullscreen thi hi nahi" maan leta aur
+            // seedha finish() karke MainActivity ke inline player par bhej deta
+            // — asli fullscreen page kabhi wapas nahi aata. Fix: is naye intent
+            // ke exact `enter_pip_immediately` value se hamesha sync karo (jaisa
+            // neeche wala main/reload branch already karta hai), sirf true ke
+            // liye special-case mat karo.
+            pipOriginFromInline = intent.getBooleanExtra("enter_pip_immediately", false)
             // Reload skip ho raha hai, lekin agar isi tap ne PiP maangi thi to wo
             // honour zaroor honi chahiye (warna dobara PiP button dabana silently
             // kuch na kare, aisa nahi hona chahiye).
-            if (intent.getBooleanExtra("enter_pip_immediately", false)) {
-                pipOriginFromInline = true
+            if (pipOriginFromInline) {
                 pendingImmediatePipSourceRect = readPipSourceRectExtra()
                 enterPipWhenFrameReady()
             }
