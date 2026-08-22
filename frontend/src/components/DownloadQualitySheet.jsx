@@ -160,10 +160,14 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
         <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
 
         <p className="text-reel-ink font-semibold mb-1">
-          {isSeason ? `Download Season (${episodes.length} episodes)` : `Download E${episodes[0]?.episode}`}
+          {isSeason
+            ? `Download Season (${episodes.length} episodes)`
+            : episodes[0]?.episode != null
+              ? `Download E${episodes[0].episode}`
+              : `Download ${showName || ''}`}
         </p>
         <p className="text-reel-muted text-xs mb-4">
-          {isSeason ? 'Quality chuno, poora season ek baar mein download hoga.' : 'Is episode ke liye quality chuno.'}
+          {isSeason ? 'Quality chuno, poora season ek baar mein download hoga.' : 'Quality chuno, download shuru ho jaega.'}
         </p>
 
         {labels === null ? (
