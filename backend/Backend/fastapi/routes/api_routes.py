@@ -9,7 +9,7 @@ from datetime import datetime
 from time import time
 
 from fastapi import HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pyrogram.enums import ChatMemberStatus, ChatMembersFilter
 from pyrogram.errors import FloodWait
 from pyrogram.types import ChatPrivileges
@@ -603,6 +603,69 @@ async def request_popular_api() -> dict:
         return {"status": "success", "data": await popular_pending()}
     except Exception as e:
         return {"status": "error", "message": str(e), "data": []}
+
+
+#========================================================================
+# Public: Huka Tube app "Sign up with Telegram" onboarding flow.
+# App creates a code -> builds a t.me deep link with it -> user taps
+# Start in Telegram -> bot verifies + links profile/token to the code ->
+# app (polling this same code) picks it up and logs the user straight in.
+#========================================================================
+
+#----- Public: bot username, so the app can build the t.me deep link itself
+async def app_bot_username_api() -> dict:
+    try:
+        from Backend.pyrofork.bot import StreamBot
+        me = StreamBot.me or await StreamBot.get_me()
+        return {"status": "success", "data": {"username": me.username}}
+    except Exception as e:
+        LOGGER.error(f"app_bot_username_api error: {e}")
+        return {"status": "error", "message": "Bot not ready, try again in a moment."}
+
+
+#----- Public: create a fresh one-time sign-up code
+async def app_signup_create_api() -> dict:
+    code = secrets.token_urlsafe(12)
+    await db.create_app_signup(code)
+    return {"status": "success", "data": {"code": code}}
+
+
+#----- Public: the app polls this to know when the Telegram side finished
+async def app_signup_status_api(code: str) -> dict:
+    doc = await db.get_app_signup(code)
+    if not doc:
+        return {"status": "success", "data": {"state": "invalid"}}
+
+    state = doc.get("status", "pending")
+    if state == "pending":
+        return {"status": "success", "data": {"state": "pending"}}
+    if state == "expired":
+        return {"status": "success", "data": {"state": "expired"}}
+
+    #----- verified
+    profile = await db.get_app_profile(doc.get("user_id")) or {}
+    name = profile.get("first_name") or profile.get("username") or "Guest"
+    return {
+        "status": "success",
+        "data": {
+            "state": "verified",
+            "token": doc.get("token"),
+            "user_id": doc.get("user_id"),
+            "name": name,
+            "username": profile.get("username") or "",
+            "has_photo": bool(profile.get("photo_b64")),
+        },
+    }
+
+
+#----- Public: serves the signed-up user's Telegram profile photo (if any)
+async def app_avatar_api(user_id: int):
+    profile = await db.get_app_profile(user_id)
+    photo_b64 = profile.get("photo_b64") if profile else None
+    if not photo_b64:
+        raise HTTPException(status_code=404, detail="No photo")
+    import base64
+    return Response(content=base64.b64decode(photo_b64), media_type="image/jpeg")
 
 
 #----- Admin: list all content requests
