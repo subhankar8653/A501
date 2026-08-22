@@ -169,7 +169,12 @@ export async function startDownload(url, meta) {
   if (hasNativeDownloader()) {
     // Fire-and-forget: native side downloads to a real file and reports back
     // via window.__nativeDownload{Progress,Done,Error} (registered above).
-    window.AndroidDownloader.startDownload(id, url)
+    // BUG FIX (user report: "background jaate hi download cancel ho jaata
+    // hai, notification bar mein progress nahi dikhta"): native side ab
+    // download ko ek foreground service (DownloadService.kt) ke andar chalata
+    // hai, jisse ek ongoing notification bhi dikhti hai — usme title dikhane
+    // ke liye episode/movie ka naam bhi bhej rahe hain.
+    window.AndroidDownloader.startDownload(id, url, meta.filename || meta.episodeTitle || meta.showName || 'Download')
     return id
   }
 
