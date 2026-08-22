@@ -176,9 +176,9 @@ export default function Detail() {
         {showReadMore ? (
           <button
             onClick={() => setDescExpanded((v) => !v)}
-            className="text-xs text-reel-gold mt-1 font-medium"
+            className="text-xs text-reel-gold mt-1.5 font-medium block"
           >
-            {descExpanded ? 'Kam dikhao' : 'Aur padho'}
+            {descExpanded ? 'Show less' : 'Read more'}
           </button>
         ) : null}
 
