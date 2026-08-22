@@ -2,21 +2,63 @@ import { useEffect, useState } from 'react'
 import { getStreams, qualityLabel } from '../api'
 import { startDownload, downloadId, useDownloadsList } from '../lib/downloadsStore'
 
+// Turns a quality label ("360p", "1080p", "4K"...) into a comparable number,
+// so we can sort qualities and find "the next one down" from what the user
+// picked. Non-numeric labels (odd stream names) sort last.
+function resolutionOf(label) {
+  if (!label) return null
+  if (/^4k$/i.test(label)) return 2160
+  const m = String(label).match(/(\d+)/)
+  return m ? Number(m[1]) : null
+}
+
+// ROOT CAUSE FIX (user report: "batch mein 480p 720p 1080p dikhaya, but E1-E2
+// hi 480p mein the, E3-E12 sirf 360p mein — un episodes ka download hi shuru
+// nahi hota tha kyunki `list.find(...) || list[0]` kabhi bhi list ka pehla
+// wala (jo highest quality bhi ho sakta hai) utha leta tha, next-LOWER
+// quality nahi dhoondta tha"): agar is episode ke paas exact picked quality
+// nahi hai, to sabse najdeeki quality jo picked se KAM (ya barabar) ho use
+// karo — bilkul jaisa online streaming players (YouTube/Netflix) karte hain.
+// Sirf tabhi upar wali quality le jab is episode ke paas bilkul bhi kam
+// quality na ho.
+function pickBestStream(streams, pickedLabel) {
+  if (!streams.length) return null
+  const pickedRes = resolutionOf(pickedLabel)
+  const withRes = streams
+    .map((s) => ({ stream: s, res: resolutionOf(qualityLabel(s)) }))
+    .filter((x) => x.res != null)
+  if (pickedRes == null || !withRes.length) return streams[0]
+
+  const exact = withRes.find((x) => x.res === pickedRes)
+  if (exact) return exact.stream
+
+  const lowerOrEqual = withRes.filter((x) => x.res <= pickedRes).sort((a, b) => b.res - a.res)
+  if (lowerOrEqual.length) return lowerOrEqual[0].stream
+
+  // Is episode ke paas picked se kam koi quality hi nahi — majboori mein
+  // sabse kareebi (sabse chhoti) available quality le lo.
+  const higher = withRes.slice().sort((a, b) => a.res - b.res)
+  return higher[0].stream
+}
+
 // Bottom sheet used for both:
 //  - single-episode download (⋮ menu on one row in Detail.jsx)
 //  - whole-season batch download (the "Download Season" button in Detail.jsx)
 //
-// Flow: peeks the first episode's stream list to build the quality-label
-// choices (360p/480p/720p/1080p...), user picks one, then every episode in
-// `episodes` gets its own getStreams() call so we grab the URL that actually
-// matches that label for THAT episode (not just episode 1's URL), and each
-// one is hand off to the existing downloadsStore.
+// Flow: peeks EVERY episode's stream list to build the quality-label choices
+// (360p/480p/720p/1080p/2160p...) — not just episode 1's, so a quality like
+// 4K that only some episodes have still shows up as an option — user picks
+// one, then confirmDownload() reuses those same per-episode stream lists to
+// grab the URL that best matches that label for THAT episode (falling back
+// to the next lower quality if this episode doesn't have the picked one),
+// and each one is handed off to the existing downloadsStore.
 export default function DownloadQualitySheet({ open, onClose, type, imdbId, showName, showPoster, episodes }) {
   const [labels, setLabels] = useState(null) // null = loading, [] = none found
   const [picked, setPicked] = useState(null)
   const [queueing, setQueueing] = useState(false)
   const [done, setDone] = useState(0)
   const [failed, setFailed] = useState(0)
+  const [episodeStreams, setEpisodeStreams] = useState(null) // Map(episode.id -> streams[])
   const downloadsList = useDownloadsList()
 
   const isSeason = episodes.length > 1
@@ -28,25 +70,40 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
     setQueueing(false)
     setDone(0)
     setFailed(0)
-    const first = episodes[0]
-    if (!first) {
+    setEpisodeStreams(null)
+    if (!episodes.length) {
       setLabels([])
       return
     }
-    getStreams(type, first.id)
-      .then((streams) => {
-        const seen = new Set()
-        const out = []
-        for (const s of streams) {
-          const label = qualityLabel(s)
-          if (seen.has(label)) continue
-          seen.add(label)
-          out.push(label)
-        }
+    let cancelled = false
+    Promise.all(episodes.map((ep) => getStreams(type, ep.id).catch(() => [])))
+      .then((allStreams) => {
+        if (cancelled) return
+        const streamMap = new Map()
+        const seen = new Map() // label -> resolution, for sorting
+        episodes.forEach((ep, i) => {
+          streamMap.set(ep.id, allStreams[i] || [])
+          for (const s of allStreams[i] || []) {
+            const label = qualityLabel(s)
+            if (!seen.has(label)) seen.set(label, resolutionOf(label))
+          }
+        })
+        const out = [...seen.keys()].sort((a, b) => {
+          const ra = seen.get(a)
+          const rb = seen.get(b)
+          if (ra == null && rb == null) return 0
+          if (ra == null) return 1
+          if (rb == null) return -1
+          return rb - ra
+        })
+        setEpisodeStreams(streamMap)
         setLabels(out)
         if (out.length) setPicked(out[0])
       })
-      .catch(() => setLabels([]))
+      .catch(() => !cancelled && setLabels([]))
+    return () => {
+      cancelled = true
+    }
   }, [open, episodes, type])
 
   if (!open) return null
@@ -58,20 +115,21 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
     setFailed(0)
     for (const ep of episodes) {
       try {
-        const list = await getStreams(type, ep.id)
-        const match = list.find((s) => qualityLabel(s) === picked) || list[0]
+        const list = episodeStreams?.get(ep.id) || (await getStreams(type, ep.id))
+        const match = pickBestStream(list, picked)
         if (!match) {
           setFailed((f) => f + 1)
           continue
         }
         const id = downloadId(type, ep.id, qualityLabel(match))
         const already = downloadsList.find((d) => d.id === id)
-        if (already && (already.status === 'downloading' || already.status === 'done')) {
+        if (already && (already.status === 'downloading' || already.status === 'done' || already.status === 'queued')) {
           setDone((n) => n + 1)
           continue
         }
-        // Fire-and-forget: startDownload manages its own progress in the
-        // store, Downloads tab will show every episode ticking up on its own.
+        // Fire-and-forget: startDownload manages its own progress (and its
+        // own one-at-a-time queue) in the store, Downloads tab will show
+        // every episode ticking up on its own.
         startDownload(match.url, {
           type,
           titleId: ep.id,
