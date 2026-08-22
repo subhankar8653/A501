@@ -51,6 +51,10 @@ from Backend.fastapi.routes.api_routes import (
     request_popular_api,
     request_search_api,
     request_submit_api,
+    app_bot_username_api,
+    app_signup_create_api,
+    app_signup_status_api,
+    app_avatar_api,
     get_stream_analytics_api,
     get_subscription_plans_api,
     get_settings_api,
@@ -378,6 +382,24 @@ async def request_popular():
 async def request_submit(payload: dict, request: Request):
     client_ip = request.client.host if request.client else None
     return await request_submit_api(payload, client_ip)
+
+#----- Huka Tube app "Sign up with Telegram" onboarding (public, no auth —
+#----- the code itself is the one-time secret)
+@app.get("/api/app/bot-username")
+async def app_bot_username():
+    return await app_bot_username_api()
+
+@app.post("/api/app/signup/create")
+async def app_signup_create():
+    return await app_signup_create_api()
+
+@app.get("/api/app/signup/{code}")
+async def app_signup_status(code: str):
+    return await app_signup_status_api(code)
+
+@app.get("/api/app/avatar/{user_id}")
+async def app_avatar(user_id: int):
+    return await app_avatar_api(user_id)
 
 
 #----- Admin content requests
