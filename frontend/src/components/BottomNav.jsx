@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useDownloadsList } from '../lib/downloadsStore'
 import { useOnlineStatus } from '../lib/connectivity'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const TABS = [
   {
     to: '/',
-    label: 'Home',
+    labelKey: 'nav_home',
     icon: (active) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
         <path d="m3 11 9-8 9 8" />
@@ -16,7 +17,7 @@ const TABS = [
   },
   {
     to: '/saved',
-    label: 'Saved',
+    labelKey: 'nav_saved',
     icon: (active) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -25,7 +26,7 @@ const TABS = [
   },
   {
     to: '/downloads',
-    label: 'Downloads',
+    labelKey: 'nav_downloads',
     icon: (active) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill={active ? 'currentColor' : 'none'} />
@@ -36,7 +37,7 @@ const TABS = [
   },
   {
     to: '/profile',
-    label: 'Profile',
+    labelKey: 'nav_profile',
     icon: (active) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="8" r="4" />
@@ -60,6 +61,7 @@ function LockIcon() {
 export default function BottomNav() {
   const downloads = useDownloadsList()
   const isOnline = useOnlineStatus()
+  const { t } = useLanguage()
   const activeCount = downloads.filter((d) => d.status === 'downloading').length
   // FEATURE (user ask: Home tab "lock" ho jaana chahiye jab offline ho, aur
   // "internet on karo" bolna chahiye) — tapping the locked Home tab doesn't
@@ -79,7 +81,7 @@ export default function BottomNav() {
         <div
           className="absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full bg-reel-surface2 ring-1 ring-reel-gold/25 text-xs text-reel-ink whitespace-nowrap shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] page-fade-in"
         >
-          Internet on karo, Home dekhne ke liye
+          {t('nav_home_locked_hint')}
         </div>
       ) : null}
       <div className="max-w-6xl mx-auto grid grid-cols-4 px-2 py-1.5">
@@ -110,7 +112,7 @@ export default function BottomNav() {
                   }`}
                 >
                   {locked ? <LockIcon /> : tab.icon(isActive)}
-                  {tab.label}
+                  {t(tab.labelKey)}
                   {tab.to === '/downloads' && activeCount > 0 ? (
                     <span className="absolute top-0.5 right-[22%] w-4 h-4 rounded-full bg-reel-gold text-reel-bg text-[9px] font-bold flex items-center justify-center shadow-[0_2px_6px_-1px_rgba(232,163,61,0.7)]">
                       {activeCount}

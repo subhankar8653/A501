@@ -9,6 +9,7 @@ import {
   getSignupStatus,
   saveProfile,
 } from '../api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const POLL_MS = 2500
 
@@ -20,6 +21,7 @@ const POLL_MS = 2500
 // Profile.jsx (naya "Verify" entry point) dono isi ko use karte hain, taaki
 // logic ek hi jagah rahe.
 export default function TelegramSignup({ onDone }) {
+  const { t } = useLanguage()
   const [phase, setPhase] = useState('idle') // idle | starting | waiting | expired | error
   const [deepLink, setDeepLink] = useState('')
   const [error, setError] = useState('')
@@ -112,45 +114,45 @@ export default function TelegramSignup({ onDone }) {
           {phase === 'idle' || phase === 'error' ? (
             <>
               <p className="text-sm text-reel-muted">
-                Ek tap mein verify karo — apna naam aur photo Telegram se seedha aa jaayega.
+                {t('signup_intro')}
               </p>
               {error ? <p className="text-reel-rust text-xs">{error}</p> : null}
               <button
                 onClick={startSignup}
                 className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-3 text-sm hover:brightness-110 active:scale-[0.98] transition"
               >
-                Verify with Telegram
+                {t('signup_button')}
               </button>
             </>
           ) : null}
 
           {phase === 'starting' ? (
-            <p className="text-sm text-reel-muted py-4">Connecting…</p>
+            <p className="text-sm text-reel-muted py-4">{t('signup_connecting')}</p>
           ) : null}
 
           {phase === 'waiting' ? (
             <>
               <p className="text-sm text-reel-muted">
-                Telegram khol kar bot ko <b>Start</b> karo — hum yahin wait kar rahe hain.
+                {t('signup_waiting')}
               </p>
               <a
                 href={deepLink}
                 className="block w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-3 text-sm hover:brightness-110 active:scale-[0.98] transition"
               >
-                Open Telegram
+                {t('signup_open_telegram')}
               </a>
-              <p className="text-xs text-reel-muted animate-pulse">Waiting for confirmation…</p>
+              <p className="text-xs text-reel-muted animate-pulse">{t('signup_waiting_hint')}</p>
             </>
           ) : null}
 
           {phase === 'expired' ? (
             <>
-              <p className="text-reel-rust text-xs">Yeh link expire ho gaya. Dubara try karo.</p>
+              <p className="text-reel-rust text-xs">{t('signup_expired')}</p>
               <button
                 onClick={startSignup}
                 className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-3 text-sm hover:brightness-110 active:scale-[0.98] transition"
               >
-                Try again
+                {t('signup_try_again')}
               </button>
             </>
           ) : null}
@@ -186,14 +188,14 @@ export default function TelegramSignup({ onDone }) {
             disabled={checking}
             className="w-full bg-reel-gold text-reel-bg font-semibold rounded-lg py-2.5 text-sm hover:brightness-110 active:scale-[0.98] transition disabled:opacity-60"
           >
-            {checking ? 'Connecting…' : 'Continue'}
+            {checking ? t('signup_connecting') : 'Continue'}
           </button>
         </form>
       )}
 
       <p className="text-center text-xs text-reel-muted mt-4">
         <button className="underline underline-offset-2" onClick={() => setShowManual((v) => !v)}>
-          {showManual ? 'Back to verify' : 'Advanced: enter backend URL/token manually'}
+          {showManual ? t('signup_manual_toggle_hide') : t('signup_manual_toggle_show')}
         </button>
       </p>
     </div>
