@@ -487,6 +487,31 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webview)
+        // CRASH FIX (root cause of "online video ko fullscreen/PiP karte hi
+        // app crash" — bugreport se confirm hua: `TransactionTooLargeException:
+        // data parcel size ~2.9MB`, jisme Bundle stats ne "WEBVIEW_CHROMIUM_STATE"
+        // key ko sabse bada contributor dikhaya): Android by default har view
+        // jiska ek valid id ho (yeh WebView bhi, R.id.webview se) use apna
+        // onSaveInstanceState() dispatch karke Activity ke saved-instance Bundle
+        // mein "freeze" kar deta hai. Chromium WebView ke liye iska matlab hai
+        // poori navigation history + page state ek Parcelable blob ban jaata
+        // hai — jitni zyada der/zyada pages is single-page (React) app mein
+        // browse kiya jaaye, utna hi bada yeh blob hota jaata hai. Jab bhi
+        // MainActivity background jaati hai (fullscreen/PiP ke liye PlayerActivity
+        // khulne par bhi yehi hota hai), Android is poore Bundle ko Binder IPC
+        // (activityStopped()) se system_server ko bhejta hai — aur Binder
+        // transactions ~1MB tak hi limited hote hain. Blob jab is limit se
+        // bada ho jaata (online browsing ke baad hota hi hai), poora transaction
+        // hi fail ho jaata hai aur seedha app crash. Offline turant-download-
+        // karke-dekhne wale case mein crash na hone ki wajah yehi thi ki fresh
+        // process mein WebView ne abhi zyada navigate nahi kiya hota — blob
+        // chhota hota, limit ke andar reh jaata.
+        // Fix: WebView ka apna view-state save hi disable kar do — hum vaise
+        // bhi ise kabhi restore nahi karte (neeche onCreate() ka comment dekho:
+        // restoreState() jaan-bujh kar hata diya gaya tha, is app mein page
+        // hamesha fresh index.html se load hoti hai), isliye is state ko
+        // save karna sirf risk hai, koi fayda nahi.
+        webView.isSaveEnabled = false
         swipeRefresh = findViewById(R.id.swipe_refresh)
         initialLoadingView = findViewById(R.id.initialLoadingView)
         loadErrorView = findViewById(R.id.loadErrorView)
@@ -2084,7 +2109,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        webView.saveState(outState)
+        // CRASH FIX: yeh explicit webView.saveState(outState) call yahan se
+        // hataya gaya hai — dekho onCreate() mein webView.isSaveEnabled = false
+        // ke paas laga bada comment (`TransactionTooLargeException` root cause).
+        // Yeh call poori Chromium navigation history ko ek separate
+        // "WEBVIEW_CHROMIUM_STATE" blob ke roop mein Bundle mein daal deta tha
+        // (bugreport mein crash ke waqt yeh akela ~2.95MB tha, jabki poori
+        // Binder transaction limit hi ~1MB hai) — aur is app mein iska koi
+        // istemal bhi nahi tha, kyunki webView.restoreState() kahin bhi call
+        // nahi hota (upar wale ROOT CAUSE FIX comment mein dekho, jaan-bujh kar
+        // hataya gaya tha).
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
