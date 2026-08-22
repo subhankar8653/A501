@@ -153,7 +153,9 @@ function MovieRow({ d, onPlay }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-reel-ink line-clamp-1">{d.filename}</p>
-        {d.status === 'downloading' ? (
+        {d.status === 'queued' ? (
+          <p className="text-xs text-reel-muted mt-1">Queue mein hai, ruko…</p>
+        ) : d.status === 'downloading' ? (
           <>
             <div className="h-1.5 mt-2 rounded-full bg-reel-surface2 overflow-hidden">
               <div className="h-full bg-reel-gold transition-all" style={{ width: `${d.progress || 0}%` }} />
@@ -178,7 +180,7 @@ function MovieRow({ d, onPlay }) {
             Play
           </button>
         ) : null}
-        {d.status === 'downloading' ? (
+        {d.status === 'downloading' || d.status === 'queued' ? (
           <button
             onClick={() => cancelDownload(d.id)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-surface2 text-reel-muted active:scale-95 transition"
@@ -209,6 +211,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isDownloaded = entry?.status === 'done'
   const isDownloading = entry?.status === 'downloading'
+  const isQueued = entry?.status === 'queued'
   const hasAny = !!entry
 
   return (
@@ -224,7 +227,9 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
         <p className="text-sm font-medium text-reel-ink line-clamp-1">
           E{ep.episode} · {ep.title}
         </p>
-        {isDownloading ? (
+        {isQueued ? (
+          <p className="text-xs text-reel-muted mt-1">Queue mein hai, ruko…</p>
+        ) : isDownloading ? (
           <>
             <div className="h-1.5 mt-2 rounded-full bg-reel-surface2 overflow-hidden">
               <div className="h-full bg-reel-gold transition-all" style={{ width: `${entry.progress || 0}%` }} />
@@ -252,7 +257,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
             Play
           </button>
         ) : null}
-        {isDownloading ? (
+        {isDownloading || isQueued ? (
           <button
             onClick={() => cancelDownload(entry.id)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-surface2 text-reel-muted active:scale-95 transition"
@@ -271,7 +276,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
           </button>
           {menuOpen ? (
             <div className="absolute top-full right-0 mt-1 min-w-[150px] rounded-xl overflow-hidden bg-reel-bg/97 backdrop-blur-md ring-1 ring-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.65)] z-10">
-              {!isDownloaded && !isDownloading ? (
+              {!isDownloaded && !isDownloading && !isQueued ? (
                 <button
                   onClick={() => {
                     setMenuOpen(false)
