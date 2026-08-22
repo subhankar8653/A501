@@ -31,7 +31,7 @@ export function clearConfig() {
 // so the in-app "Sign up with Telegram" button knows where to reach the
 // bot/backend — the user is never asked to type a backend URL anymore.
 export const DEFAULT_BACKEND_URL = (
-  import.meta.env.VITE_BACKEND_URL || 'https://your-app.up.railway.app'
+  import.meta.env.VITE_BACKEND_URL || 'https://a501-production.up.railway.app'
 ).replace(/\/+$/, '')
 
 // ---------------------------------------------------------------------
