@@ -2140,35 +2140,56 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Genuine PiP ko "bada" karke (ya normal fullscreen se seedha) wapas
-            // aana — agar PiP shuru karte waqt WebView ko peeche navigate kiya
-            // gaya tha, to ab usi watch page par FORWARD wapas le jao, taaki
-            // "clear" page dikhe aur video wahi (fullscreen se laayi gayi)
-            // position/playing-state ke saath, YouTube jaisa, resume ho.
-            if (didNavigateBackForPip) {
-                didNavigateBackForPip = false
-                // BUG FIX (dekho `pipReturnPath` field ka comment upar —
-                // "PiP expand karne par Home par khul jaata hai"): purana
-                // `webView.goForward()` PiP ke dauraan WebView mein hui kisi
-                // bhi navigation (Home tab tap, waghera) se silently toot
-                // jaata tha, kyunki wo forward-history entry hi discard ho
-                // chuki hoti thi. Ab exact capture kiya gaya path seedha
-                // (history state se independent) navigate karo — yehi hamesha
-                // theek page par le jaata hai, chahe user ne PiP ke dauraan
-                // WebView mein kahin bhi ghoom liya ho.
-                val target = pipReturnPath
-                pipReturnPath = null
-                if (target != null) {
-                    webView.evaluateJavascript(
-                        "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(target)});",
-                        null
-                    )
-                } else if (webView.canGoForward()) {
-                    // Fallback: agar kisi wajah se watch-page path capture
-                    // nahi ho paya (bahut purana WebView state, ya url null),
-                    // purana behavior hi try karo, kuch na hone se behtar.
-                    webView.goForward()
-                }
+            // aana — hamesha check karo ki WebView abhi bhi usi watch page par
+            // hai jahan se PiP shuru hui thi; agar nahi, to seedha wahi par
+            // navigate kar do, taaki "clear" page dikhe aur video wahi
+            // (fullscreen se laayi gayi) position/playing-state ke saath,
+            // YouTube jaisa, resume ho.
+            //
+            // BUG FIX (user report: "PiP jahan se shuru hui udhar hi expand
+            // hona chahiye, chahe popup kahin bhi ho"): pehle yeh poora block
+            // `if (didNavigateBackForPip)` ke andar tha — matlab restore SIRF
+            // tabhi try hota jab PiP shuru karte waqt genuinely ek goBack()
+            // hua ho. Lekin `didNavigateBackForPip` sirf `webView.canGoBack()`
+            // true hone par hi set hota hai (dekho openFullscreenFromInline).
+            // Jab PiP us watch page se shuru hoti jiske PEECHE koi WebView
+            // history hi nahi thi (jaise app khulte hi seedha ek video par —
+            // koi Detail/Home page pehle load hi nahi hua tha is session
+            // mein), `didNavigateBackForPip` false reh jaata, aur is poore
+            // if-block ko hi skip kar diya jaata — chahe `pipReturnPath` set
+            // ho. Result: agar user PiP ke dauraan WebView mein kahin bhi
+            // ghooma (Home tab, koi doosra title), expand par wahi galat/
+            // current page hi khuli reh jaati, kabhi wapas asli watch page par
+            // nahi jaata — bilkul jaisa report hua.
+            //
+            // Fix: `didNavigateBackForPip` par bharosa mat karo — seedha
+            // compare karo ki WebView abhi kis path par hai vs `pipReturnPath`
+            // kya tha. Agar dono match nahi karte (chahe hum kabhi goBack()
+            // kiye the ya nahi), tabhi navigate() karo. Agar already sahi page
+            // par hain (user kahin gaya hi nahi tha), koi extra
+            // navigate/remount na karo — bewajah reload avoid hota hai.
+            val pipTarget = pipReturnPath
+            val needsPipReturnNavigate = pipTarget != null && pipTarget != currentWebViewPathOrNull()
+            if (needsPipReturnNavigate) {
+                webView.evaluateJavascript(
+                    "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
+                    null
+                )
+            } else if (pipTarget == null && didNavigateBackForPip && webView.canGoForward()) {
+                // Fallback: agar kisi wajah se watch-page path capture nahi ho
+                // paya (bahut purana WebView state, ya url null) lekin humne
+                // PiP shuru karte waqt genuinely goBack() kiya tha, purana
+                // behavior hi try karo, kuch na hone se behtar.
+                webView.goForward()
             }
+            didNavigateBackForPip = false
+            pipReturnPath = null
+            // Overlay ko turant show karna hai ya JS ke agle fresh rect call
+            // ka wait karna hai — yeh ab isi baat par tika hai ki humne abhi
+            // upar genuinely navigate() kiya ya nahi (na ki purani
+            // `didNavigateBackForPip` value par, jo entry-time par set hui
+            // thi aur is asli decision ko sahi se reflect nahi karti thi).
+            awaitingRectAfterPipReturn = needsPipReturnNavigate
 
             // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
             // tha (SharedPlayerHolder ke through) — agar wo abhi bhi zinda hai (decoder
