@@ -1,9 +1,12 @@
 package com.suhani.screen
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -45,6 +48,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.suhani.videoplayer.PlayerNetwork
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -522,6 +527,29 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // DownloadService ke saath registration — dekho onDownloadProgress/
         // Done/Error overrides ka comment aur DownloadService.kt.
         DownloadService.listener = this
+
+        // ROOT CAUSE FIX (user report: "download ke waqt notification bar mein
+        // progress hi nahi dikhta"): DownloadService pehle se hi
+        // startForeground() + ongoing progress notification post kar raha tha,
+        // lekin sirf manifest mein `POST_NOTIFICATIONS` permission declare
+        // karna Android 13 (API 33)+ par kaafi nahi hai — us permission ko
+        // runtime par explicitly maangna padta hai, warna OS chup-chaap us
+        // notification ko drop kar deta hai (service khud foreground mein
+        // chalta rehta hai, bas uski notification kabhi dikhti hi nahi). Yahan
+        // koi request hi nahi thi, isliye zyada tar naye Android phones par
+        // yeh notification hamesha invisible rehti thi. Fix: app open hote hi
+        // ek baar yeh permission maango (already granted ho to no-op).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                4501
+            )
+        }
+
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webview)

@@ -117,10 +117,10 @@ object NativeDownloadManager {
                     return@Thread
                 }
                 val total = conn.contentLengthLong
+                var received = 0L
                 conn.inputStream.use { input ->
                     FileOutputStream(tmpFile).use { output ->
                         val buffer = ByteArray(64 * 1024)
-                        var received = 0L
                         var lastEmit = 0L
                         while (keepGoing.get()) {
                             val read = input.read(buffer)
@@ -135,12 +135,30 @@ object NativeDownloadManager {
                             }
                         }
                         output.flush()
-                        if (!keepGoing.get()) {
-                            // cancel hua tha — adhoora file hata do
-                            runCatching { tmpFile.delete() }
-                            return@Thread
-                        }
                     }
+                }
+                if (!keepGoing.get()) {
+                    // cancel hua tha — adhoora file hata do
+                    runCatching { tmpFile.delete() }
+                    return@Thread
+                }
+                // ROOT CAUSE FIX (user report: "download hote waqt beech mein
+                // cut kiya to bhi Downloads mein 'X MB · Offline available'
+                // dikha raha tha, adhoori file thi"): pehle sirf `read == -1`
+                // milte hi (input stream khatam) seedha "done" maan liya jaata
+                // tha, chahe expected size se kam bytes hi kyun na mile hon.
+                // Network drop / connection reset hone par bhi `read()` -1
+                // return kar deta hai — us case mein yeh genuine completion
+                // nahi, adhoora/truncated download hai. Fix: agar server ne
+                // Content-Length diya tha aur utne bytes mile hi nahi, isko
+                // error treat karo aur adhoori .part file turant delete karo —
+                // list mein wo kabhi "Offline available" ban kar dikhega hi
+                // nahi, seedha clear ho jaayegi.
+                if (total > 0 && received < total) {
+                    runCatching { tmpFile.delete() }
+                    active.remove(id)
+                    onError("incomplete download")
+                    return@Thread
                 }
                 if (!tmpFile.renameTo(outFile)) {
                     // rename fail ho jaaye (rare) to copy fallback
