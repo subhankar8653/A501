@@ -46,6 +46,24 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class DownloadService : Service() {
 
+    /** App foreground mein ho (MainActivity zinda) to yahan register hoke JS
+     *  ko bhi progress/done/error forward kiya jaata hai — notification
+     *  hamesha update hoti rehti hai, listener registered ho ya na ho.
+     *
+     *  BUG FIX (build error: "Unresolved reference 'ProgressListener'" /
+     *  "overrides nothing"): yeh interface pehle `companion object` ke ANDAR
+     *  declare kiya gaya tha — Kotlin mein uska asli path tab
+     *  `DownloadService.Companion.ProgressListener` ban jaata hai, na ki
+     *  `DownloadService.ProgressListener` (jo MainActivity use kar raha
+     *  tha). Fix: interface ko companion object se bahar, seedha class ke
+     *  andar rakha — ab `DownloadService.ProgressListener` sahi se resolve
+     *  hota hai. */
+    interface ProgressListener {
+        fun onDownloadProgress(id: String, pct: Int, bytes: Long)
+        fun onDownloadDone(id: String, contentUri: String)
+        fun onDownloadError(id: String, message: String)
+    }
+
     companion object {
         const val CHANNEL_ID = "downloads_channel"
         const val NOTIF_ID = 5931
@@ -54,15 +72,6 @@ class DownloadService : Service() {
         const val EXTRA_ID = "extra_id"
         const val EXTRA_URL = "extra_url"
         const val EXTRA_TITLE = "extra_title"
-
-        /** App foreground mein ho (MainActivity zinda) to yahan register hoke JS
-         *  ko bhi progress/done/error forward kiya jaata hai — notification
-         *  hamesha update hoti rehti hai, listener registered ho ya na ho. */
-        interface ProgressListener {
-            fun onDownloadProgress(id: String, pct: Int, bytes: Long)
-            fun onDownloadDone(id: String, contentUri: String)
-            fun onDownloadError(id: String, message: String)
-        }
 
         @Volatile
         var listener: ProgressListener? = null
