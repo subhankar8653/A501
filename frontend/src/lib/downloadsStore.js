@@ -99,6 +99,10 @@ export function cleanupStaleDownloads() {
     }
   }
   if (changed) writeMeta(list)
+  // Ab koi active download nahi hai (upar clear kar diya) — agar queue mein
+  // kuch pending hai to usse shuru karo, warna woh hamesha ke liye ruka reh
+  // jaata.
+  processQueue()
 }
 
 // ROOT CAUSE FIX (user ask: "offline video player simple hai, online jaisa
@@ -123,13 +127,61 @@ if (typeof window !== 'undefined') {
   }
   window.__nativeDownloadDone = (id, contentUri) => {
     upsert({ id, status: 'done', progress: 100, nativeUri: contentUri })
+    processQueue()
   }
   window.__nativeDownloadError = (id) => {
     upsert({ id, status: 'error', progress: 0 })
+    processQueue()
   }
 }
 
 const activeControllers = new Map() // id -> AbortController
+
+// ROOT CAUSE FIX (user report: "ek saath bahut sare download deta hun to sab
+// ek saath shuru ho jaate hain, load badh jaata hai — ek-ek karke hona
+// chahiye"): pehle `startDownload()` har call par turant download shuru kar
+// deta tha (native ho ya JS-fetch), chahe kitne bhi episodes ek saath queue
+// ho rahe hon — sab ek hi waqt mein parallel chalte the. Fix: ab sirf EK
+// download kabhi bhi 'downloading' status mein rehta hai; baaki sab 'queued'
+// status mein list mein dikhte hain aur QUEUE_KEY ke andar pending order mein
+// rakhe jaate hain. Jaise hi active wala done/error/cancel hota hai,
+// processQueue() apne aap agla queued wala shuru kar deta hai — ek complete,
+// phir dusra.
+const QUEUE_KEY = 'suhani-screen:download-queue'
+
+function readQueue() {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY)
+    const list = raw ? JSON.parse(raw) : []
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function writeQueue(list) {
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(list))
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function isAnyDownloadActive() {
+  return readMeta().some((d) => d.status === 'downloading')
+}
+
+// Jab bhi ek download khatam (done/error/cancelled) hota hai, yeh queue mein
+// se agla item nikaal kar shuru karta hai — agar koi aur pehle se active na ho.
+function processQueue() {
+  if (isAnyDownloadActive()) return
+  const queue = readQueue()
+  const next = queue.shift()
+  if (!next) return
+  writeQueue(queue)
+  upsert({ id: next.id, status: 'downloading' })
+  runDownload(next.id, next.url, next.meta)
+}
 
 export function downloadId(type, titleId, qualityLabel) {
   return `${type}:${titleId}:${qualityLabel || 'default'}`
@@ -139,36 +191,14 @@ export function getDownloadEntry(id) {
   return readMeta().find((d) => d.id === id) || null
 }
 
-// meta: { type, titleId, filename, poster, qualityLabel }
-export async function startDownload(url, meta) {
-  const id = downloadId(meta.type, meta.titleId, meta.qualityLabel)
-  const existing = getDownloadEntry(id)
-  if (existing && (existing.status === 'downloading' || existing.status === 'done')) return id
-
-  upsert({
-    id,
-    type: meta.type,
-    titleId: meta.titleId,
-    // Season-level grouping metadata (Downloads tab ke season-cover view ke
-    // liye) — series ke liye set, movies ke liye undefined/null rehta hai.
-    showId: meta.showId || null,
-    showName: meta.showName || '',
-    showPoster: meta.showPoster || meta.poster || null,
-    season: meta.season ?? null,
-    episode: meta.episode ?? null,
-    episodeTitle: meta.episodeTitle || '',
-    filename: meta.filename || 'download',
-    poster: meta.poster || null,
-    qualityLabel: meta.qualityLabel || '',
-    status: 'downloading',
-    progress: 0,
-    sizeBytes: 0,
-    addedAt: Date.now(),
-  })
-
+// Actually kicks a download off (native bridge or JS fetch fallback) —
+// assumes it's already safe to run (no other active download right now) and
+// the meta entry already exists with status 'downloading'.
+async function runDownload(id, url, meta) {
   if (hasNativeDownloader()) {
     // Fire-and-forget: native side downloads to a real file and reports back
-    // via window.__nativeDownload{Progress,Done,Error} (registered above).
+    // via window.__nativeDownload{Progress,Done,Error} (registered above),
+    // which is also where the next queued download gets kicked off.
     // BUG FIX (user report: "background jaate hi download cancel ho jaata
     // hai, notification bar mein progress nahi dikhta"): native side ab
     // download ko ek foreground service (DownloadService.kt) ke andar chalata
@@ -200,6 +230,16 @@ export async function startDownload(url, meta) {
         upsert({ id, progress: total ? Math.round((received / total) * 100) : 0, sizeBytes: received })
       }
     }
+    // ROOT CAUSE FIX (user report: "beech mein cut kiya to bhi 'Offline
+    // available' dikha raha tha"): pehle stream khatam hote hi (reader.read()
+    // ka done=true) seedha "done" maan liya jaata tha, chahe Content-Length se
+    // kam bytes hi kyun na mile hon (connection drop bhi isi tarah dikhta
+    // hai). Ab agar expected size pata thi aur utni mili hi nahi, isko error
+    // treat karo — adhoori entry list mein "Offline available" ban kar kabhi
+    // reh hi nahi jaayegi.
+    if (total > 0 && received < total) {
+      throw new Error('incomplete download')
+    }
     const blob = new Blob(chunks)
     await idbPut(id, blob)
     upsert({ id, status: 'done', progress: 100, sizeBytes: blob.size })
@@ -211,24 +251,82 @@ export async function startDownload(url, meta) {
     }
   } finally {
     activeControllers.delete(id)
+    processQueue()
   }
   return id
 }
 
+// meta: { type, titleId, filename, poster, qualityLabel }
+export async function startDownload(url, meta) {
+  const id = downloadId(meta.type, meta.titleId, meta.qualityLabel)
+  const existing = getDownloadEntry(id)
+  if (existing && (existing.status === 'downloading' || existing.status === 'done' || existing.status === 'queued')) {
+    return id
+  }
+
+  const shouldQueue = isAnyDownloadActive()
+
+  upsert({
+    id,
+    type: meta.type,
+    titleId: meta.titleId,
+    // Season-level grouping metadata (Downloads tab ke season-cover view ke
+    // liye) — series ke liye set, movies ke liye undefined/null rehta hai.
+    showId: meta.showId || null,
+    showName: meta.showName || '',
+    showPoster: meta.showPoster || meta.poster || null,
+    season: meta.season ?? null,
+    episode: meta.episode ?? null,
+    episodeTitle: meta.episodeTitle || '',
+    filename: meta.filename || 'download',
+    poster: meta.poster || null,
+    qualityLabel: meta.qualityLabel || '',
+    status: shouldQueue ? 'queued' : 'downloading',
+    progress: 0,
+    sizeBytes: 0,
+    addedAt: Date.now(),
+  })
+
+  if (shouldQueue) {
+    const queue = readQueue()
+    queue.push({ id, url, meta })
+    writeQueue(queue)
+    return id
+  }
+
+  return runDownload(id, url, meta)
+}
+
 export function cancelDownload(id) {
+  // Abhi shuru hi nahi hua (queue mein baitha tha) — bas queue se hata do.
+  const queue = readQueue()
+  const queueIdx = queue.findIndex((q) => q.id === id)
+  if (queueIdx >= 0) {
+    queue.splice(queueIdx, 1)
+    writeQueue(queue)
+  }
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
   if (hasNativeDownloader()) window.AndroidDownloader.cancelDownload(id)
   writeMeta(readMeta().filter((d) => d.id !== id))
   idbDelete(id).catch(() => {})
+  // Yeh hi active download tha to agla queued item shuru karo.
+  processQueue()
 }
 
 export async function deleteDownload(id) {
+  const queue = readQueue()
+  const queueIdx = queue.findIndex((q) => q.id === id)
+  if (queueIdx >= 0) {
+    queue.splice(queueIdx, 1)
+    writeQueue(queue)
+  }
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
   if (hasNativeDownloader()) window.AndroidDownloader.deleteDownload(id)
   writeMeta(readMeta().filter((d) => d.id !== id))
   await idbDelete(id).catch(() => {})
+  processQueue()
 }
 
 // Resolves a playable source for a completed download.
