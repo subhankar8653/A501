@@ -1,12 +1,10 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { getConfig } from './api'
 import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import DownloadToast from './components/DownloadToast'
 import ConnectionOverlay from './components/ConnectionOverlay'
-import Setup from './pages/Setup'
 import Home from './pages/Home'
 import Search from './pages/Search'
 import Detail from './pages/Detail'
@@ -15,11 +13,15 @@ import Saved from './pages/Saved'
 import Downloads from './pages/Downloads'
 import Profile from './pages/Profile'
 
-function RequireConfig({ children }) {
-  const cfg = getConfig()
-  if (!cfg) return <Navigate to="/setup" replace />
-  return children
-}
+// FEATURE (user ask: "app bina login/verify ke seedha khul jaaye — Saved
+// aur Downloads hamesha khule rahein, chahe user verify na kiya ho; sirf
+// backend-wale hisse (Home library, Detail, Player, Search) tab tak locked
+// rahein jab tak Profile se ek baar Telegram se verify na ho jaaye"):
+// pehle yeh RequireConfig poore app ko (Saved/Downloads samet) /setup par
+// zabardasti bhej deta tha jab tak koi valid config na ho. Ab hataya gaya —
+// har route hamesha render hota hai; jinhe backend data chahiye (Home,
+// Detail, Player, Search) woh khud apna VerifyGate popup dikhate hain jab
+// tak verify na ho (dekho un pages ke andar isVerified() check).
 
 // The player and title-detail pages get a fullscreen layout — no site header.
 function ChromeForRoute({ children }) {
@@ -112,24 +114,25 @@ export default function App() {
     <>
       <ConnectionOverlay />
       <Routes>
-        <Route path="/setup" element={<Setup />} />
+        {/* Direct-link fallback only — normal flow ab kabhi yahan force
+            redirect nahi karta (upar comment dekho). "/setup" jaate hi seedha
+            Profile bhej dete hain taaki verify UI ek hi jagah maintain ho. */}
+        <Route path="/setup" element={<Navigate to="/profile" replace />} />
         <Route
           path="/*"
           element={
-            <RequireConfig>
-              <ChromeForRoute>
-                <Routes>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/search" element={<Search />} />
-                  <Route path="/saved" element={<Saved />} />
-                  <Route path="/downloads" element={<Downloads />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route path="/title/:type/:id" element={<Detail />} />
-                  <Route path="/watch/:type/:id" element={<Player />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </ChromeForRoute>
-            </RequireConfig>
+            <ChromeForRoute>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/search" element={<Search />} />
+                <Route path="/saved" element={<Saved />} />
+                <Route path="/downloads" element={<Downloads />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/title/:type/:id" element={<Detail />} />
+                <Route path="/watch/:type/:id" element={<Player />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </ChromeForRoute>
           }
         />
       </Routes>

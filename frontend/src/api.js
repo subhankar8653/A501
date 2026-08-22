@@ -59,6 +59,19 @@ export function clearProfile() {
   localStorage.removeItem(PROFILE_KEY)
 }
 
+// FEATURE (user ask: "app bina login ke khul jaaye, bas Home/Detail/Player
+// jaise backend-wale hisse verify hone tak locked rahein — Saved/Downloads
+// hamesha local hi dikhte rahein"): app ab kabhi force-signup par nahi
+// bhejta (dekho App.jsx — RequireConfig hata diya gaya). "Verified" ka
+// matlab bas itna hai ki humare paas ek valid backend config (token) hai —
+// wahi cheez saare backend-wale (catalog/meta/stream) API calls ke liye
+// zaroori hai. Har jagah jahan pehle sirf getConfig() check hota tha, ab
+// yahi isVerified() istemal hoga taaki "verified" ka matlab poore app mein
+// ek hi jagah define ho.
+export function isVerified() {
+  return !!getConfig()
+}
+
 // ---------------------------------------------------------------------
 // "Sign up with Telegram" flow — see backend routes under /api/app/*.
 // ---------------------------------------------------------------------
