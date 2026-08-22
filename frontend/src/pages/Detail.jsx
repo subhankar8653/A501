@@ -147,7 +147,7 @@ export default function Detail() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
         {meta.genres?.length || meta.languages?.length ? (
           <div className="flex items-center gap-2 mb-2.5">
             <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
