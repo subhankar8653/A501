@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { getConfig } from './api'
 import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
@@ -71,9 +71,42 @@ function ChromeForRoute({ children }) {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+
   useEffect(() => {
     cleanupStaleDownloads()
   }, [])
+
+  // BUG FIX (user report: "PiP expand karne par watch page ki jagah Home par
+  // khul jaata hai"): jab chhote inline player se native (real) PiP shuru hoti
+  // hai, Android side is watch page ko WebView history mein PEECHE (Detail
+  // page par) navigate kar deta hai — taaki PiP floating window ke peeche
+  // wahi "clean" pichli page dikhe, is page ka khaali video-hole nahi. Expand
+  // karte waqt native pehle sirf `webView.goForward()` (browser ki forward-
+  // history) se wapas is watch page par aata tha.
+  //
+  // Root cause: PiP floating rehte waqt user WebView mein normally kahin bhi
+  // ghoom sakta hai (Home tab, koi doosra title, waghera) — koi bhi aisi
+  // navigation (React Router ka har naya `navigate()`/pushState) browser ki
+  // "forward" history ko turant discard kar deta hai. Matlab agar PiP ke
+  // dauraan user Home par gaya, is watch page ki forward-entry hamesha ke
+  // liye gayab ho jaati — expand par `goForward()` ab kuch nahi karta (ya
+  // kisi aur galat page par le jaata), aur user "Home par hi khula reh"
+  // jaata, bilkul jaisa report hua.
+  //
+  // Fix: native ab exact watch-page path yaad rakhta hai aur seedha isi
+  // bridge function ko call karta hai — koi bhi browser back/forward history
+  // state par bharosa kiye bina, direct client-side navigate(). Isse expand
+  // hamesha bilkul wahi jagah wapas le jaata hai jahan se PiP shuru hui thi,
+  // chahe beech mein user ne WebView mein kuch bhi dekha/navigate kiya ho.
+  useEffect(() => {
+    window.__suhaniPipReturnTo = (path) => {
+      if (typeof path === 'string' && path) navigate(path)
+    }
+    return () => {
+      delete window.__suhaniPipReturnTo
+    }
+  }, [navigate])
 
   return (
     <>
