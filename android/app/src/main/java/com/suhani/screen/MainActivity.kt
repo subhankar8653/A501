@@ -620,6 +620,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.settings.allowFileAccess = false
         webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // PERF FIX (user ask: "poora app fast/smooth banao"): pehle koi
+        // explicit render/cache tuning nahi thi — WebView apne defaults par
+        // chal raha tha jo har rendering situation ke liye optimal nahi
+        // hote.
+        //  - LAYER_TYPE_HARDWARE: WebView ka poora content GPU-composited
+        //    surface par draw hota hai instead of software rasterizing —
+        //    scroll aur CSS transition/animation dono zyada smooth (60fps
+        //    ke kaafi kareeb) ho jaate hain, khaaskar poster-grid scroll
+        //    aur mini-player ke saath ek hi screen par.
+        //  - cacheMode = LOAD_DEFAULT: HTTP cache-control headers follow
+        //    karta hai, taaki poster images/API responses jo already fetch
+        //    ho chuke hain unhe baar-baar re-download na karna pade (jaise
+        //    Home pe wapas aane par ya tabs switch karne par).
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         // User report: red-marked vertical bar on screen's right edge — this is
         // the WebView's own native fading scroll indicator (an Android View
         // property), not a browser/CSS scrollbar, so index.css alone can't
