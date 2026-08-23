@@ -43,9 +43,6 @@ export default function Profile() {
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
           </div>
           <h1 className="font-display text-xl text-reel-ink">{t('profile_verify_title')}</h1>
-          <p className="text-reel-muted text-sm mt-1">
-            {t('profile_verify_subtitle')}
-          </p>
         </div>
         <TelegramSignup onDone={() => navigate('/')} />
         <div className="max-w-md mx-auto mt-8">
