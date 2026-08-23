@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
 import { useSavedList, removeSaved } from '../lib/savedStore'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Saved() {
   const list = useSavedList()
+  const { t } = useLanguage()
 
   if (!list.length) {
     return (
@@ -10,9 +12,9 @@ export default function Saved() {
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
         </div>
-        <p className="text-reel-ink font-medium">Kuch bhi saved nahi hai</p>
+        <p className="text-reel-ink font-medium">{t('saved_empty_title')}</p>
         <p className="text-reel-muted text-sm mt-1">
-          Kisi bhi video ke player screen par bookmark icon dabaakar yahan save karo.
+          {t('saved_empty_sub')}
         </p>
       </div>
     )
@@ -20,7 +22,7 @@ export default function Saved() {
 
   return (
     <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6">
-      <h1 className="font-display text-2xl text-reel-ink mb-4">Saved</h1>
+      <h1 className="font-display text-2xl text-reel-ink mb-4">{t('nav_saved')}</h1>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
         {list.map((item) => (
           <div key={`${item.type}:${item.id}`} className="relative group">

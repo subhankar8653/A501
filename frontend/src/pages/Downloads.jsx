@@ -12,6 +12,7 @@ import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import { useLocalReactions } from '../components/localInteractions'
+import { useLanguage } from '../i18n/LanguageContext'
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -33,6 +34,7 @@ function formatSize(bytes) {
 // URL as a plain-browser fallback. Same look whether you're online watching
 // a stream or offline watching a download.
 function OfflinePlayer({ entry, onClose }) {
+  const { t } = useLanguage()
   const [url, setUrl] = useState(null)
   const [err, setErr] = useState(false)
   const storageKey = `download:${entry.id}`
@@ -58,7 +60,7 @@ function OfflinePlayer({ entry, onClose }) {
   const badges = [
     entry.qualityLabel,
     formatSize(entry.sizeBytes),
-    'Offline',
+    t('offline'),
   ].filter(Boolean)
 
   return (
@@ -75,7 +77,7 @@ function OfflinePlayer({ entry, onClose }) {
           <div className="relative aspect-video bg-black overflow-hidden">
             {err ? (
               <div className="w-full h-full flex items-center justify-center px-6">
-                <p className="text-reel-muted text-sm text-center">Yeh download offline play nahi ho paa raha.</p>
+                <p className="text-reel-muted text-sm text-center">{t('dl_offline_play_failed')}</p>
               </div>
             ) : url ? (
               <VideoPlayer
@@ -130,7 +132,7 @@ function OfflinePlayer({ entry, onClose }) {
             </button>
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-              Downloaded
+              {t('downloaded')}
             </span>
           </div>
 
@@ -146,6 +148,7 @@ function OfflinePlayer({ entry, onClose }) {
 // One movie's download row (movies don't have seasons/episodes) — unchanged
 // from before, Play/Cancel/Delete.
 function MovieRow({ d, onPlay }) {
+  const { t } = useLanguage()
   return (
     <div className="flex items-center gap-3 bg-reel-surface rounded-lg p-3 ring-1 ring-white/5">
       <div className="w-16 aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 shrink-0">
@@ -154,20 +157,20 @@ function MovieRow({ d, onPlay }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-reel-ink line-clamp-1">{d.filename}</p>
         {d.status === 'queued' ? (
-          <p className="text-xs text-reel-muted mt-1">Queue mein hai, ruko…</p>
+          <p className="text-xs text-reel-muted mt-1">{t('dl_queued')}</p>
         ) : d.status === 'downloading' ? (
           <>
             <div className="h-1.5 mt-2 rounded-full bg-reel-surface2 overflow-hidden">
               <div className="h-full bg-reel-gold transition-all" style={{ width: `${d.progress || 0}%` }} />
             </div>
-            <p className="text-xs text-reel-muted mt-1">{d.progress || 0}% · Downloading…</p>
+            <p className="text-xs text-reel-muted mt-1">{d.progress || 0}% · {t('dl_downloading')}</p>
           </>
         ) : d.status === 'error' ? (
-          <p className="text-xs text-reel-rust mt-1">Download fail ho gayi</p>
+          <p className="text-xs text-reel-rust mt-1">{t('dl_failed')}</p>
         ) : (
           <p className="text-xs text-reel-muted mt-1">
             {d.qualityLabel ? `${d.qualityLabel} · ` : ''}
-            {formatSize(d.sizeBytes)} · Offline available
+            {formatSize(d.sizeBytes)} · {t('dl_offline_available')}
           </p>
         )}
       </div>
@@ -177,7 +180,7 @@ function MovieRow({ d, onPlay }) {
             onClick={() => onPlay(d)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-gold text-reel-bg font-semibold active:scale-95 transition"
           >
-            Play
+            {t('play')}
           </button>
         ) : null}
         {d.status === 'downloading' || d.status === 'queued' ? (
@@ -185,7 +188,7 @@ function MovieRow({ d, onPlay }) {
             onClick={() => cancelDownload(d.id)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-surface2 text-reel-muted active:scale-95 transition"
           >
-            Cancel
+            {t('cancel')}
           </button>
         ) : (
           <button
@@ -208,6 +211,7 @@ function MovieRow({ d, onPlay }) {
 // they still get a ⋮ menu with a "Download" action so a single missing
 // episode can be grabbed without leaving the Downloads tab.
 function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
+  const { t } = useLanguage()
   const [menuOpen, setMenuOpen] = useState(false)
   const isDownloaded = entry?.status === 'done'
   const isDownloading = entry?.status === 'downloading'
@@ -228,23 +232,23 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
           E{ep.episode} · {ep.title}
         </p>
         {isQueued ? (
-          <p className="text-xs text-reel-muted mt-1">Queue mein hai, ruko…</p>
+          <p className="text-xs text-reel-muted mt-1">{t('dl_queued')}</p>
         ) : isDownloading ? (
           <>
             <div className="h-1.5 mt-2 rounded-full bg-reel-surface2 overflow-hidden">
               <div className="h-full bg-reel-gold transition-all" style={{ width: `${entry.progress || 0}%` }} />
             </div>
-            <p className="text-xs text-reel-muted mt-1">{entry.progress || 0}% · Downloading…</p>
+            <p className="text-xs text-reel-muted mt-1">{entry.progress || 0}% · {t('dl_downloading')}</p>
           </>
         ) : isDownloaded ? (
           <p className="text-xs text-reel-muted mt-1">
             {entry.qualityLabel ? `${entry.qualityLabel} · ` : ''}
-            {formatSize(entry.sizeBytes)} · Offline available
+            {formatSize(entry.sizeBytes)} · {t('dl_offline_available')}
           </p>
         ) : entry?.status === 'error' ? (
-          <p className="text-xs text-reel-rust mt-1">Download fail ho gayi</p>
+          <p className="text-xs text-reel-rust mt-1">{t('dl_failed')}</p>
         ) : (
-          <p className="text-xs text-reel-muted mt-1">Download nahi hui</p>
+          <p className="text-xs text-reel-muted mt-1">{t('dl_not_downloaded')}</p>
         )}
       </div>
 
@@ -254,7 +258,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
             onClick={() => onPlay(entry)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-gold text-reel-bg font-semibold active:scale-95 transition"
           >
-            Play
+            {t('play')}
           </button>
         ) : null}
         {isDownloading || isQueued ? (
@@ -262,7 +266,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
             onClick={() => cancelDownload(entry.id)}
             className="px-3 py-1.5 rounded-full text-xs bg-reel-surface2 text-reel-muted active:scale-95 transition"
           >
-            Cancel
+            {t('cancel')}
           </button>
         ) : null}
 
@@ -285,7 +289,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
                   className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-ink hover:bg-white/5"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Download
+                  {t('download')}
                 </button>
               ) : (
                 <button
@@ -296,7 +300,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
                   className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-rust hover:bg-white/5"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>
-                  Remove
+                  {t('remove')}
                 </button>
               )}
             </div>
@@ -313,6 +317,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
 // with its own thumbnail and status. Header also carries a "Season" download
 // button, exactly like the one on the Detail page.
 function SeasonCard({ group, onPlay }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const [allEpisodes, setAllEpisodes] = useState(null) // null = not loaded yet
   const [downloadTarget, setDownloadTarget] = useState(null)
@@ -374,8 +379,8 @@ function SeasonCard({ group, onPlay }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-reel-ink line-clamp-1">{group.showName}</p>
             <p className="text-xs text-reel-muted mt-1">
-              {group.season != null && group.season !== 0 ? `Season ${group.season} · ` : ''}
-              {doneCount}/{allEpisodes ? allEpisodes.length : group.entries.length} episode{group.entries.length > 1 ? 's' : ''} downloaded
+              {group.season != null && group.season !== 0 ? `${t('season')} ${group.season} · ` : ''}
+              {doneCount}/{allEpisodes ? allEpisodes.length : group.entries.length} {t('dl_episodes_downloaded')}
             </p>
           </div>
         </button>
@@ -386,7 +391,7 @@ function SeasonCard({ group, onPlay }) {
           className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition disabled:opacity-40"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-          Season
+          {t('season')}
         </button>
 
         <button
@@ -441,6 +446,7 @@ function SeasonCard({ group, onPlay }) {
 // clear on the Downloads screen itself *why* you landed here / when Home
 // will open back up.
 function OfflineBanner() {
+  const { t } = useLanguage()
   return (
     <div className="mb-4 flex items-center gap-2.5 rounded-xl bg-reel-surface2 ring-1 ring-reel-gold/20 px-3.5 py-2.5">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold shrink-0">
@@ -453,13 +459,14 @@ function OfflineBanner() {
         <line x1="12" y1="20" x2="12.01" y2="20" />
       </svg>
       <p className="text-xs text-reel-muted">
-        Internet on karo, Home dekhne ke liye — abhi sirf downloads offline play ho sakte hain.
+        {t('dl_offline_banner')}
       </p>
     </div>
   )
 }
 
 export default function Downloads() {
+  const { t } = useLanguage()
   const list = useDownloadsList()
   const [playing, setPlaying] = useState(null)
   const isOnline = useOnlineStatus()
@@ -473,9 +480,9 @@ export default function Downloads() {
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
         </div>
-        <p className="text-reel-ink font-medium">Koi download nahi hai</p>
+        <p className="text-reel-ink font-medium">{t('dl_empty_title')}</p>
         <p className="text-reel-muted text-sm mt-1">
-          Kisi bhi title ke Detail ya Player screen par Download dabaakar yahan add karo.
+          {t('dl_empty_sub')}
         </p>
       </div>
     )
@@ -484,7 +491,7 @@ export default function Downloads() {
   return (
     <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6">
       {!isOnline ? <OfflineBanner /> : null}
-      <h1 className="font-display text-2xl text-reel-ink mb-4">Downloads</h1>
+      <h1 className="font-display text-2xl text-reel-ink mb-4">{t('nav_downloads')}</h1>
       <div className="space-y-3">
         {groups.map((g) =>
           g.type === 'series' ? (

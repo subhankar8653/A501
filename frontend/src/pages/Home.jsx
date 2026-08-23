@@ -14,6 +14,7 @@ import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 import HomeHero from '../components/HomeHero'
 import VerifyGate from '../components/VerifyGate'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Home() {
   // FEATURE (user ask: "jab offline ho toh sidha download page mein open
@@ -27,6 +28,7 @@ export default function Home() {
   // the Home tab so it's clear *why*.
   const isOnline = useOnlineStatus()
   if (!isOnline) return <Navigate to="/downloads" replace />
+  const { t } = useLanguage()
 
   // FEATURE (user ask: "app bina login khule, par Home library-locked rahe
   // jab tak Profile se verify na ho"): pehle isVerified() check kiye bina
@@ -34,16 +36,16 @@ export default function Home() {
   // Ab verify na hone par catalog fetch try hi nahi hota — seedha locked
   // popup card dikha dete hain.
   if (!isVerified()) {
-    return <VerifyGate message="Library dekhne ke liye pehle khud ko verify karo." />
+    return <VerifyGate message={t('home_verify_message')} />
   }
 
-  return <HomeContent />
+  return <HomeContent t={t} />
 }
 
 const PULL_THRESHOLD = 70 // px of drag before letting go triggers a refresh
 const PULL_MAX = 96 // visual cap so the indicator doesn't drag forever
 
-function HomeContent() {
+function HomeContent({ t }) {
   // Hydrate straight from the persisted cache (if any) so returning to Home
   // — from Saved/Downloads/Profile, or after fully closing and reopening the
   // app — shows the last-loaded content INSTANTLY, no "Loading…" flash.
@@ -80,7 +82,7 @@ function HomeContent() {
         setTabCatalogs(groupCatalogsByTab(manifest.catalogs))
       })
       .catch(() => {
-        if (!cancelled && !hadCache) setError('Library load nahi ho payi. Setup check karo.')
+        if (!cancelled && !hadCache) setError(t('home_load_failed'))
       })
     return () => {
       cancelled = true
@@ -179,7 +181,7 @@ function HomeContent() {
           onClick={() => setRetryKey((k) => k + 1)}
           className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
         >
-          Retry
+          {t('retry')}
         </button>
       </div>
     )
@@ -248,20 +250,20 @@ function HomeContent() {
       <div className="max-w-6xl mx-auto px-0 mt-6">
         <div key={active} className="page-fade-in">
           {!tabCatalogs ? (
-            <Rail title="Loading…" loading items={[]} />
+            <Rail title={t('loading')} loading items={[]} />
           ) : !hasCatalogsForTab ? (
             <p className="text-center text-reel-muted mt-10 px-4">
-              Is category mein abhi content nahi hai.
+              {t('home_no_content')}
             </p>
           ) : loadingTab && !groups ? (
-            <Rail title="Loading…" loading items={[]} />
+            <Rail title={t('loading')} loading items={[]} />
           ) : groups && groups.length > 0 ? (
             groups.map(({ language, items }) => (
               <LanguageRail key={language} language={language} items={items} />
             ))
           ) : (
             <p className="text-center text-reel-muted mt-10 px-4">
-              Is category mein abhi content nahi hai.
+              {t('home_no_content')}
             </p>
           )}
         </div>

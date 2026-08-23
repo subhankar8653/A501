@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { getCatalogAllPages, isVerified } from '../api'
 import MediaCard from '../components/MediaCard'
 import VerifyGate from '../components/VerifyGate'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Search() {
   const [params] = useSearchParams()
@@ -11,6 +12,7 @@ export default function Search() {
   const [failed, setFailed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
   const verified = isVerified()
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (!verified) return
@@ -33,7 +35,7 @@ export default function Search() {
   }, [q, retryKey, verified])
 
   if (!verified) {
-    return <VerifyGate message="Search karne ke liye pehle khud ko verify karo." />
+    return <VerifyGate message={t('search_verify_message')} />
   }
 
   return (
@@ -41,10 +43,10 @@ export default function Search() {
       <h1 className="font-display text-2xl font-semibold mb-6">
         {q ? (
           <>
-            Results for <span className="text-reel-gold">“{q}”</span>
+            {t('search_results_for')} <span className="text-reel-gold">“{q}”</span>
           </>
         ) : (
-          'Search'
+          t('search_title')
         )}
       </h1>
 
@@ -56,16 +58,16 @@ export default function Search() {
         </div>
       ) : failed ? (
         <div>
-          <p className="text-reel-rust mb-3">Search fail ho gayi. Connection check karo.</p>
+          <p className="text-reel-rust mb-3">{t('search_failed')}</p>
           <button
             onClick={() => setRetryKey((k) => k + 1)}
             className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
           >
-            Retry
+            {t('retry')}
           </button>
         </div>
       ) : results.length === 0 ? (
-        <p className="text-reel-muted">Kuch nahi mila. Doosra naam try karo.</p>
+        <p className="text-reel-muted">{t('search_no_results')}</p>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-x-3 gap-y-6">
           {results.map((item, i) => (

@@ -4,6 +4,7 @@ import { getMeta, isVerified } from '../api'
 import BackButton from '../components/BackButton'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VerifyGate from '../components/VerifyGate'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Detail() {
   const { type, id } = useParams()
@@ -19,6 +20,7 @@ export default function Detail() {
   const [seasonPickerOpen, setSeasonPickerOpen] = useState(false) // top-level download button's season-choose step
   const [descExpanded, setDescExpanded] = useState(false)
   const verified = isVerified()
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (!verified) return
@@ -27,7 +29,7 @@ export default function Detail() {
     getMeta(type, id)
       .then((m) => {
         if (!m || !m.name) {
-          setError('Ye title nahi mila.')
+          setError(t('detail_not_found'))
           return
         }
         setMeta(m)
@@ -40,7 +42,7 @@ export default function Detail() {
           setSeason(sorted[0])
         }
       })
-      .catch(() => setError('Details load nahi hue.'))
+      .catch(() => setError(t('detail_load_failed')))
   }, [type, id, retryKey, verified])
 
   const seasons = useMemo(() => {
@@ -60,7 +62,7 @@ export default function Detail() {
   }, [meta, season])
 
   if (!verified) {
-    return <VerifyGate message="Yeh title dekhne ke liye pehle khud ko verify karo." />
+    return <VerifyGate message={t('detail_verify_message')} />
   }
 
   if (error) {
@@ -74,7 +76,7 @@ export default function Detail() {
           onClick={() => setRetryKey((k) => k + 1)}
           className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
         >
-          Retry
+          {t('retry')}
         </button>
       </div>
     )
@@ -190,7 +192,7 @@ export default function Detail() {
             onClick={() => setDescExpanded((v) => !v)}
             className="text-xs text-reel-gold mt-1.5 font-medium block"
           >
-            {descExpanded ? 'Show less' : 'Read more'}
+            {descExpanded ? t('read_less') : t('read_more')}
           </button>
         ) : null}
 
@@ -199,7 +201,7 @@ export default function Detail() {
             onClick={() => navigate(`/watch/${type}/${encodeURIComponent(id)}`)}
             className="mt-4 bg-reel-gold text-reel-bg font-semibold px-6 py-2.5 rounded-lg hover:brightness-110 active:scale-95 transition"
           >
-            ▶ Play
+            ▶ {t('play')}
           </button>
         ) : (
           <div className="mt-4">
@@ -214,7 +216,7 @@ export default function Detail() {
                       : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
                   }`}
                 >
-                  {s === 0 ? 'Combined' : `Season ${s}`}
+                  {s === 0 ? t('combined') : `${t('season')} ${s}`}
                 </button>
               ))}
             </div>
@@ -261,7 +263,7 @@ export default function Detail() {
                           className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-ink hover:bg-white/5"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download
+                          {t('download')}
                         </button>
                       </div>
                     ) : null}
@@ -281,8 +283,8 @@ export default function Detail() {
             className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-6 px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
           >
             <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
-            <p className="text-reel-ink font-semibold mb-1">Season chuno</p>
-            <p className="text-reel-muted text-xs mb-4">Download karne ke liye pehle season select karo.</p>
+            <p className="text-reel-ink font-semibold mb-1">{t('detail_choose_season')}</p>
+            <p className="text-reel-muted text-xs mb-4">{t('detail_choose_season_sub')}</p>
             <div className="flex flex-wrap gap-2">
               {seasons.map((s) => (
                 <button
@@ -290,7 +292,7 @@ export default function Detail() {
                   onClick={() => pickSeasonForDownload(s)}
                   className="px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition"
                 >
-                  {s === 0 ? 'Combined' : `Season ${s}`}
+                  {s === 0 ? t('combined') : `${t('season')} ${s}`}
                 </button>
               ))}
             </div>

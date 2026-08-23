@@ -7,6 +7,7 @@ import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
 import VerifyGate from '../components/VerifyGate'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
 // into a clean filename + list of badge lines.
@@ -42,6 +43,7 @@ export default function Player() {
   const [active, setActive] = useState(null)
   const [error, setError] = useState('')
   const verified = isVerified()
+  const { t } = useLanguage()
 
   const isSeries = type === 'series'
   const [imdbId, seasonStr, episodeStr] = isSeries ? id.split(':') : [id, null, null]
@@ -98,7 +100,7 @@ export default function Player() {
           return
         }
       }
-      setError('Yeh stream play nahi ho payi.')
+      setError(t('player_stream_failed'))
     } catch {
       // network hiccup while probing — leave the player's own error state as-is
     }
@@ -132,13 +134,13 @@ export default function Player() {
     getStreams(type, id)
       .then((list) => {
         if (!list.length) {
-          setError('Is title ke liye koi stream nahi mili.')
+          setError(t('player_no_stream'))
           return
         }
         setStreams(list)
         setActive(lowestQualityStream(list))
       })
-      .catch(() => setError('Stream load nahi hui.'))
+      .catch(() => setError(t('player_stream_load_failed')))
   }, [type, id, retryKey, verified])
 
   useEffect(() => {
@@ -247,7 +249,7 @@ export default function Player() {
         .sort((a, b) => a - b)[0]
       if (nextSeasonNum !== undefined) {
         episodes = allEpisodes.filter((e) => e.season === nextSeasonNum)
-        label = `Season ${nextSeasonNum}`
+        label = `${t('season')} ${nextSeasonNum}`
       }
     }
     return { label, episodes }
@@ -351,7 +353,7 @@ export default function Player() {
       poster: titleInfo.poster,
       qualityLabel: activeQualityObj?.label || '',
     })
-    showToast('Download shuru ho gaya — Downloads tab mein dekho')
+    showToast(t('player_download_started'))
   }
 
   function shareIt() {
@@ -360,13 +362,13 @@ export default function Player() {
     } else {
       navigator.clipboard
         ?.writeText(window.location.href)
-        .then(() => showToast('Link copied!'))
+        .then(() => showToast(t('player_link_copied')))
         .catch(() => {})
     }
   }
 
   if (!verified) {
-    return <VerifyGate message="Yeh video play karne ke liye pehle khud ko verify karo." />
+    return <VerifyGate message={t('player_verify_message')} />
   }
 
   return (
@@ -378,7 +380,7 @@ export default function Player() {
             onClick={() => setRetryKey((k) => k + 1)}
             className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
           >
-            Retry
+            {t('retry')}
           </button>
         </div>
       ) : !active ? (
@@ -509,28 +511,28 @@ export default function Player() {
               onClick={downloadFile}
               disabled={downloadEntry?.status === 'downloading'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition disabled:opacity-70"
-              title="Download"
-              aria-label="Download"
+              title={t('download')}
+              aria-label={t('download')}
             >
               {downloadEntry?.status === 'downloading' ? (
                 <>
                   <span className="w-3 h-3 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
-                  {downloadEntry.progress ? `${downloadEntry.progress}%` : 'Downloading…'}
+                  {downloadEntry.progress ? `${downloadEntry.progress}%` : t('dl_downloading')}
                 </>
               ) : downloadEntry?.status === 'done' ? (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Downloaded
+                  {t('downloaded')}
                 </>
               ) : (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Download
+                  {t('download')}
                 </>
               )}
             </button>
             <div className="relative shrink-0">
-              <button onClick={shareIt} aria-label="Share" className="p-2 rounded-full text-xs bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition" title="Share">
+              <button onClick={shareIt} aria-label="Share" className="p-2 rounded-full text-xs bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition" title={t('share')}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               </button>
               {toast ? (
@@ -544,7 +546,7 @@ export default function Player() {
               aria-label={saved ? 'Remove from saved' : 'Save'}
               aria-pressed={saved}
               className={`p-2 rounded-full text-xs shrink-0 active:scale-95 transition ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
-              title="Save"
+              title={t('save')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
@@ -559,7 +561,7 @@ export default function Player() {
           {isSeries && upNext.episodes.length > 0 ? (
             <div className="mt-8 pt-6 border-t border-white/5">
               <div className="flex items-center justify-between mb-3 gap-3">
-                <h2 className="font-display text-lg text-reel-ink">Up Next · {upNext.label}</h2>
+                <h2 className="font-display text-lg text-reel-ink">{t('player_up_next')} · {upNext.label}</h2>
                 <button
                   onClick={toggleAutoplay}
                   aria-pressed={autoplay}
@@ -568,7 +570,7 @@ export default function Player() {
                   }`}
                 >
                   <span className={`w-2 h-2 rounded-full ${autoplay ? 'bg-reel-bg' : 'bg-reel-muted'}`} />
-                  Autoplay {autoplay ? 'On' : 'Off'}
+                  {t('player_autoplay')} {autoplay ? t('on') : t('off')}
                 </button>
               </div>
               <div className="space-y-3">
