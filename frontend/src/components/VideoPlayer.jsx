@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const SPEEDS = [1, 1.25, 1.5, 2, 3]
 const HIDE_DELAY = 2800
@@ -58,6 +59,7 @@ function isBlobSrc(src) {
   return typeof src === 'string' && src.startsWith('blob:')
 }
 export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError }) {
+  const { t } = useLanguage()
   const isNative = useRef(detectNativeBridge() && !isBlobSrc(src)).current
   const videoRef = useRef(null)
   const containerRef = useRef(null)
@@ -727,12 +729,12 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                         qualityMenuOpen ? 'bg-reel-gold text-reel-bg' : 'bg-white/10 text-reel-ink'
                       }`}
                     >
-                      {activeQuality?.label || 'Quality'}
+                      {activeQuality?.label || t('player_quality')}
                     </button>
 
                     {qualityMenuOpen && (
                       <div className="absolute bottom-full right-0 mb-2 min-w-[132px] rounded-xl overflow-hidden backdrop-blur-md bg-reel-surface/95 ring-1 ring-reel-gold/25 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
-                        <p className="text-[10px] uppercase tracking-wide text-reel-muted px-3 pt-2 pb-1">Quality</p>
+                        <p className="text-[10px] uppercase tracking-wide text-reel-muted px-3 pt-2 pb-1">{t('player_quality')}</p>
                         {qualities.map((q, i) => (
                           <button
                             key={i}
@@ -775,9 +777,9 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                       >
                         <span className="flex items-center gap-2">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                          Playback speed
+                          {t('player_playback_speed')}
                         </span>
-                        <span className="text-reel-muted">{speed === 1 ? 'Normal' : `${speed}x`} ›</span>
+                        <span className="text-reel-muted">{speed === 1 ? t('player_normal') : `${speed}x`} ›</span>
                       </button>
                     </div>
                   )}
@@ -845,7 +847,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                     speed === s ? 'bg-reel-gold text-reel-bg' : 'bg-white/10 text-reel-ink'
                   }`}
                 >
-                  {s === 1 ? 'Normal' : `${s}x`}
+                  {s === 1 ? t('player_normal') : `${s}x`}
                 </button>
               ))}
             </div>

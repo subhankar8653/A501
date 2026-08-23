@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useOnlineStatus, useBackendHealth } from '../lib/connectivity'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Routes that work fully from local data (IndexedDB / localStorage) and
 // therefore should stay usable even with no internet / a dead backend.
@@ -16,6 +17,7 @@ export default function ConnectionOverlay() {
   const isServerUp = useBackendHealth(isOnline)
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const { t } = useLanguage()
 
   const problem = !isOnline ? 'offline' : !isServerUp ? 'server-down' : null
   if (!problem || isOfflineSafe(pathname)) return null
@@ -23,12 +25,12 @@ export default function ConnectionOverlay() {
   const copy =
     problem === 'offline'
       ? {
-          title: 'No internet connection',
-          body: "You're offline right now, so new content can't load. Anything you've already downloaded is still available.",
+          title: t('overlay_offline_title'),
+          body: t('overlay_offline_body'),
         }
       : {
-          title: 'Server crashed',
-          body: 'Our server is temporarily down — please wait a bit and it should be back. Anything you\'ve already downloaded is still available.',
+          title: t('overlay_server_title'),
+          body: t('overlay_server_body'),
         }
 
   return (
@@ -64,7 +66,7 @@ export default function ConnectionOverlay() {
         onClick={() => navigate('/downloads')}
         className="px-5 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-b from-[#F3C067] to-reel-gold text-reel-bg active:scale-95 transition"
       >
-        View Downloads
+        {t('overlay_view_downloads')}
       </button>
     </div>
   )

@@ -7,12 +7,14 @@ import {
   removeRecentSearch,
   clearRecentSearches,
 } from '../api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Debounce delay for live suggestions while typing.
 const SUGGEST_DEBOUNCE_MS = 300
 
 export default function SearchOverlay({ initialQuery = '', onClose }) {
   const navigate = useNavigate()
+  const { t } = useLanguage()
   const inputRef = useRef(null)
   const [query, setQuery] = useState(initialQuery)
   const [recent, setRecent] = useState(() => getRecentSearches())
@@ -111,7 +113,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
               inputMode="search"
               enterKeyHint="search"
               aria-label="Search titles"
-              placeholder="Search titles…"
+              placeholder={t('search_placeholder')}
               className="w-full bg-transparent text-reel-ink placeholder-reel-muted px-4 py-2.5 text-base focus:outline-none"
             />
             {query ? (
@@ -154,7 +156,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
             {recent.length > 0 ? (
               <>
                 <div className="flex items-center justify-between px-4 py-2">
-                  <h2 className="text-xs font-semibold text-reel-muted uppercase tracking-wide">Recent searches</h2>
+                  <h2 className="text-xs font-semibold text-reel-muted uppercase tracking-wide">{t('search_recent')}</h2>
                   <button
                     onClick={() => {
                       clearRecentSearches()
@@ -162,7 +164,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                     }}
                     className="text-xs text-reel-gold hover:underline active:scale-95 transition"
                   >
-                    Clear all
+                    {t('search_clear_all')}
                   </button>
                 </div>
                 {recent.map((term) => (
@@ -193,7 +195,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
               </>
             ) : (
               <p className="text-center text-reel-muted text-sm mt-10 px-4">
-                Kuch search karo — recent searches yahan dikhengi.
+                {t('search_empty_hint')}
               </p>
             )}
           </div>
@@ -210,7 +212,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                 <path d="m21 21-4.3-4.3" />
               </svg>
               <span className="text-sm text-reel-ink">
-                Search for <span className="font-medium">“{query.trim()}”</span>
+                {t('search_for')} <span className="font-medium">“{query.trim()}”</span>
               </span>
             </div>
 

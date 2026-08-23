@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useDownloadsList } from '../lib/downloadsStore'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Sticky bar just above the bottom nav — visible from anywhere in the app
 // while a download is running, with a tap-through to the Downloads tab
@@ -8,6 +9,7 @@ import { useDownloadsList } from '../lib/downloadsStore'
 export default function DownloadToast() {
   const navigate = useNavigate()
   const downloads = useDownloadsList()
+  const { t } = useLanguage()
   const active = downloads.filter((d) => d.status === 'downloading')
 
   if (!active.length) return null
@@ -16,7 +18,7 @@ export default function DownloadToast() {
   const label =
     active.length === 1
       ? first.filename
-      : `${first.filename} +${active.length - 1} aur`
+      : `${first.filename} +${active.length - 1} ${t('more')}`
 
   return (
     <button

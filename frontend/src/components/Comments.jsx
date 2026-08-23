@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getProfile } from '../api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const NICK_KEY = 'suhani-screen:nick'
 const NICKNAMES = ['CinemaFan', 'MovieBuff', 'StreamKing', 'FilmLover', 'NightWatch', 'CoolViewer', 'HindiFilms', 'StarWatcher']
@@ -26,21 +27,22 @@ function hueFor(name) {
   return [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360
 }
 
-function relTime(ts) {
+function relTime(ts, t) {
   const d = Date.now() - ts
   const s = Math.floor(d / 1000)
   const m = Math.floor(s / 60)
   const h = Math.floor(m / 60)
   const day = Math.floor(h / 24)
-  if (s < 60) return 'abhi'
-  if (m < 60) return `${m}m pehle`
-  if (h < 24) return `${h}h pehle`
-  return `${day}d pehle`
+  if (s < 60) return t('comments_just_now')
+  if (m < 60) return `${m}${t('comments_min_ago')}`
+  if (h < 24) return `${h}${t('comments_hr_ago')}`
+  return `${day}${t('comments_day_ago')}`
 }
 
 // Comments are stored per-title in localStorage, on this device only —
 // there's no shared backend for them (matches the reference player's note).
 export default function Comments({ storageKey }) {
+  const { t } = useLanguage()
   const [nick] = useState(getNick)
   const [comments, setComments] = useState([])
   const [text, setText] = useState('')
@@ -83,8 +85,8 @@ export default function Comments({ storageKey }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-display font-semibold text-reel-ink">💬 Comments</p>
-        <span className="text-xs text-reel-muted">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
+        <p className="text-sm font-display font-semibold text-reel-ink">💬 {t('comments_title')}</p>
+        <span className="text-xs text-reel-muted">{comments.length} {t('comments_count')}</span>
       </div>
 
       <div className="flex items-start gap-2 mb-4">
@@ -98,17 +100,17 @@ export default function Comments({ storageKey }) {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Add a comment…"
+            placeholder={t('comments_add_placeholder')}
             rows={1}
             className="w-full bg-reel-surface2 rounded-lg px-3 py-2 text-sm text-reel-ink placeholder:text-reel-muted focus:outline-none focus:ring-1 focus:ring-reel-gold/60 resize-none"
           />
           {text ? (
             <div className="flex gap-2 mt-2 justify-end">
               <button onClick={() => setText('')} className="text-xs px-3 py-1 rounded text-reel-muted hover:text-reel-ink">
-                Cancel
+                {t('cancel')}
               </button>
               <button onClick={post} className="text-xs px-3 py-1 rounded bg-reel-gold text-reel-bg font-semibold">
-                Comment
+                {t('comments_post')}
               </button>
             </div>
           ) : null}
@@ -131,7 +133,7 @@ export default function Comments({ storageKey }) {
                   <p className="text-xs font-semibold text-reel-ink">{c.name}</p>
                   <p className="text-sm text-reel-ink/90 break-words">{c.text}</p>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[11px] text-reel-muted">{relTime(c.ts)}</span>
+                    <span className="text-[11px] text-reel-muted">{relTime(c.ts, t)}</span>
                     <button
                       onClick={() => likeToggle(idx)}
                       className={`text-[11px] flex items-center gap-1 ${c.likedByMe ? 'text-reel-gold' : 'text-reel-muted'}`}

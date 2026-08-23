@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getStreams, qualityLabel } from '../api'
 import { startDownload, downloadId, useDownloadsList } from '../lib/downloadsStore'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Turns a quality label ("360p", "1080p", "4K"...) into a comparable number,
 // so we can sort qualities and find "the next one down" from what the user
@@ -53,6 +54,7 @@ function pickBestStream(streams, pickedLabel) {
 // to the next lower quality if this episode doesn't have the picked one),
 // and each one is handed off to the existing downloadsStore.
 export default function DownloadQualitySheet({ open, onClose, type, imdbId, showName, showPoster, episodes }) {
+  const { t } = useLanguage()
   const [labels, setLabels] = useState(null) // null = loading, [] = none found
   const [picked, setPicked] = useState(null)
   const [queueing, setQueueing] = useState(false)
@@ -161,13 +163,13 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
 
         <p className="text-reel-ink font-semibold mb-1">
           {isSeason
-            ? `Download Season (${episodes.length} episodes)`
+            ? `${t('download')} ${t('season')} (${episodes.length} ${t('episodes')})`
             : episodes[0]?.episode != null
-              ? `Download E${episodes[0].episode}`
-              : `Download ${showName || ''}`}
+              ? `${t('download')} E${episodes[0].episode}`
+              : `${t('download')} ${showName || ''}`}
         </p>
         <p className="text-reel-muted text-xs mb-4">
-          {isSeason ? 'Quality chuno, poora season ek baar mein download hoga.' : 'Quality chuno, download shuru ho jaega.'}
+          {isSeason ? t('dl_sheet_season_sub') : t('dl_sheet_single_sub')}
         </p>
 
         {labels === null ? (
@@ -175,7 +177,7 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
             <span className="w-6 h-6 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
           </div>
         ) : labels.length === 0 ? (
-          <p className="text-reel-rust text-sm py-4 text-center">Koi stream nahi mili.</p>
+          <p className="text-reel-rust text-sm py-4 text-center">{t('dl_sheet_no_stream')}</p>
         ) : !queueing ? (
           <>
             <div className="flex flex-wrap gap-2 mb-5">
@@ -196,13 +198,13 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
               disabled={!picked}
               className="w-full py-3 rounded-xl bg-reel-gold text-reel-bg font-semibold active:scale-[0.98] transition disabled:opacity-50"
             >
-              {isSeason ? `Download all ${episodes.length} episodes · ${picked || ''}` : `Download · ${picked || ''}`}
+              {isSeason ? `${t('dl_sheet_download_all')} ${episodes.length} ${t('episodes')} · ${picked || ''}` : `${t('download')} · ${picked || ''}`}
             </button>
           </>
         ) : (
           <div className="py-4 text-center">
             <p className="text-reel-ink text-sm mb-2">
-              {done + failed} / {episodes.length} queued…
+              {done + failed} / {episodes.length} {t('dl_sheet_queued')}
             </p>
             <div className="h-1.5 rounded-full bg-reel-surface2 overflow-hidden mb-3">
               <div
@@ -213,17 +215,17 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
             {done + failed >= episodes.length ? (
               <>
                 <p className="text-reel-muted text-xs mb-4">
-                  {done} shuru ho gaye{failed ? `, ${failed} fail ho gaye` : ''} — progress Downloads tab mein dekho.
+                  {done} {t('dl_sheet_started')}{failed ? `, ${failed} ${t('dl_sheet_some_failed')}` : ''} — {t('dl_sheet_check_downloads')}
                 </p>
                 <button
                   onClick={onClose}
                   className="w-full py-2.5 rounded-xl bg-white/10 text-reel-ink font-semibold active:scale-[0.98] transition"
                 >
-                  Done
+                  {t('done')}
                 </button>
               </>
             ) : (
-              <p className="text-reel-muted text-xs">Episodes queue ho rahe hain, ruko…</p>
+              <p className="text-reel-muted text-xs">{t('dl_sheet_queueing')}</p>
             )}
           </div>
         )}
