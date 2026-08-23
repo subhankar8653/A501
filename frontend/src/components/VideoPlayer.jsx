@@ -217,23 +217,41 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   }, [isNative, src, title, qualityPayload, nativeCloseTick])
 
   // --- Native bridge: chhote player ko is div ki exact jagah par chipkaaye rakho ---
+  //
+  // PERF FIX (user ask: "poora app fast/smooth banao"): pehle sendRect()
+  // seedha `scroll`/`resize` event par call hota tha — koi throttling nahi.
+  // Jab bhi mini-player Home/Detail ke peeche visible rehta (background
+  // playback), har scroll pixel par getBoundingClientRect() (jo layout
+  // force karta hai) + ek native-bridge call chal jaata — is wajah se
+  // scrolling jhatkedaar (janky) lagta tha, khaaskar rails scroll karte
+  // waqt. Fix: rAF se throttle — ek scroll "burst" mein chaahe 50 event fire
+  // ho, hum sirf agle paint frame se pehle EK baar hi rect bhejte hain.
   useEffect(() => {
     if (!isNative) return
     const el = containerRef.current
     if (!el) return
+    let rafId = null
     function sendRect() {
       const r = el.getBoundingClientRect()
       window.AndroidPlayer.updateRect(r.left, r.top, r.width, r.height)
     }
+    function scheduleSendRect() {
+      if (rafId != null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        sendRect()
+      })
+    }
     sendRect()
-    const ro = new ResizeObserver(sendRect)
+    const ro = new ResizeObserver(scheduleSendRect)
     ro.observe(el)
-    window.addEventListener('scroll', sendRect, true)
-    window.addEventListener('resize', sendRect)
+    window.addEventListener('scroll', scheduleSendRect, { capture: true, passive: true })
+    window.addEventListener('resize', scheduleSendRect)
     return () => {
+      if (rafId != null) cancelAnimationFrame(rafId)
       ro.disconnect()
-      window.removeEventListener('scroll', sendRect, true)
-      window.removeEventListener('resize', sendRect)
+      window.removeEventListener('scroll', scheduleSendRect, true)
+      window.removeEventListener('resize', scheduleSendRect)
     }
   }, [isNative])
 

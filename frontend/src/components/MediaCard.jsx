@@ -1,7 +1,20 @@
 import { Link } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, memo } from 'react'
 
-export default function MediaCard({ item, index = 0 }) {
+// PERF FIX (user ask: "poora app fast/smooth banao"): yeh component Home/
+// Search/Saved ke har rail-grid mein dono se best case 30-40 baar render
+// hota hai. Do cheezein GPU/CPU par bhaari padti thi:
+//  1. `backdrop-blur-sm` rating badge par — har card apna alag blur-layer
+//     GPU compositor banwata tha; itne saare overlapping blur layers ek
+//     saath scroll mein jank karte hain. Ab solid dark background (jo
+//     visually almost same lagta hai) — koi blur compositing nahi.
+//  2. `transition-all` — browser ko HAR animatable property (color, shadow,
+//     border, sab) frame-by-frame watch karni padti thi sirf ek chhoti si
+//     scale/opacity change ke liye. Ab sirf zaroori properties list ki hain.
+// `memo()` add kiya taaki jab parent (Rail/HomeContent) re-render ho
+// (naya tab select karne par, downloads update hone par, etc.) to jin
+// cards ke props nahi badle unhe React dobara process hi na kare.
+function MediaCard({ item, index = 0 }) {
   const [loaded, setLoaded] = useState(false)
   const year = item.releaseInfo || item.year || ''
   return (
@@ -12,12 +25,13 @@ export default function MediaCard({ item, index = 0 }) {
       className="group shrink-0 w-[calc(33.333vw-19px)] sm:w-[180px] animate-card-in active:scale-95 transition-transform duration-200 will-change-transform hover:-translate-y-1"
       style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
     >
-      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-white/[0.06] group-hover:ring-reel-gold/70 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.5)] group-hover:shadow-[0_18px_36px_-14px_rgba(232,163,61,0.35)] transition-all duration-300">
+      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-white/[0.06] group-hover:ring-reel-gold/70 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.5)] group-hover:shadow-[0_18px_36px_-14px_rgba(232,163,61,0.35)] transition-[box-shadow,ring] duration-300">
         {item.poster ? (
           <img
             src={item.poster}
             alt={item.name}
             loading="lazy"
+            decoding="async"
             onLoad={() => setLoaded(true)}
             className={`w-full h-full object-cover group-hover:scale-[1.07] transition-[opacity,transform] duration-500 ease-out ${
               loaded ? 'opacity-100' : 'opacity-0'
@@ -38,7 +52,7 @@ export default function MediaCard({ item, index = 0 }) {
             sits on it. */}
         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
         {item.imdbRating ? (
-          <span className="absolute top-1.5 right-1.5 bg-black/75 backdrop-blur-sm text-reel-gold text-[10px] font-semibold px-1.5 py-0.5 rounded">
+          <span className="absolute top-1.5 right-1.5 bg-black/85 text-reel-gold text-[10px] font-semibold px-1.5 py-0.5 rounded">
             ★ {item.imdbRating}
           </span>
         ) : null}
@@ -50,3 +64,5 @@ export default function MediaCard({ item, index = 0 }) {
     </Link>
   )
 }
+
+export default memo(MediaCard)

@@ -1,6 +1,10 @@
+import { memo } from 'react'
 import MediaCard from './MediaCard'
 
-export default function Rail({ title, items, loading }) {
+// PERF FIX: memo() taaki Home tab-switch ya language-change jaisi cheezein
+// jo sirf EK rail ka data badalti hain, baaki saare unrelated rails ko
+// dobara render na karein.
+function Rail({ title, items, loading }) {
   if (!loading && (!items || items.length === 0)) return null
 
   return (
@@ -19,3 +23,5 @@ export default function Rail({ title, items, loading }) {
     </section>
   )
 }
+
+export default memo(Rail)
