@@ -24,7 +24,7 @@ function relTime(ts, t) {
 // getComments/postComment/deleteComment), taaki sab logon ko wahi ek comment
 // list dikhe. `type`/`id` woh hi hain jo Detail/Player already use karte
 // hain (movie/series + imdb-jaisa id).
-export default function Comments({ type, id }) {
+export default function Comments({ type, id, onCountChange }) {
   const { t } = useLanguage()
   const profile = getProfile()
   const myUserId = profile?.userId
@@ -37,7 +37,10 @@ export default function Comments({ type, id }) {
     setComments(null)
     getComments(type, id)
       .then((list) => {
-        if (!cancelled) setComments(list)
+        if (!cancelled) {
+          setComments(list)
+          onCountChange?.(list.length)
+        }
       })
       .catch(() => {
         if (!cancelled) setComments([])
@@ -45,6 +48,7 @@ export default function Comments({ type, id }) {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, id])
 
   async function post() {
@@ -53,7 +57,11 @@ export default function Comments({ type, id }) {
     setPosting(true)
     try {
       const entry = await postComment(type, id, trimmed)
-      setComments((prev) => [entry, ...(prev || [])])
+      setComments((prev) => {
+        const next = [entry, ...(prev || [])]
+        onCountChange?.(next.length)
+        return next
+      })
       setText('')
     } catch {
       /* backend hiccup — leave the draft so the user can retry */
@@ -63,7 +71,11 @@ export default function Comments({ type, id }) {
   }
 
   async function remove(ts) {
-    setComments((prev) => (prev || []).filter((c) => c.ts !== ts))
+    setComments((prev) => {
+      const next = (prev || []).filter((c) => c.ts !== ts)
+      onCountChange?.(next.length)
+      return next
+    })
     try {
       await deleteComment(type, id, ts)
     } catch {
@@ -75,11 +87,6 @@ export default function Comments({ type, id }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-display font-semibold text-reel-ink">💬 {t('comments_title')}</p>
-        <span className="text-xs text-reel-muted">{comments ? comments.length : ''} {t('comments_count')}</span>
-      </div>
-
       <div className="flex items-start gap-2 mb-4">
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
