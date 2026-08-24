@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getMeta, isVerified } from '../api'
+import { getMeta, isVerified, getRelatedTitles } from '../api'
 import BackButton from '../components/BackButton'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VerifyGate from '../components/VerifyGate'
+import Rail from '../components/Rail'
 import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Detail() {
@@ -21,6 +22,11 @@ export default function Detail() {
   const [descExpanded, setDescExpanded] = useState(false)
   const verified = isVerified()
   const { t } = useLanguage()
+  // FEATURE (user ask: "Related/Recommended videos"): current title ka
+  // pehla genre milte hi fetch karo — koi naya backend endpoint nahi laga,
+  // existing catalog genre-filter reuse kiya hai (dekho api.js
+  // getRelatedTitles).
+  const [related, setRelated] = useState(null)
 
   useEffect(() => {
     if (!verified) return
@@ -44,6 +50,25 @@ export default function Detail() {
       })
       .catch(() => setError(t('detail_load_failed')))
   }, [type, id, retryKey, verified])
+
+  useEffect(() => {
+    if (!meta?.genres?.length) {
+      setRelated(null)
+      return
+    }
+    let cancelled = false
+    setRelated(null)
+    getRelatedTitles(type, id, meta.genres[0])
+      .then((items) => {
+        if (!cancelled) setRelated(items)
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [type, id, meta?.genres])
 
   const seasons = useMemo(() => {
     if (!meta?.videos) return []
@@ -274,6 +299,12 @@ export default function Detail() {
           </div>
         )}
       </div>
+
+      {related && related.length > 0 ? (
+        <div className="max-w-6xl mx-auto px-0">
+          <Rail title={t('more_like_this')} items={related} />
+        </div>
+      ) : null}
 
       {seasonPickerOpen ? (
         <div className="fixed inset-0 z-[95] flex items-end justify-center" onClick={() => setSeasonPickerOpen(false)}>

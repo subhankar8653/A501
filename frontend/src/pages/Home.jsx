@@ -8,11 +8,14 @@ import {
   loadHomeCache,
   saveHomeCache,
   isVerified,
+  getContinueWatching,
+  removeWatchProgress,
 } from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 import HomeHero from '../components/HomeHero'
+import ContinueWatchingRail from '../components/ContinueWatchingRail'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
 
@@ -59,6 +62,27 @@ function HomeContent({ t }) {
   // Only ever shown for a manual pull-to-refresh — the automatic
   // background catch-up (see effects below) stays silent on purpose.
   const [pullRefreshing, setPullRefreshing] = useState(false)
+  // FEATURE (user ask: "Watch history / Continue Watching")
+  const [continueWatching, setContinueWatching] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getContinueWatching()
+      .then((items) => {
+        if (!cancelled) setContinueWatching(items)
+      })
+      .catch(() => {
+        if (!cancelled) setContinueWatching([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [retryKey])
+
+  function removeContinueWatchingItem(item) {
+    setContinueWatching((prev) => (prev || []).filter((it) => it.k !== item.k))
+    removeWatchProgress(item.media_id, item.episode_id).catch(() => {})
+  }
 
   // Keep the cache in sync with whatever's on screen, so the NEXT visit
   // (tab switch or app reopen) starts from here. Old entry is simply
@@ -246,6 +270,10 @@ function HomeContent({ t }) {
       </div>
 
       <HomeHero items={heroItems} loading={heroLoading} />
+
+      <div className="max-w-6xl mx-auto px-0">
+        <ContinueWatchingRail items={continueWatching} onRemove={removeContinueWatchingItem} />
+      </div>
 
       <div className="max-w-6xl mx-auto px-0 mt-6">
         <div key={active} className="page-fade-in">

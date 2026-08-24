@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel, isVerified } from '../api'
+import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
+import Rail from '../components/Rail'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
@@ -72,8 +73,7 @@ export default function Player() {
     })
   }
 
-  const storageKey = `${type}:${id}`
-  const { reactions, react } = useLocalReactions(`suhani-screen:reactions:${storageKey}`)
+  const { reactions, react } = useLocalReactions(type, id)
   // Saved is per-title (whole movie/show), not per-episode — so saving from
   // any episode of a series shows the show once in the Saved tab.
   const saved = useIsSaved(type, imdbId)
@@ -111,6 +111,59 @@ export default function Player() {
   // Continuously tracks current playback position so that switching quality
   // mid-video can resume from the same spot instead of restarting.
   const resumeAt = useRef(0)
+  // FEATURE (user ask: "Watch history / Continue Watching"): last time we
+  // sent a progress update to the backend — throttled so scrubby playback
+  // doesn't fire a network call on every single timeupdate tick.
+  const lastProgressSaveRef = useRef(0)
+  const lastKnownDurationRef = useRef(0)
+  // FEATURE (user ask: "Related/Recommended videos"): sirf movies ke liye —
+  // series mein "Up Next" (episode list) already yehi role play karta hai,
+  // ek movie khatam hone ke baad koi "next" nahi hota to genre-based
+  // suggestions dikha dete hain.
+  const [related, setRelated] = useState(null)
+
+  // FEATURE (user ask: "Watch history / Continue Watching"): jab user
+  // player se hat kar kahin aur chala jaaye (Back dabaye, ya doosri
+  // episode par jump kare) beech video mein, us waqt tak ka progress save
+  // karo — warna sirf har-10s ka throttled save use karne se aakhri kuch
+  // second ka progress kabhi save hi nahi hota.
+  useEffect(() => {
+    return () => {
+      const dur = lastKnownDurationRef.current
+      const pos = resumeAt.current
+      if (dur > 0 && pos > 5) {
+        saveWatchProgress({
+          type,
+          id: imdbId,
+          position: pos,
+          duration: dur,
+          title: titleInfo.name,
+          poster: titleInfo.poster,
+          episodeId: isSeries ? id : undefined,
+        }).catch(() => {})
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, id])
+
+  useEffect(() => {
+    if (isSeries || !movieMeta?.genres?.length) {
+      setRelated(null)
+      return
+    }
+    let cancelled = false
+    setRelated(null)
+    getRelatedTitles('movie', imdbId, movieMeta.genres[0])
+      .then((items) => {
+        if (!cancelled) setRelated(items)
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isSeries, imdbId, movieMeta?.genres])
 
   function switchQuality(stream) {
     setDriveFallbackUrl(null)
@@ -141,6 +194,16 @@ export default function Player() {
         setActive(lowestQualityStream(list))
       })
       .catch(() => setError(t('player_stream_load_failed')))
+    // FEATURE (user ask: "Watch history / Continue Watching"): backend se
+    // is title/episode ka pehle se saved resume-position dhoondo — mile
+    // toh wahin se video shuru karo, YouTube ki tarah.
+    const episodeKey = isSeries ? id : null
+    getContinueWatching()
+      .then((items) => {
+        const match = items.find((it) => (episodeKey ? it.episode_id === episodeKey : it.k === id))
+        if (match?.pos > 5) resumeAt.current = match.pos
+      })
+      .catch(() => {})
   }, [type, id, retryKey, verified])
 
   useEffect(() => {
@@ -268,6 +331,10 @@ export default function Player() {
   }, [isSeries, allEpisodes, currentSeason, currentEpisode])
 
   function handleEnded() {
+    // Video khatam ho gaya — isse "Continue Watching" mein clutter ki tarah
+    // mat rakho (backend >95% ko already "finished" treat karta hai, par
+    // yahan turant hata dena UI ko turant consistent rakhta hai).
+    removeWatchProgress(imdbId, isSeries ? id : undefined).catch(() => {})
     if (autoplay && isSeries && upNext.episodes[0]) {
       navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`)
     }
@@ -462,7 +529,24 @@ export default function Player() {
                   activeQuality={activeQualityObj}
                   onQualityChange={(q) => switchQuality(q)}
                   startAt={resumeAt.current}
-                  onProgressTick={(t) => { resumeAt.current = t }}
+                  onProgressTick={(t, dur) => {
+                    resumeAt.current = t
+                    lastKnownDurationRef.current = dur
+                    // Throttle: save at most once every 10s of real time.
+                    const now = Date.now()
+                    if (dur > 0 && now - lastProgressSaveRef.current > 10000) {
+                      lastProgressSaveRef.current = now
+                      saveWatchProgress({
+                        type,
+                        id: imdbId,
+                        position: t,
+                        duration: dur,
+                        title: titleInfo.name,
+                        poster: titleInfo.poster,
+                        episodeId: isSeries ? id : undefined,
+                      }).catch(() => {})
+                    }
+                  }}
                   onEnded={handleEnded}
                   onFatalError={handleVideoFatalError}
                 />
@@ -554,7 +638,7 @@ export default function Player() {
 
           {/* Comments */}
           <div className="mt-6">
-            <Comments storageKey={`suhani-screen:comments:${storageKey}`} />
+            <Comments type={type} id={id} />
           </div>
 
           {/* Up next — rest of this season, or the next season once you hit its last episode */}
@@ -595,6 +679,12 @@ export default function Player() {
                   </button>
                 ))}
               </div>
+            </div>
+          ) : null}
+
+          {!isSeries && related && related.length > 0 ? (
+            <div className="mt-8 pt-6 border-t border-white/5">
+              <Rail title={t('more_like_this')} items={related} />
             </div>
           ) : null}
           </div>
