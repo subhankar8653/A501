@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles } from '../api'
+import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
+import CommentsSheet from '../components/CommentsSheet'
 import Rail from '../components/Rail'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
@@ -10,14 +11,20 @@ import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsSto
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
 
-// Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n🎥 x265 ...")
+// Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n👤 @Channel")
 // into a clean filename + list of badge lines.
+//
+// BUG FIX (user ask: "MB ke bagal mein @HindiNewMovies jaisa username nahi
+// dikhna chahiye"): 👤 line is the source channel/encoder credit — useful
+// internally but looks unpolished/unbranded shown to viewers, so it's
+// filtered out here. Everything else (size, codec, etc.) still shows.
 function parseStreamMeta(stream) {
   const lines = (stream?.title || '').split('\n').map((l) => l.trim()).filter(Boolean)
   let filename = stream?.name || ''
   const badges = []
   for (const line of lines) {
     if (line.startsWith('📁')) filename = line.replace('📁', '').trim()
+    else if (line.startsWith('👤')) continue
     else badges.push(line)
   }
   return { filename, badges }
@@ -116,6 +123,11 @@ export default function Player() {
   // doesn't fire a network call on every single timeupdate tick.
   const lastProgressSaveRef = useRef(0)
   const lastKnownDurationRef = useRef(0)
+  // FEATURE (user ask: "comments section YouTube jaisa — button dabao toh
+  // khule"): count preview ke liye rakha hai, poori list sirf sheet khulne
+  // par mount hoti hai.
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentCount, setCommentCount] = useState(null)
   // FEATURE (user ask: "Related/Recommended videos"): sirf movies ke liye —
   // series mein "Up Next" (episode list) already yehi role play karta hai,
   // ek movie khatam hone ke baad koi "next" nahi hota to genre-based
@@ -164,6 +176,22 @@ export default function Player() {
       cancelled = true
     }
   }, [isSeries, imdbId, movieMeta?.genres])
+
+  useEffect(() => {
+    if (!verified) return
+    let cancelled = false
+    setCommentCount(null)
+    getComments(type, id)
+      .then((list) => {
+        if (!cancelled) setCommentCount(list.length)
+      })
+      .catch(() => {
+        if (!cancelled) setCommentCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [type, id, verified])
 
   function switchQuality(stream) {
     setDriveFallbackUrl(null)
@@ -636,10 +664,21 @@ export default function Player() {
             </button>
           </div>
 
-          {/* Comments */}
-          <div className="mt-6">
-            <Comments type={type} id={id} />
-          </div>
+          {/* Comments — YouTube-style: chhota preview bar, poori list ek
+              bottom-sheet mein khulti hai (dekho CommentsSheet.jsx) */}
+          <button
+            onClick={() => setCommentsOpen(true)}
+            className="mt-6 w-full flex items-center justify-between gap-3 bg-reel-surface rounded-lg px-4 py-3 ring-1 ring-white/5 active:scale-[0.99] transition text-left"
+          >
+            <span className="text-sm font-display font-semibold text-reel-ink">
+              💬 {t('comments_title')} {commentCount != null ? `· ${commentCount}` : ''}
+            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-muted shrink-0"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
+
+          <CommentsSheet open={commentsOpen} onClose={() => setCommentsOpen(false)} title={`${t('comments_title')}${commentCount != null ? ` · ${commentCount}` : ''}`}>
+            <Comments type={type} id={id} onCountChange={setCommentCount} />
+          </CommentsSheet>
 
           {/* Up next — rest of this season, or the next season once you hit its last episode */}
           {isSeries && upNext.episodes.length > 0 ? (
