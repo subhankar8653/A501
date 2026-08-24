@@ -919,3 +919,95 @@ async def configure_addon(token: str, request: Request):
         "status_text": status_text,
         "status_color": status_color,
     })
+
+
+# ======================================================================
+# FEATURE (user ask: "comments/likes/dislikes" + "watch history / continue
+# watching"): app-facing endpoints, same token-auth pattern as manifest/
+# catalog/meta/stream above. media_type here is "movie" or "series" (same
+# values the frontend already uses everywhere else).
+# ======================================================================
+
+@router.get("/{token}/reactions/{media_type}/{id}.json")
+async def get_reactions_api(token: str, media_type: str, id: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    return await db.get_reactions(media_type, id, int(user_id) if user_id else None)
+
+
+@router.post("/{token}/reactions/{media_type}/{id}.json")
+async def toggle_reaction_api(token: str, media_type: str, id: str, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    kind = payload.get("kind")
+    if kind not in ("like", "dislike"):
+        raise HTTPException(status_code=400, detail="kind must be 'like' or 'dislike'")
+    return await db.toggle_reaction(media_type, id, int(user_id), kind)
+
+
+@router.get("/{token}/comments/{media_type}/{id}.json")
+async def get_comments_api(token: str, media_type: str, id: str, token_data: dict = Depends(verify_token)):
+    return {"comments": await db.get_comments(media_type, id)}
+
+
+@router.post("/{token}/comments/{media_type}/{id}.json")
+async def add_comment_api(token: str, media_type: str, id: str, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty comment")
+    if len(text) > 500:
+        raise HTTPException(status_code=400, detail="Comment too long")
+    name = (payload.get("name") or "").strip() or "Someone"
+    entry = await db.add_comment(media_type, id, int(user_id), name, text)
+    return {"comment": entry}
+
+
+@router.delete("/{token}/comments/{media_type}/{id}/{ts}")
+async def delete_comment_api(token: str, media_type: str, id: str, ts: int, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    ok = await db.delete_comment(media_type, id, int(user_id), ts)
+    return {"deleted": ok}
+
+
+@router.post("/{token}/progress.json")
+async def save_progress_api(token: str, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    try:
+        media_type = payload["media_type"]
+        media_id = payload["media_id"]
+        position = float(payload["position"])
+        duration = float(payload["duration"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="media_type, media_id, position, duration required")
+    if duration <= 0:
+        return {"saved": False}
+    await db.save_watch_progress(
+        int(user_id), media_type, media_id, position, duration,
+        title=payload.get("title", ""), poster=payload.get("poster", ""),
+        episode_id=payload.get("episode_id"),
+    )
+    return {"saved": True}
+
+
+@router.get("/{token}/continue-watching.json")
+async def continue_watching_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        return {"items": []}
+    return {"items": await db.get_continue_watching(int(user_id))}
+
+
+@router.delete("/{token}/progress/{media_id}")
+async def remove_progress_api(token: str, media_id: str, episode_id: Optional[str] = None, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    await db.remove_watch_progress(int(user_id), media_id, episode_id)
+    return {"removed": True}
