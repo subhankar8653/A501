@@ -1,43 +1,51 @@
 import { useEffect, useState } from 'react'
+import { getReactions, toggleReaction } from '../api'
 
-// Like/dislike + saved-for-later state, kept per title in localStorage.
-// No backend for this — it's a personal, on-device toggle like the
-// reference player's reactions.
-export function useLocalReactions(storageKey) {
+// FEATURE (user ask: "likes/dislikes real backend pe honi chahiye"): pehle
+// yeh purely localStorage-based tha (isi device ka apna private counter,
+// kisi aur ko dikhta hi nahi tha). Ab backend se real, sab logon ke beech
+// shared like/dislike counts aate hain (dekho api.js getReactions/
+// toggleReaction, aur backend database.py toggle_reaction — ek hi title
+// document mein sirf user-id ki chhoti list rehti hai, storage bahut
+// compact rehta hai).
+export function useLocalReactions(type, id) {
   const [reactions, setReactions] = useState({ likes: 0, dislikes: 0, mine: null })
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey)
-      setReactions(raw ? JSON.parse(raw) : { likes: 0, dislikes: 0, mine: null })
-    } catch {
-      setReactions({ likes: 0, dislikes: 0, mine: null })
+    let cancelled = false
+    getReactions(type, id)
+      .then((r) => {
+        if (!cancelled) setReactions(r)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
     }
-  }, [storageKey])
+  }, [type, id])
 
-  function persist(next) {
-    setReactions(next)
+  async function react(kind) {
+    // Optimistic update — feels instant, backend confirms/corrects right after.
+    setReactions((prev) => {
+      const next = { ...prev }
+      const wasMine = prev.mine === kind
+      if (wasMine) {
+        next[`${kind}s`] = Math.max(0, (prev[`${kind}s`] || 0) - 1)
+        next.mine = null
+      } else {
+        if (prev.mine) next[`${prev.mine}s`] = Math.max(0, (prev[`${prev.mine}s`] || 0) - 1)
+        next[`${kind}s`] = (prev[`${kind}s`] || 0) + 1
+        next.mine = kind
+      }
+      return next
+    })
     try {
-      localStorage.setItem(storageKey, JSON.stringify(next))
+      const confirmed = await toggleReaction(type, id, kind)
+      setReactions(confirmed)
     } catch {
-      /* ignore */
+      /* leave the optimistic value — a stale count is fine, a stuck
+         "connecting…" state would be worse */
     }
-  }
-
-  function react(type) {
-    const next = { ...reactions }
-    const wasActive = next.mine === type
-    if (wasActive) {
-      next[`${type}s`] = Math.max(0, next[`${type}s`] - 1)
-      next.mine = null
-    } else {
-      if (next.mine) next[`${next.mine}s`] = Math.max(0, next[`${next.mine}s`] - 1)
-      next[`${type}s`] = (next[`${type}s`] || 0) + 1
-      next.mine = type
-    }
-    persist(next)
   }
 
   return { reactions, react }
 }
-

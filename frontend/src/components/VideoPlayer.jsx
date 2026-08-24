@@ -129,7 +129,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     if (!v) return
     const onTime = () => {
       setCurrent(v.currentTime)
-      onProgressTick && onProgressTick(v.currentTime)
+      onProgressTick && onProgressTick(v.currentTime, v.duration || 0)
     }
     const onDur = () => {
       setDuration(v.duration || 0)
