@@ -155,6 +155,142 @@ class Database:
             LOGGER.error(f"Database.save_settings error: {e}")
             return False
 
+    # ------------------------------------------------------------------
+    # FEATURE (user ask: "comments/likes/dislikes ka storage jo MB jaldi na
+    # bhare"): compact per-title schema — ek title ke saare reactions/
+    # comments EK document mein rehte hain (alag document per-like/comment
+    # nahi), aur comments field-names chhote (u/n/t/ts) rakhe hain. Yeh sab
+    # "tracking" DB mein rehta hai (jahan app_signup jaisi chhoti cheezein
+    # already store hoti hain) — media content ki "storage_N" DBs se alag,
+    # taaki bade movie/tv collections se koi lena-dena na ho.
+    # ------------------------------------------------------------------
+
+    def _media_key(self, media_type: str, media_id: str) -> str:
+        return f"{media_type}:{media_id}"
+
+    #----- Reactions: { _id, likes: [user_id,...], dislikes: [user_id,...] }
+    async def toggle_reaction(self, media_type: str, media_id: str, user_id: int, kind: str) -> dict:
+        if kind not in ("like", "dislike"):
+            raise ValueError("kind must be 'like' or 'dislike'")
+        key = self._media_key(media_type, media_id)
+        col = self.dbs["tracking"]["reactions"]
+        doc = await col.find_one({"_id": key}) or {"_id": key, "likes": [], "dislikes": []}
+        likes = set(doc.get("likes") or [])
+        dislikes = set(doc.get("dislikes") or [])
+        other = "dislikes" if kind == "like" else "likes"
+        target = "likes" if kind == "like" else "dislikes"
+        target_set = likes if target == "likes" else dislikes
+        other_set = dislikes if target == "likes" else likes
+
+        if user_id in target_set:
+            target_set.discard(user_id)   # toggle off — already reacted this way
+            mine = None
+        else:
+            target_set.add(user_id)
+            other_set.discard(user_id)    # can't like AND dislike at once
+            mine = kind
+
+        await col.update_one(
+            {"_id": key},
+            {"$set": {"likes": list(likes), "dislikes": list(dislikes)}},
+            upsert=True,
+        )
+        return {"likes": len(likes), "dislikes": len(dislikes), "mine": mine}
+
+    async def get_reactions(self, media_type: str, media_id: str, user_id: Optional[int] = None) -> dict:
+        key = self._media_key(media_type, media_id)
+        doc = await self.dbs["tracking"]["reactions"].find_one({"_id": key})
+        likes = doc.get("likes") or [] if doc else []
+        dislikes = doc.get("dislikes") or [] if doc else []
+        mine = None
+        if user_id is not None:
+            if user_id in likes:
+                mine = "like"
+            elif user_id in dislikes:
+                mine = "dislike"
+        return {"likes": len(likes), "dislikes": len(dislikes), "mine": mine}
+
+    #----- Comments: { _id, comments: [{u,n,t,ts}, ...] } capped at 100 (oldest drop first)
+    COMMENTS_CAP = 100
+
+    async def add_comment(self, media_type: str, media_id: str, user_id: int, name: str, text: str) -> dict:
+        text = (text or "").strip()[:500]  # hard cap so one comment can't blow up the document
+        if not text:
+            raise ValueError("empty comment")
+        key = self._media_key(media_type, media_id)
+        entry = {"u": user_id, "n": (name or "")[:60], "t": text, "ts": int(datetime.now(timezone.utc).timestamp())}
+        await self.dbs["tracking"]["comments"].update_one(
+            {"_id": key},
+            {"$push": {"comments": {"$each": [entry], "$slice": -self.COMMENTS_CAP}}},
+            upsert=True,
+        )
+        return entry
+
+    async def get_comments(self, media_type: str, media_id: str) -> list:
+        key = self._media_key(media_type, media_id)
+        doc = await self.dbs["tracking"]["comments"].find_one({"_id": key})
+        comments = doc.get("comments") or [] if doc else []
+        return list(reversed(comments))  # newest first
+
+    async def delete_comment(self, media_type: str, media_id: str, user_id: int, ts: int) -> bool:
+        key = self._media_key(media_type, media_id)
+        res = await self.dbs["tracking"]["comments"].update_one(
+            {"_id": key},
+            {"$pull": {"comments": {"u": user_id, "ts": ts}}},
+        )
+        return res.modified_count > 0
+
+    # ------------------------------------------------------------------
+    # FEATURE (user ask: watch history / "Continue Watching"): ek document
+    # per user, andar ek object per title jismein resume-position hoti hai.
+    # Purani entries khud-ba-khud trim hoti hain (max 40) taaki yeh bhi
+    # kabhi bade na ho.
+    # ------------------------------------------------------------------
+    WATCH_PROGRESS_CAP = 40
+
+    async def save_watch_progress(
+        self, user_id: int, media_type: str, media_id: str, position: float, duration: float,
+        title: str = "", poster: str = "", episode_id: Optional[str] = None,
+    ) -> None:
+        col = self.dbs["tracking"]["watch_progress"]
+        # Treat "basically finished" (>95%) as done — don't clutter Continue
+        # Watching with things the person already finished.
+        finished = duration > 0 and position / duration > 0.95
+        entry_key = episode_id or media_id
+        entry = {
+            "k": entry_key, "media_type": media_type, "media_id": media_id,
+            "pos": round(position, 1), "dur": round(duration, 1),
+            "title": title[:120], "poster": poster,
+            "episode_id": episode_id, "ts": int(datetime.now(timezone.utc).timestamp()),
+        }
+        if finished:
+            await col.update_one({"_id": user_id}, {"$pull": {"items": {"k": entry_key}}})
+            return
+        await col.update_one(
+            {"_id": user_id},
+            {"$pull": {"items": {"k": entry_key}}},
+        )
+        await col.update_one(
+            {"_id": user_id},
+            {
+                "$push": {
+                    "items": {"$each": [entry], "$position": 0, "$slice": self.WATCH_PROGRESS_CAP}
+                }
+            },
+            upsert=True,
+        )
+
+    async def get_continue_watching(self, user_id: int, limit: int = 20) -> list:
+        doc = await self.dbs["tracking"]["watch_progress"].find_one({"_id": user_id})
+        items = doc.get("items") or [] if doc else []
+        return items[:limit]
+
+    async def remove_watch_progress(self, user_id: int, media_id: str, episode_id: Optional[str] = None) -> None:
+        entry_key = episode_id or media_id
+        await self.dbs["tracking"]["watch_progress"].update_one(
+            {"_id": user_id}, {"$pull": {"items": {"k": entry_key}}}
+        )
+
 
 
     async def connect_storage_db(self, uri: str, index: int) -> bool:
