@@ -260,6 +260,121 @@ export async function getStreams(type, id) {
   return data.streams || []
 }
 
+async function postJson(url, body) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`Request failed (${res.status})`)
+    return await res.json()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// ---------------------------------------------------------------------
+// FEATURE (user ask: "comments/likes/dislikes" — asli backend-stored,
+// device-specific localStorage nahi): compact per-title storage backend
+// mein (dekho stremio_routes.py + database.py). `id` yahan title/episode
+// ka imdb-jaisa id hai — jo Detail/Player pages already use karte hain.
+// ---------------------------------------------------------------------
+export async function getReactions(type, id) {
+  const { backendUrl, token } = base()
+  return fetchJson(`${backendUrl}/stremio/${token}/reactions/${type}/${id}.json`)
+}
+
+export async function toggleReaction(type, id, kind) {
+  const { backendUrl, token } = base()
+  return postJson(`${backendUrl}/stremio/${token}/reactions/${type}/${id}.json`, { kind })
+}
+
+export async function getComments(type, id) {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/comments/${type}/${id}.json`)
+  return data.comments || []
+}
+
+export async function postComment(type, id, text) {
+  const { backendUrl, token } = base()
+  const profile = getProfile()
+  const data = await postJson(`${backendUrl}/stremio/${token}/comments/${type}/${id}.json`, {
+    text,
+    name: profile?.name || 'Someone',
+  })
+  return data.comment
+}
+
+export async function deleteComment(type, id, ts) {
+  const { backendUrl, token } = base()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    await fetch(`${backendUrl}/stremio/${token}/comments/${type}/${id}/${ts}`, {
+      method: 'DELETE',
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// ---------------------------------------------------------------------
+// FEATURE (user ask: "Watch history / Continue Watching"): resume-position
+// backend mein save hota hai (per Telegram user, device-independent —
+// phone se shuru kiya gaya video tablet pe bhi continue ho sakta hai).
+// `episodeId` sirf series ke liye — us specific episode ka progress track
+// karta hai; movies ke liye undefined chhod do.
+// ---------------------------------------------------------------------
+export async function saveWatchProgress({ type, id, position, duration, title, poster, episodeId }) {
+  const { backendUrl, token } = base()
+  return postJson(`${backendUrl}/stremio/${token}/progress.json`, {
+    media_type: type,
+    media_id: id,
+    position,
+    duration,
+    title,
+    poster,
+    episode_id: episodeId || null,
+  })
+}
+
+export async function getContinueWatching() {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/continue-watching.json`)
+  return data.items || []
+}
+
+export async function removeWatchProgress(mediaId, episodeId) {
+  const { backendUrl, token } = base()
+  const qs = episodeId ? `?episode_id=${encodeURIComponent(episodeId)}` : ''
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    await fetch(`${backendUrl}/stremio/${token}/progress/${encodeURIComponent(mediaId)}${qs}`, {
+      method: 'DELETE',
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// FEATURE (user ask: "Related/Recommended videos"): koi naya backend
+// endpoint nahi chahiye — catalog endpoint already `genre=` filter support
+// karta hai (dekho stremio_routes.py get_catalog). Current title ke pehle
+// genre se catalog maangte hain aur khud ko result se hata dete hain.
+export async function getRelatedTitles(type, currentId, genre, limit = 12) {
+  if (!genre) return []
+  const catalogId = type === 'movie' ? 'top_movies' : 'top_series'
+  const items = await getCatalog(type, catalogId, { genre })
+  return items.filter((it) => it.id !== currentId).slice(0, limit)
+}
+
 // Pulls a short "360p / 480p / 720p / 1080p" style label out of a stream's
 // name or title so quality menus show something compact instead of the full
 // filename. Shared by the player's quality menu and the Downloads
