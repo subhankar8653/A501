@@ -8,6 +8,7 @@ import Rail from '../components/Rail'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
+import { formatDisplayTitle } from '../lib/formatTitle'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
 
@@ -308,6 +309,15 @@ export default function Player() {
     () => qualities.find((q) => q.url === active?.url) || null,
     [qualities, active]
   )
+  // FEATURE (user ask: "caption mein promotion (@Channel) nahi hona
+  // chahiye — Name Year [Language] Source [Quality] format chahiye"):
+  // meta.filename yahan bhi raw hai, VideoPlayer ko sirf clean title jaata
+  // hai. Quality live update hoti hai jab bhi user quality switch karta
+  // hai (activeQualityObj change hone par yeh khud recompute ho jaata hai).
+  const displayTitle = useMemo(
+    () => formatDisplayTitle(meta.filename, activeQualityObj?.label),
+    [meta.filename, activeQualityObj]
+  )
 
   // Every episode across every season, in watch order.
   const allEpisodes = useMemo(() => {
@@ -453,7 +463,7 @@ export default function Player() {
 
   function shareIt() {
     if (navigator.share) {
-      navigator.share({ title: meta.filename, url: window.location.href }).catch(() => {})
+      navigator.share({ title: displayTitle, url: window.location.href }).catch(() => {})
     } else {
       navigator.clipboard
         ?.writeText(window.location.href)
@@ -552,7 +562,7 @@ export default function Player() {
                 <VideoPlayer
                   key={active.url}
                   src={active.url}
-                  title={meta.filename}
+                  title={displayTitle}
                   qualities={qualities}
                   activeQuality={activeQualityObj}
                   onQualityChange={(q) => switchQuality(q)}
@@ -585,7 +595,7 @@ export default function Player() {
           <div className="px-4 sm:px-6">
           {/* Title + badges */}
           <div className="mt-4">
-            <h1 className="font-display text-lg text-reel-ink break-words">{meta.filename}</h1>
+            <h1 className="font-display text-lg text-reel-ink break-words">{displayTitle}</h1>
             <div className="flex flex-wrap gap-2 mt-2">
               {meta.badges.map((b, i) => (
                 <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
