@@ -18,6 +18,8 @@ export const LANGUAGES = [
 
 const dict = {
   hinglish: {
+    'more_like_this': 'More like this',
+    'continue_watching': 'Continue Watching',
     'saved_empty_title': 'Kuch bhi saved nahi hai',
     'saved_empty_sub': 'Kisi bhi video ke player screen par bookmark icon dabaakar yahan save karo.',
     'search_verify_message': 'Search karne ke liye pehle khud ko verify karo.',
@@ -127,6 +129,8 @@ const dict = {
     signup_manual_toggle_hide: 'Back to verify',
   },
   hi: {
+    'more_like_this': 'इससे मिलते-जुलते',
+    'continue_watching': 'फिर से देखें',
     'saved_empty_title': 'अभी कुछ भी सेव नहीं है',
     'saved_empty_sub': 'किसी भी वीडियो के प्लेयर स्क्रीन पर बुकमार्क आइकन दबाकर यहाँ सेव करो।',
     'search_verify_message': 'सर्च करने के लिए पहले खुद को वेरिफाई करो।',
@@ -236,6 +240,8 @@ const dict = {
     signup_manual_toggle_hide: 'वापस वेरिफाई पर जाओ',
   },
   en: {
+    'more_like_this': 'More like this',
+    'continue_watching': 'Continue Watching',
     'saved_empty_title': 'Nothing saved yet',
     'saved_empty_sub': "Tap the bookmark icon on any video's player screen to save it here.",
     'search_verify_message': 'Verify yourself first to search.',
@@ -345,6 +351,8 @@ const dict = {
     signup_manual_toggle_hide: 'Back to verify',
   },
   bn: {
+    'more_like_this': 'এর মতো আরও',
+    'continue_watching': 'আবার দেখুন',
     'saved_empty_title': 'এখনো কিছু সেভ করা নেই',
     'saved_empty_sub': 'যেকোনো ভিডিওর প্লেয়ার স্ক্রিনে বুকমার্ক আইকনে ট্যাপ করে এখানে সেভ করো।',
     'search_verify_message': 'সার্চ করতে আগে নিজেকে যাচাই করো।',
@@ -454,6 +462,8 @@ const dict = {
     signup_manual_toggle_hide: 'যাচাইতে ফিরে যাও',
   },
   ur: {
+    'more_like_this': 'اس جیسی مزید',
+    'continue_watching': 'دوبارہ دیکھیں',
     'saved_empty_title': 'ابھی تک کچھ سیو نہیں ہے',
     'saved_empty_sub': 'کسی بھی ویڈیو کی پلیئر اسکرین پر بک مارک آئیکن دبا کر یہاں سیو کرو۔',
     'search_verify_message': 'سرچ کرنے کے لیے پہلے اپنی تصدیق کرو۔',
@@ -563,6 +573,8 @@ const dict = {
     signup_manual_toggle_hide: 'تصدیق پر واپس جاؤ',
   },
   ta: {
+    'more_like_this': 'இது போன்ற மேலும்',
+    'continue_watching': 'தொடர்ந்து பார்க்க',
     'saved_empty_title': 'இன்னும் எதுவும் சேமிக்கப்படவில்லை',
     'saved_empty_sub': 'எந்த வீடியோவின் பிளேயர் திரையிலும் புக்மார்க் ஐகானைத் தட்டி இங்கே சேமிக்கவும்.',
     'search_verify_message': 'தேட முதலில் உங்களைச் சரிபார்க்கவும்.',
@@ -672,6 +684,8 @@ const dict = {
     signup_manual_toggle_hide: 'சரிபார்ப்புக்குத் திரும்பு',
   },
   te: {
+    'more_like_this': 'దీని లాంటివి మరిన్ని',
+    'continue_watching': 'కొనసాగించండి',
     'saved_empty_title': 'ఇంకా ఏమీ సేవ్ చేయలేదు',
     'saved_empty_sub': 'ఏదైనా వీడియో ప్లేయర్ స్క్రీన్\u200cలో బుక్\u200cమార్క్ ఐకాన్ నొక్కి ఇక్కడ సేవ్ చేయండి.',
     'search_verify_message': 'వెతకడానికి ముందు మిమ్మల్ని మీరు వెరిఫై చేసుకోండి.',
