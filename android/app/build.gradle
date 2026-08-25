@@ -59,6 +59,19 @@ configurations.all {
 }
 
 dependencies {
+    // A501 — direct phone<->Telegram migration (see
+    // a501-direct-streaming-migration-prompt.md). TdlibDataSource /
+    // TdlibDownloadHelper are wired to be enabled via TdlibConfig.ENABLED,
+    // but they need TDLib's native client library added here first — this
+    // could NOT be added automatically (no network access to fetch a
+    // prebuilt aar / no NDK toolchain to build one from source in this
+    // environment). Pick ONE and add it before flipping TdlibConfig.ENABLED:
+    //   implementation 'org.drinkless:tdlib:<version>'   // if a maintained
+    //     prebuilt artifact is available for your target ABIs, OR
+    //   implementation(name: 'tdlib', ext: 'aar')          // self-built via
+    //     TDLib's own CMake/NDK build (see https://github.com/tdlib/td),
+    //     placed in app/libs/ like the media3-*.aar files below.
+
     // --- A501 (WebView shell) ke original deps ---
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
