@@ -305,6 +305,27 @@ async def subtitle_handler(token: str, id: str, name: str, token_data: dict = De
 
 
 #======================================================================
+# A501 — direct phone<->Telegram migration. The phone's on-device TDLib
+# client needs its own api_id/api_hash/bot_token to log in — rather than
+# hardcoding those into the APK (bakes a rotatable secret into every
+# install, duplicates config that already lives here), the app fetches
+# them from Railway at first use. Reuses the SAME API_ID/API_HASH/BOT_TOKEN
+# env vars the Pyrofork bot already runs on (Backend/config.py) — nothing
+# new to configure on Railway. Gated behind the same token verification as
+# every other endpoint here, so only authorized app installs can read it.
+#======================================================================
+@router.get("/tdlib-config/{token}")
+async def tdlib_config_handler(token: str, token_data: dict = Depends(verify_token)):
+    if not Config.API_ID or not Config.API_HASH or not Config.BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Server-side Telegram API credentials not configured")
+    return JSONResponse({
+        "api_id": Config.API_ID,
+        "api_hash": Config.API_HASH,
+        "bot_token": Config.BOT_TOKEN,
+    })
+
+
+#======================================================================
 # A501 — direct phone<->Telegram migration (see
 # a501-direct-streaming-migration-prompt.md, step 5 of "suggested order of
 # work"). This endpoint is the ONLY new piece of Railway surface the
