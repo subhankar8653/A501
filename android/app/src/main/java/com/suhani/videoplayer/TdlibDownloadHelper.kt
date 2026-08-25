@@ -1,22 +1,17 @@
 package com.suhani.videoplayer
 
 import java.io.File
-import java.io.IOException
 
 /**
  * A501 — direct phone<->Telegram migration (see migration doc, "Required
  * behavior" #2: downloads should pull directly via TDLib to local storage,
  * same as streaming, instead of proxying through Railway).
  *
- * Mirrors [TdlibDataSource]'s shape: real MTProto calls are TODO-stubbed
- * (see that class's doc comment for why — no TDLib SDK available in this
- * environment), but the entry point, config-flag gate, and fallback
- * contract are real and ready to wire in.
- *
- * Used from `NativeDownloadManager.start()` (com.suhani.screen): when
- * [TdlibConfig.ENABLED] is false (default), [attemptDirectDownload] returns
- * false immediately and the caller proceeds with the existing HTTP
- * download path, completely unchanged.
+ * Mirrors [TdlibDataSource]'s shape and now shares the same real
+ * [TdlibClient] wiring. Used from `NativeDownloadManager.start()`
+ * (com.suhani.screen): when [TdlibConfig.ENABLED] is false (default),
+ * [attemptDirectDownload] returns false immediately and the caller
+ * proceeds with the existing HTTP download path, completely unchanged.
  */
 object TdlibDownloadHelper {
 
@@ -47,25 +42,25 @@ object TdlibDownloadHelper {
             return false
         }
 
-        // TODO(tdlib-wiring): see TdlibDataSource's "WIRING CHECKLIST" —
-        // same DownloadFile(chatId, msgId, offset=0, limit=fileSize) call,
-        // but written straight to `outFile` instead of served through
-        // ExoPlayer's read() contract. Report progress via TDLib's
-        // UpdateFile callbacks -> onProgress, then onDone(outFile) once
-        // file.local.is_downloading_completed is true.
-        //
-        // Until that's wired in, throw rather than silently "succeeding":
-        // this keeps `false` (not-attempted) as the only path back to the
-        // existing HTTP download, same clean-fallback contract as
-        // TdlibDataSource.
-        return runCatching {
-            throw IOException(
-                "TDLib direct download unavailable: resolved chat_id=${resolution.chatId} " +
-                    "msg_id=${resolution.msgId} but no TDLib client is linked into this build yet"
+        return try {
+            TdlibClient.ensureConfigLoaded(streamUrl)
+            TdlibClient.downloadFull(
+                chatId = resolution.chatId,
+                msgId = resolution.msgId,
+                outFile = outFile,
+                timeoutMs = TdlibConfig.DOWNLOAD_TIMEOUT_MS,
+                onProgress = onProgress,
             )
-        }.fold(
-            onSuccess = { true },
-            onFailure = { false }, // not attempted -> HTTP fallback proceeds
-        )
+            onDone(outFile)
+            true
+        } catch (e: Exception) {
+            // A real TDLib download was attempted and it failed — report it
+            // rather than silently falling back here. Unlike streaming,
+            // there's no FallbackDataSource watching downloads, so the
+            // caller needs an explicit signal (per this class's original
+            // contract) instead of a false that implies "never tried."
+            onError(e.message ?: "TDLib direct download failed")
+            true
+        }
     }
 }

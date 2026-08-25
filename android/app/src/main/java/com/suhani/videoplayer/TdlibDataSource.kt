@@ -12,53 +12,40 @@ import java.io.IOException
  * A501 — direct phone<->Telegram migration (see
  * a501-direct-streaming-migration-prompt.md, "Required behavior" #1).
  *
- * This is the on-device replacement for hitting Railway's `/dl/...` for
- * actual media bytes: given a stream URL, it resolves the Telegram
- * chat_id/message_id via [TdlibResolveClient] and is INTENDED to then pull
- * bytes for the requested `[position, position+length)` range straight from
- * Telegram via TDLib (MTProto), the way `parse_range_header` /
- * `_build_stream_headers` do server-side today — just on-device instead.
+ * On-device replacement for hitting Railway's `/dl/...` for actual media
+ * bytes: given a stream URL, resolves the Telegram chat_id/message_id via
+ * [TdlibResolveClient], then pulls bytes for the requested
+ * `[position, position+length)` range straight from Telegram via
+ * [TdlibClient] (TDLib/MTProto) — the on-device equivalent of what
+ * `parse_range_header` / `_build_stream_headers` do server-side today.
  *
- * WHY THE ACTUAL BYTE-FETCH IS STUBBED:
- * TDLib requires a native library dependency (prebuilt `.aar`/`.so`, e.g.
- * `org.drinkless:tdlib`, or a from-source NDK build) that cannot be added
- * from a sandboxed/offline environment — see the TODO in app/build.gradle.
- * Everything UP TO the TDLib call itself (URL parsing, range math, the
- * DataSource contract, resolve-endpoint call, error surface for the
- * fallback layer) is real and wired correctly; only the innermost
- * `readFilePart`-equivalent call is a placeholder.
- *
- * WIRING CHECKLIST for whoever adds the real TDLib SDK:
- *   1. In [open], after `resolution` is available, replace the
- *      `throw notWiredYet(...)` with:
- *        a. `Client.execute(TdSend.OpenMessageContent/GetMessage)` (or
- *           whatever the chosen TDLib binding calls it) using
- *           `resolution.chatId` / `resolution.msgId` to get the file id.
- *        b. `Client.execute(TdSend.DownloadFile(fileId, priority=32,
- *           offset=bytesPosition, limit=readLength, synchronous=false))`
- *           and await the `UpdateFile` callback (or poll `file.local`)
- *           until enough bytes are on disk to satisfy this read.
- *   2. Implement [read] to read the requested slice out of the TDLib-
- *      managed local file path once available (TDLib writes partial
- *      downloads to disk itself — no need to buffer in Kotlin).
- *   3. Respect [DataSpec.length] / [DataSpec.position] the same way
- *      `parse_range_header` does server-side, so ExoPlayer seeking works.
- *   4. On ANY failure here, throw (don't swallow) — [FallbackDataSource]
- *      is what falls back to the Railway proxy; silently returning zero
- *      bytes would look like playback stalling instead of failing over.
+ * Wiring is complete (see [TdlibClient] for the actual TDLib JSON calls);
+ * this class only owns the [DataSource] contract — position/length
+ * bookkeeping, and turning any TDLib failure into a clean throw so
+ * [FallbackDataSource] can fail over to the Railway proxy. [open] does a
+ * small probe read (not just a metadata lookup) before returning, so a
+ * file that resolves fine but genuinely can't be downloaded (e.g. bad bot
+ * permissions, TDLib session issue) is caught by [FallbackDataSource]'s
+ * open()-time timeout instead of surfacing mid-playback on the first
+ * [read].
  */
 @UnstableApi
 class TdlibDataSource : DataSource {
 
     private var dataSpec: DataSpec? = null
-    private var opened = false
+    private var chatId: Long = 0
+    private var msgId: Long = 0
+    private var fileId: Int = -1
+    private var position: Long = 0
+    private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
 
     class Factory : DataSource.Factory {
         override fun createDataSource(): DataSource = TdlibDataSource()
     }
 
     override fun addTransferListener(transferListener: TransferListener) {
-        // No TDLib transfer to report progress for yet — no-op until wired.
+        // No TDLib transfer-progress reporting wired up yet — no-op, same
+        // as before; ExoPlayer's own buffering UI doesn't depend on this.
     }
 
     @Throws(IOException::class)
@@ -66,9 +53,9 @@ class TdlibDataSource : DataSource {
         this.dataSpec = dataSpec
 
         if (!TdlibConfig.ENABLED) {
-            // Fast, cheap failure — see TdlibConfig doc comment for why this
-            // is off by default. FallbackDataSource treats this as "use the
-            // Railway proxy for this playback/seek instead."
+            // Fast, cheap failure — see TdlibConfig doc comment for why
+            // this is off by default. FallbackDataSource treats this as
+            // "use the Railway proxy for this playback/seek instead."
             throw notWiredYet("TdlibConfig.ENABLED is false")
         }
 
@@ -76,36 +63,90 @@ class TdlibDataSource : DataSource {
         val resolveUrl = TdlibResolveClient.deriveResolveUrl(streamUrl)
             ?: throw notWiredYet("not a /dl/ proxy URL, nothing to resolve: $streamUrl")
 
+        try {
+            TdlibClient.ensureConfigLoaded(streamUrl)
+        } catch (e: Exception) {
+            throw IOException("TDLib config fetch (api_id/api_hash/bot_token) failed", e)
+        }
+
         val resolution = try {
             TdlibResolveClient.resolve(resolveUrl)
         } catch (e: Exception) {
             throw IOException("TDLib resolve step failed for $resolveUrl", e)
         }
 
-        // TODO(tdlib-wiring): see class doc "WIRING CHECKLIST" step 1-3.
-        // resolution.chatId / resolution.msgId are correct and ready to use —
-        // only the actual MTProto download call below is unimplemented.
-        throw notWiredYet(
-            "resolved chat_id=${resolution.chatId} msg_id=${resolution.msgId} " +
-                "but no TDLib client is linked into this build yet"
-        )
+        val resolved = try {
+            TdlibClient.resolveFile(resolution.chatId, resolution.msgId)
+        } catch (e: Exception) {
+            throw IOException(
+                "TDLib getMessage/file lookup failed for chat_id=${resolution.chatId} msg_id=${resolution.msgId}",
+                e,
+            )
+        }
+
+        chatId = resolution.chatId
+        msgId = resolution.msgId
+        fileId = resolved.fileId
+        position = dataSpec.position
+
+        val totalSize = resolved.totalSize
+        bytesRemaining = when {
+            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
+            totalSize > 0 -> totalSize - dataSpec.position
+            else -> C.LENGTH_UNSET.toLong()
+        }
+
+        // Prime the pump: confirm TDLib can actually deliver bytes (not
+        // just resolve metadata) before declaring open() successful.
+        // FallbackDataSource is watching this whole call with a hard
+        // timeout (TdlibConfig.OPEN_TIMEOUT_MS) and falls back to Railway
+        // on any throw here — see class doc comment #4 in that file.
+        val probeLength = if (bytesRemaining in 1..65_536L) bytesRemaining else 65_536L
+        try {
+            TdlibClient.ensureRangeDownloaded(fileId, position, probeLength, TdlibConfig.OPEN_TIMEOUT_MS)
+        } catch (e: Exception) {
+            throw IOException("TDLib direct path failed its first-chunk probe", e)
+        }
+
+        return bytesRemaining
     }
 
     @Throws(IOException::class)
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        if (!opened) throw IOException("TdlibDataSource.read() called before a successful open()")
-        // Unreachable until open() above actually succeeds post-wiring.
-        return C.RESULT_END_OF_INPUT
+        if (fileId < 0) throw IOException("TdlibDataSource.read() called before a successful open()")
+        if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
+        if (length == 0) return 0
+
+        val readLength = if (bytesRemaining == C.LENGTH_UNSET.toLong()) {
+            length
+        } else {
+            minOf(length.toLong(), bytesRemaining).toInt()
+        }
+
+        val bytesRead = try {
+            TdlibClient.readRange(chatId, msgId, position, buffer, offset, readLength, TdlibConfig.OPEN_TIMEOUT_MS)
+        } catch (e: Exception) {
+            // On ANY failure here, throw (don't swallow) — this is
+            // mid-stream, past FallbackDataSource's open()-time timeout, so
+            // a failure here is a genuine playback error, not a signal to
+            // silently retry with zero bytes (which would look like a
+            // stall instead of a clean failure).
+            throw IOException("TDLib read failed at position=$position length=$readLength", e)
+        }
+
+        if (bytesRead <= 0) return C.RESULT_END_OF_INPUT
+
+        position += bytesRead
+        if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= bytesRead
+        return bytesRead
     }
 
     override fun getUri(): Uri? = dataSpec?.uri
 
     @Throws(IOException::class)
     override fun close() {
-        opened = false
+        fileId = -1
         dataSpec = null
-        // TODO(tdlib-wiring): cancel any in-flight TDLib DownloadFile call
-        // for this source once real download calls exist.
     }
 
     private fun notWiredYet(reason: String): IOException =

@@ -10,46 +10,64 @@ package com.suhani.videoplayer
  * Railway-proxy path — so merging this scaffolding changes NOTHING about
  * current behavior until someone deliberately flips it on.
  *
- * Why default false / why this can't just "work" yet:
- *   TDLib integration needs the actual TDLib native library (a prebuilt
- *   `.aar`, e.g. `org.drinkless:tdlib`, or a self-built `.so` via NDK) added
- *   as a Gradle dependency, plus a bot token wired in below. Neither of
- *   those can be done from a sandboxed/offline environment — see the repo's
- *   migration doc, "Suggested order of work" step 1. Flip [ENABLED] to true
- *   only after:
- *     1. The TDLib dependency is added in app/build.gradle (see the TODO
- *        block left there).
- *     2. [BOT_TOKEN] below is set to the app's own bot/service account
- *        token (NOT a per-user personal login — see the migration doc's
- *        "hard constraint").
- *     3. The single-device spike (step 1) and the concurrent-session check
- *        (step 2) in the migration doc have both been done for real, on
- *        real devices.
+ * STATUS: the native dependency blocker is gone — libtdjson.so for all
+ * four ABIs lives in app/src/main/jniLibs/, with its JNI entry point
+ * (io.github.up9cloud.td.JsonClient) bundled alongside. [TdlibClient]
+ * wraps that raw JSON interface, and TdlibDataSource/TdlibDownloadHelper
+ * are wired to real TDLib calls through it.
+ *
+ * [API_ID]/[API_HASH]/[BOT_TOKEN] are NOT hardcoded here — Railway already
+ * has these as env vars for its own Pyrofork bot (Backend/config.py), so
+ * the app fetches them at runtime from `/tdlib-config/{token}`
+ * ([TdlibRemoteConfigClient]) the first time TDLib needs to log in, and
+ * [TdlibClient] populates these three fields itself. Nothing to fill in
+ * by hand — only what's left before flipping [ENABLED]:
+ *   1. Real-device testing: single-device spike, then a concurrent-session
+ *      check (many devices sharing one bot token logging in at once is the
+ *      flagged open risk — see [PER_USER_BOT]).
  */
 object TdlibConfig {
 
-    /** Master switch. Keep false until the three prerequisites above are done. */
+    /** Master switch. Keep false until real-device testing (see doc above)
+     *  is done. */
     const val ENABLED: Boolean = false
 
-    /**
-     * The app's own bot/service account token — TDLib authenticates AS THIS
-     * BOT, never as the end user's personal Telegram account (hard
-     * constraint from the migration doc; do not change this to a
-     * phone-number/OTP flow).
-     */
-    const val BOT_TOKEN: String = "" // TODO: fill in before enabling
+    /** Populated at runtime by [TdlibClient] via [TdlibRemoteConfigClient]
+     *  — do not hardcode a value here (see class doc comment). */
+    @Volatile var API_ID: Int = 0
+    @Volatile var API_HASH: String = ""
+    @Volatile var BOT_TOKEN: String = ""
 
     /**
      * If a shared bot token across many concurrent devices turns out to be
      * unreliable (session kick-outs / rate limits — the open risk flagged
-     * in the migration doc), flip this to true and provide a per-user/per-
-     * pool token lookup instead of the single [BOT_TOKEN] above. Kept as a
-     * config toggle (not a rewrite) per the migration doc's requirement.
+     * in the migration doc), flip this to true and have the backend's
+     * `/tdlib-config` endpoint return a per-user/per-pool token instead of
+     * the single server-wide one. Kept as a config toggle (not a rewrite)
+     * per the migration doc's requirement — the backend-side per-user
+     * lookup itself is still a follow-up, not done by this pass.
      */
     const val PER_USER_BOT: Boolean = false
 
     /** How long to wait for the on-device TDLib path before giving up and
-     *  falling back to the Railway proxy for THIS attempt. Keep short —
-     *  the fallback should feel instant to the user, not like a hang. */
+     *  falling back to the Railway proxy for THIS attempt (used both for
+     *  TdlibDataSource's open()-time probe and each read()'s range-wait).
+     *  Keep short — the fallback should feel instant to the user, not like
+     *  a hang. */
     const val OPEN_TIMEOUT_MS: Long = 4_000L
+
+    /** One-time login wait (config fetch + client creation +
+     *  setTdlibParameters + checkAuthenticationBotToken). Only paid once
+     *  per process lifetime — can afford to be longer than
+     *  [OPEN_TIMEOUT_MS] since a slow first login shouldn't need to fail
+     *  every stream open behind it forever; subsequent opens reuse the
+     *  already-authenticated client. */
+    const val AUTH_TIMEOUT_MS: Long = 10_000L
+
+    /** How long a full (non-streaming) TDLib download via
+     *  [TdlibDownloadHelper] is allowed to run before giving up — much
+     *  longer than [OPEN_TIMEOUT_MS] since whole-file downloads are
+     *  expected to take a while and there's no Railway fallback mid-way
+     *  through a download the way there is for playback. */
+    const val DOWNLOAD_TIMEOUT_MS: Long = 600_000L
 }
