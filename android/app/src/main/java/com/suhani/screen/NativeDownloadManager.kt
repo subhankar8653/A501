@@ -81,6 +81,28 @@ object NativeDownloadManager {
         val keepGoing = AtomicBoolean(true)
         active[id] = keepGoing
 
+        // A501 — direct phone<->Telegram migration (see
+        // a501-direct-streaming-migration-prompt.md, "Required behavior" #2).
+        // While TdlibConfig.ENABLED is false (default), this returns false
+        // immediately and every line below is untouched — same HTTP thread
+        // as before. See TdlibDownloadHelper for the real wiring point.
+        val outFile = fileFor(context, id)
+        val handledByTdlib = com.suhani.videoplayer.TdlibDownloadHelper.attemptDirectDownload(
+            streamUrl = url,
+            outFile = outFile,
+            onProgress = onProgress,
+            onDone = { f ->
+                active.remove(id)
+                val uri = contentUriFor(context, id)
+                if (uri != null) onDone(uri) else onError("file save failed")
+            },
+            onError = { msg ->
+                active.remove(id)
+                onError(msg)
+            },
+        )
+        if (handledByTdlib) return
+
         Thread {
             var conn: HttpURLConnection? = null
             val outFile = fileFor(context, id)
