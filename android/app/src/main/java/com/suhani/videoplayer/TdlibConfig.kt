@@ -30,7 +30,7 @@ object TdlibConfig {
 
     /** Master switch. Keep false until real-device testing (see doc above)
      *  is done. */
-    const val ENABLED: Boolean = false
+    const val ENABLED: Boolean = true
 
     /** Populated at runtime by [TdlibClient] via [TdlibRemoteConfigClient]
      *  — do not hardcode a value here (see class doc comment). */
