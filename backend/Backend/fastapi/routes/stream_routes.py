@@ -304,6 +304,58 @@ async def subtitle_handler(token: str, id: str, name: str, token_data: dict = De
     )
 
 
+#======================================================================
+# A501 — direct phone<->Telegram migration (see
+# a501-direct-streaming-migration-prompt.md, step 5 of "suggested order of
+# work"). This endpoint is the ONLY new piece of Railway surface the
+# migration needs: it hands the native app the raw Telegram
+# chat_id/message_id for a file so the phone's on-device TDLib client can
+# pull bytes directly, instead of proxying through /dl/. Railway does zero
+# byte-shovelling here — same token verification as /dl/, then a tiny JSON
+# payload.
+#
+# Scope (deliberately narrow, matches the migration doc's non-goals): only
+# handles the plain single-message case (the same case `stream_handler`
+# routes to `media_streamer`). Split/virtual media, Drive-sourced, and
+# Global Search entries are NOT resolvable via TDLib the same way (parts
+# need to be reassembled server-side; Drive isn't Telegram at all) — for
+# those the native app should fall back to the existing /dl/ proxy path,
+# so this endpoint reports them as unsupported rather than guessing.
+#======================================================================
+@router.get("/resolve/{token}/{id}")
+async def resolve_handler(token: str, id: str, token_data: dict = Depends(verify_token)):
+    try:
+        decoded = await decode_string(id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id")
+
+    if decoded.get("drive_id"):
+        raise HTTPException(status_code=409, detail="unsupported_source: drive — use /dl/ proxy fallback")
+    if "parts" in decoded:
+        raise HTTPException(status_code=409, detail="unsupported_source: split_parts — use /dl/ proxy fallback")
+
+    msg_id = decoded.get("msg_id")
+    if not msg_id:
+        raise HTTPException(status_code=400, detail="Missing id")
+
+    if decoded.get("global"):
+        chat_id = int(decoded["chat_id"])
+    else:
+        chat_id = int(f"-100{decoded['chat_id']}")
+
+    # Best-effort file name/mime for the client to set up its player/download
+    # target before the TDLib fetch starts. Not authoritative — the phone's
+    # TDLib getMessage/downloadFile call is the source of truth for size.
+    final_title = await _lookup_title(id, "")
+
+    return JSONResponse({
+        "chat_id": chat_id,
+        "msg_id": int(msg_id),
+        "title": final_title or None,
+        "source": "global" if decoded.get("global") else "direct",
+    })
+
+
 #----- Entry point: decode the id and dispatch to the matching streamer
 @router.get("/dl/{token}/{id}/{name}")
 @router.head("/dl/{token}/{id}/{name}")
