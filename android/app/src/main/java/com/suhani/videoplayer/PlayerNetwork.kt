@@ -61,11 +61,30 @@ object PlayerNetwork {
      *  agli baar (seek peeche, replay, mini<->fullscreen switch) disk se turant milta
      *  hai, network par dubara nahi jaana padta. Agar cache mein koi dikkat aaye to
      *  seedha network par fallback ho jaata hai (IGNORE_CACHE_ON_ERROR). */
-    fun dataSourceFactory(context: Context): DataSource.Factory {
+    private fun cacheBackedHttpFactory(context: Context): DataSource.Factory {
         val upstream = DefaultDataSource.Factory(context.applicationContext, httpFactory())
         return CacheDataSource.Factory()
             .setCache(cache(context))
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    // A501 — direct phone<->Telegram migration (see
+    // a501-direct-streaming-migration-prompt.md). This is the single call
+    // site PlayerActivity uses to build its DataSource.Factory, so wrapping
+    // it here (instead of touching PlayerActivity.kt) is enough to put the
+    // on-device TDLib path in front of the existing Railway-proxy path for
+    // the WHOLE app, native-only, with zero risk to the proxy path itself.
+    //
+    // When TdlibConfig.ENABLED is false (default), FallbackDataSource always
+    // falls straight through to the exact same cache-backed HTTP factory
+    // this returned before this migration — behavior is unchanged until the
+    // flag is deliberately turned on with a real TDLib SDK wired in.
+    fun dataSourceFactory(context: Context): DataSource.Factory {
+        val proxyFallback = cacheBackedHttpFactory(context)
+        return FallbackDataSource.Factory(
+            primaryFactory = TdlibDataSource.Factory(),
+            secondaryFactory = proxyFallback,
+        )
     }
 }
