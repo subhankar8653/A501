@@ -1,3 +1,7 @@
 # Frontend build gets copied here fresh by CI (.github/workflows/build-apk.yml)
 # before every APK build — don't commit the generated output.
 android/app/src/main/assets/
+
+# TDLib .so files download fresh from the "tdlib-libs" GitHub Release
+# before every APK build (see build-apk.yml) — too big to commit (25MB+).
+android/app/src/main/jniLibs/
