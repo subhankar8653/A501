@@ -60,17 +60,19 @@ configurations.all {
 
 dependencies {
     // A501 — direct phone<->Telegram migration (see
-    // a501-direct-streaming-migration-prompt.md). TdlibDataSource /
-    // TdlibDownloadHelper are wired to be enabled via TdlibConfig.ENABLED,
-    // but they need TDLib's native client library added here first — this
-    // could NOT be added automatically (no network access to fetch a
-    // prebuilt aar / no NDK toolchain to build one from source in this
-    // environment). Pick ONE and add it before flipping TdlibConfig.ENABLED:
-    //   implementation 'org.drinkless:tdlib:<version>'   // if a maintained
-    //     prebuilt artifact is available for your target ABIs, OR
-    //   implementation(name: 'tdlib', ext: 'aar')          // self-built via
-    //     TDLib's own CMake/NDK build (see https://github.com/tdlib/td),
-    //     placed in app/libs/ like the media3-*.aar files below.
+    // a501-direct-streaming-migration-prompt.md). No extra Gradle
+    // dependency needed here: TDLib's native client (libtdjson.so, from the
+    // up9cloud/android-libtdjson prebuilt release) ships straight in
+    // app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86,x86_64}/ — Android's
+    // default source set picks that up automatically, and its JNI entry
+    // point (io.github.up9cloud.td.JsonClient, loaded via
+    // System.loadLibrary("tdjson")) lives at
+    // app/src/main/java/io/github/up9cloud/td/JsonClient.java.
+    // TdlibClient.kt wraps that raw JSON client; TdlibDataSource /
+    // TdlibDownloadHelper are wired to it and gated behind
+    // TdlibConfig.ENABLED. Only TdlibConfig's API_ID/API_HASH/BOT_TOKEN
+    // (+ real-device testing) are left before flipping ENABLED — see that
+    // file's doc comment.
 
     // --- A501 (WebView shell) ke original deps ---
     implementation "androidx.appcompat:appcompat:1.7.0"
