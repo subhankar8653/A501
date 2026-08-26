@@ -57,11 +57,25 @@ class FallbackDataSource(
         // Railway-proxy DataSource, same cost as before this migration.
         if (!TdlibConfig.ENABLED) {
             TdlibDebugState.lastStatus = "TDLib: disabled (TdlibConfig.ENABLED=false)"
+        } else if (TdlibClient.isAuthReady()) {
+            TdlibDebugState.lastStatus = "TDLib: trying… (warm, ${TdlibConfig.OPEN_TIMEOUT_MS}ms budget)"
         } else {
-            TdlibDebugState.lastStatus = "TDLib: trying…"
+            TdlibDebugState.lastStatus = "TDLib: trying… (cold login, ${TdlibConfig.COLD_OPEN_TIMEOUT_MS}ms budget)"
+        }
+        // BUG FIX: pehle hamesha short OPEN_TIMEOUT_MS (4s) use hota tha,
+        // chaahe TDLib abhi tak login hi na hua ho — jiski wajah se
+        // cold-login (jo normally hi 5-10s leta hai) kabhi bhi apna poora
+        // AUTH_TIMEOUT_MS wait nahi paata tha, aur har baar seedha Railway
+        // pe fallback ho jaata tha. Ab pehli baar COLD_OPEN_TIMEOUT_MS
+        // (login ka poora time + config-fetch buffer) diya jaata hai;
+        // login ho jaane ke baad wapas fast OPEN_TIMEOUT_MS pe aa jaata hai.
+        val timeoutForThisAttempt = if (TdlibClient.isAuthReady()) {
+            TdlibConfig.OPEN_TIMEOUT_MS
+        } else {
+            TdlibConfig.COLD_OPEN_TIMEOUT_MS
         }
         val primaryResult = if (TdlibConfig.ENABLED) {
-            tryOpenWithTimeout(primaryFactory, dataSpec, TdlibConfig.OPEN_TIMEOUT_MS)
+            tryOpenWithTimeout(primaryFactory, dataSpec, timeoutForThisAttempt)
         } else {
             null
         }

@@ -209,6 +209,14 @@ object TdlibClient {
         authFailure?.let { throw TdlibException(it) }
     }
 
+    /** True once TDLib has logged in (authorizationStateReady) at least once
+     *  this process lifetime. [FallbackDataSource] uses this to know whether
+     *  the NEXT open() attempt might still be paying the one-time cold-login
+     *  cost (so it should wait [TdlibConfig.AUTH_TIMEOUT_MS]) or whether the
+     *  client is already warm (so the short [TdlibConfig.OPEN_TIMEOUT_MS] is
+     *  enough — no auth wait, just network for this one request). */
+    fun isAuthReady(): Boolean = authReadyLatch.count == 0L
+
     // ------------------------------------------------------------------
     // Public API
     // ------------------------------------------------------------------

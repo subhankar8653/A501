@@ -64,6 +64,19 @@ object TdlibConfig {
      *  already-authenticated client. */
     const val AUTH_TIMEOUT_MS: Long = 10_000L
 
+    /** BUG FIX: before this, FallbackDataSource wrapped the very FIRST
+     *  TDLib open() (which pays the one-time [AUTH_TIMEOUT_MS] login cost
+     *  above, plus the remote-config HTTP fetch) in the short
+     *  [OPEN_TIMEOUT_MS] anyway — so a cold login could never actually
+     *  finish before getting cut off and falling back to Railway, every
+     *  single time, no matter how healthy TDLib was. This is the timeout
+     *  used ONLY for that first cold-login attempt (TdlibClient.isAuthReady()
+     *  == false): config fetch (up to ~6s worst case) + the full
+     *  [AUTH_TIMEOUT_MS] login wait + a small buffer for the resolve step
+     *  right after. Once logged in, later opens go back to the short
+     *  [OPEN_TIMEOUT_MS] since there's no more login to wait on. */
+    const val COLD_OPEN_TIMEOUT_MS: Long = 8_000L + AUTH_TIMEOUT_MS
+
     /** How long a full (non-streaming) TDLib download via
      *  [TdlibDownloadHelper] is allowed to run before giving up — much
      *  longer than [OPEN_TIMEOUT_MS] since whole-file downloads are
