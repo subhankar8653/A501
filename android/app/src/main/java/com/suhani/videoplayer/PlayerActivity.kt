@@ -7304,27 +7304,32 @@ class PlayerActivity : AppCompatActivity() {
         if (!TdlibConfig.ENABLED) return
 
         val badge = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.argb(180, 0, 0, 0))
-            textSize = 11f
-            setPadding(16, 8, 16, 8)
+            setTextColor(Color.YELLOW)
+            setBackgroundColor(Color.argb(230, 0, 0, 0))
+            textSize = 13f
+            setPadding(20, 10, 20, 10)
             typeface = Typeface.MONOSPACE
             text = TdlibDebugState.lastStatus
+            elevation = 999f
         }
         val params = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            topMargin = 140
+            topMargin = 260
             leftMargin = 16
         }
         playerContainer.addView(badge, params)
+        badge.bringToFront()
         tdlibDebugBadge = badge
 
         val poller = object : Runnable {
             override fun run() {
-                tdlibDebugBadge?.text = TdlibDebugState.lastStatus
+                tdlibDebugBadge?.let {
+                    it.text = TdlibDebugState.lastStatus
+                    it.bringToFront()
+                }
                 tdlibDebugHandler.postDelayed(this, 1000)
             }
         }
