@@ -106,6 +106,18 @@ object TdlibClient {
     @Volatile private var authReadyLatch = CountDownLatch(1)
     @Volatile private var authFailure: String? = null
 
+    // BUG FIX #3: the previous timeout message ("TDLib login timed out")
+    // told us NOTHING about why — was it even attempting to reach
+    // Telegram's servers? TDLib pushes its own connection-state updates
+    // (waiting for network / connecting / connecting to proxy / updating /
+    // ready) completely separately from authorizationState — we were never
+    // listening to them. Tracked here so a timeout can say exactly which
+    // stage TDLib was stuck at (e.g. still "connectionStateConnecting"
+    // after 18s strongly points at the device/network not being able to
+    // reach Telegram at all — ISP throttling/blocking, no outbound access
+    // for this process, etc. — rather than a credentials problem).
+    @Volatile private var lastConnectionState: String = "(no updateConnectionState received yet)"
+
     private val configLoadLock = Any()
     @Volatile private var configLoaded = false
 
@@ -165,6 +177,10 @@ object TdlibClient {
 
             when (json.optString("@type")) {
                 "updateAuthorizationState" -> handleAuthUpdate(json.optJSONObject("authorization_state"))
+                "updateConnectionState" -> {
+                    lastConnectionState = json.optJSONObject("state")?.optString("@type")
+                        ?: "(unknown updateConnectionState shape)"
+                }
                 "updateFile" -> {
                     val file = json.optJSONObject("file")
                     val id = file?.optInt("id", -1) ?: -1
@@ -263,7 +279,10 @@ object TdlibClient {
         val response = queue.poll(TdlibConfig.AUTH_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             ?: run {
                 pendingResponses.remove(extra)
-                throw TdlibException("TDLib request timed out: ${request.optString("@type")}")
+                throw TdlibException(
+                    "TDLib request timed out: ${request.optString("@type")} " +
+                        "(connection state: $lastConnectionState)"
+                )
             }
         if (response.optString("@type") == "error") {
             throw TdlibException("TDLib error ${response.optInt("code")}: ${response.optString("message")}")
@@ -281,7 +300,10 @@ object TdlibClient {
             return
         }
         if (!authReadyLatch.await(TdlibConfig.AUTH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            throw TdlibException("TDLib login timed out — check BOT_TOKEN / API_ID / API_HASH in TdlibConfig")
+            throw TdlibException(
+                "TDLib login timed out (connection state: $lastConnectionState) — " +
+                    "check BOT_TOKEN / API_ID / API_HASH in TdlibConfig, or network access to Telegram"
+            )
         }
         authFailure?.let { throw TdlibException(it) }
     }
@@ -293,6 +315,12 @@ object TdlibClient {
      *  client is already warm (so the short [TdlibConfig.OPEN_TIMEOUT_MS] is
      *  enough — no auth wait, just network for this one request). */
     fun isAuthReady(): Boolean = authReadyLatch.count == 0L
+
+    /** Live TDLib connection state (waiting for network / connecting /
+     *  ready / etc) — see [lastConnectionState] doc comment. Polled by the
+     *  debug badge during a cold-login wait so the person testing can see
+     *  progress in real time, not just a final generic timeout. */
+    fun getConnectionState(): String = lastConnectionState
 
     // ------------------------------------------------------------------
     // Public API

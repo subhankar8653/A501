@@ -57,6 +57,7 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
+import android.widget.Toast
 import android.widget.TextView
 import android.Manifest
 import android.content.pm.PackageManager
@@ -7324,11 +7325,27 @@ class PlayerActivity : AppCompatActivity() {
         badge.bringToFront()
         tdlibDebugBadge = badge
 
+        var lastToasted = ""
         val poller = object : Runnable {
             override fun run() {
+                var current = TdlibDebugState.lastStatus
+                val toastKey = current // base status only, before live connection-state append
+                if (current.startsWith("TDLib: trying") && !TdlibClient.isAuthReady()) {
+                    current = "$current\nconn: ${TdlibClient.getConnectionState()}"
+                }
                 tdlibDebugBadge?.let {
-                    it.text = TdlibDebugState.lastStatus
+                    it.text = current
                     it.bringToFront()
+                }
+                // Backup path: a Toast is drawn by the system WindowManager,
+                // not inside our view hierarchy, so it can't get hidden
+                // behind the video surface / controls overlay the way the
+                // badge theoretically could. Only fire once per distinct
+                // BASE status (not the live connection-state append, which
+                // changes every poll) so it doesn't spam.
+                if (toastKey != lastToasted && toastKey != "TDLib: idle") {
+                    lastToasted = toastKey
+                    Toast.makeText(this@PlayerActivity, toastKey, Toast.LENGTH_LONG).show()
                 }
                 tdlibDebugHandler.postDelayed(this, 1000)
             }
