@@ -15,6 +15,7 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -33,6 +34,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Rational
+import android.view.Gravity
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -293,6 +295,11 @@ class PlayerActivity : AppCompatActivity() {
     private var usingSharedPlayer = false
     private lateinit var playerView: PlayerView
     private lateinit var playerContainer: FrameLayout
+    // A501 — direct phone<->Telegram migration, TESTING AID ONLY. See
+    // TdlibDebugState.kt doc comment. null when TdlibConfig.ENABLED is
+    // false (real users never see this).
+    private var tdlibDebugBadge: TextView? = null
+    private val tdlibDebugHandler = Handler(Looper.getMainLooper())
     // BUG FIX (user report: "skip karte hi pause aur buffering ka icon ek
     // saath dikhta hai"): apna themed buffering indicator (dekho
     // activity_player.xml — Media3 ka default spinner ab band hai). Isko
@@ -840,6 +847,7 @@ class PlayerActivity : AppCompatActivity() {
 
         playerView = findViewById(R.id.playerView)
         playerContainer = findViewById(R.id.playerContainer)
+        setupTdlibDebugBadge()
         gestureIndicator = findViewById(R.id.gestureIndicator)
         gestureText = findViewById(R.id.gestureText)
         speedIndicatorBadge = findViewById(R.id.speedIndicatorBadge)
@@ -7285,8 +7293,47 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // A501 — direct phone<->Telegram migration, TESTING AID ONLY (see
+    // TdlibDebugState.kt). Adds a small top-left overlay showing whether
+    // THIS playback is using the on-device TDLib path or fell back to the
+    // Railway proxy — and why, if it failed. Only added while
+    // TdlibConfig.ENABLED is true, so it's completely invisible for real
+    // users / once this feature ships for real. Remove this call (and this
+    // function) once TDLib testing is done.
+    private fun setupTdlibDebugBadge() {
+        if (!TdlibConfig.ENABLED) return
+
+        val badge = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(180, 0, 0, 0))
+            textSize = 11f
+            setPadding(16, 8, 16, 8)
+            typeface = Typeface.MONOSPACE
+            text = TdlibDebugState.lastStatus
+        }
+        val params = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            topMargin = 140
+            leftMargin = 16
+        }
+        playerContainer.addView(badge, params)
+        tdlibDebugBadge = badge
+
+        val poller = object : Runnable {
+            override fun run() {
+                tdlibDebugBadge?.text = TdlibDebugState.lastStatus
+                tdlibDebugHandler.postDelayed(this, 1000)
+            }
+        }
+        tdlibDebugHandler.post(poller)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        tdlibDebugHandler.removeCallbacksAndMessages(null)
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
             pipReceiverRegistered = false

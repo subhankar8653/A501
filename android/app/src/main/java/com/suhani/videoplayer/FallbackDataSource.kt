@@ -55,6 +55,11 @@ class FallbackDataSource(
         // Cheap short-circuit: while the feature is off (default), don't
         // even spin up the worker thread below — go straight to the
         // Railway-proxy DataSource, same cost as before this migration.
+        if (!TdlibConfig.ENABLED) {
+            TdlibDebugState.lastStatus = "TDLib: disabled (TdlibConfig.ENABLED=false)"
+        } else {
+            TdlibDebugState.lastStatus = "TDLib: trying…"
+        }
         val primaryResult = if (TdlibConfig.ENABLED) {
             tryOpenWithTimeout(primaryFactory, dataSpec, TdlibConfig.OPEN_TIMEOUT_MS)
         } else {
@@ -63,6 +68,7 @@ class FallbackDataSource(
         if (primaryResult != null) {
             active = primaryResult.first
             usedFallback = false
+            TdlibDebugState.lastStatus = "TDLib: ACTIVE ✅ (not using Railway)"
             pendingListener?.let { active?.addTransferListener(it) }
             return primaryResult.second
         }
@@ -108,6 +114,18 @@ class FallbackDataSource(
             // Timed out or failed — best-effort close, ignore its own errors,
             // and let the caller open the fallback DataSource instead.
             runCatching { source.close() }
+            TdlibDebugState.lastStatus = if (!completed) {
+                "TDLib: FAILED — timed out after ${timeoutMs}ms, used Railway instead"
+            } else {
+                val err = failure.get()
+                val cause = err?.cause
+                val detail = if (cause != null && cause.message != null) {
+                    "${err.message} → ${cause.message}"
+                } else {
+                    err?.message ?: err?.toString() ?: "unknown error"
+                }
+                "TDLib: FAILED — $detail, used Railway instead"
+            }
             return null
         }
         return source to (resultLength.get() ?: 0L)
