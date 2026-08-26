@@ -1,5 +1,6 @@
 package com.suhani.videoplayer
 
+import android.content.Context
 import android.util.Log
 import io.github.up9cloud.td.JsonClient
 import org.json.JSONObject
@@ -46,6 +47,51 @@ object TdlibClient {
     @Volatile private var clientId: Int = -1
     private val creationLock = Any()
     private val extraCounter = AtomicLong(0)
+
+    // BUG FIX #1 (root cause of "TDLib login timed out" every single time):
+    // setTdlibParameters was using database_directory = "tdlib", a RELATIVE
+    // path. On Android that resolves against the process's working
+    // directory (effectively "/"), which the app has no permission to
+    // write to — so TDLib's own database init silently failed and it never
+    // progressed past authorizationStateWaitTdlibParameters. Needs the
+    // app's own private storage, which needs a Context — stashed here once
+    // via [init], called from TdlibDataSource/TdlibDownloadHelper with
+    // their applicationContext.
+    @Volatile private var appContext: Context? = null
+
+    fun init(context: Context) {
+        if (appContext == null) appContext = context.applicationContext
+    }
+
+    /** Best-effort automatic fallback if [init] was never called explicitly
+     *  — reads the current process's Application via the standard
+     *  ActivityThread trick (same technique many libraries use to avoid
+     *  requiring a Context be threaded through every call site). Only used
+     *  if [appContext] is still null when the database directory is
+     *  actually needed. */
+    private fun resolveAppContext(): Context? {
+        appContext?.let { return it }
+        return runCatching {
+            val application = Class.forName("android.app.ActivityThread")
+                .getMethod("currentApplication")
+                .invoke(null) as? Context
+            application?.also { appContext = it.applicationContext }
+        }.getOrNull()
+    }
+
+    // BUG FIX #2: setTdlibParameters/checkAuthenticationBotToken are sent
+    // with waitForResponse=false (their real "result" is the next
+    // updateAuthorizationState push, not their own response body) — but
+    // that meant if TDLib replied with an explicit {"@type":"error",...}
+    // for either of them (bad api_id/api_hash/bot_token, database-dir
+    // failure, etc.), receiveLoop had nowhere to route it: no queue was
+    // ever registered for that @extra, so the error was just dropped on
+    // the floor and ensureReady() always fell through to the generic
+    // "timed out" message after the full AUTH_TIMEOUT_MS wait — even
+    // though TDLib told us exactly what went wrong within milliseconds.
+    // This map lets receiveLoop recognize those two requests' @extra and
+    // surface a real error immediately instead of waiting out the clock.
+    private val authCriticalExtras = ConcurrentHashMap<String, String>() // extra -> request @type
 
     // extra-id -> single-slot handoff for that request's own response
     private val pendingResponses = ConcurrentHashMap<String, SynchronousQueue<JSONObject>>()
@@ -129,6 +175,18 @@ object TdlibClient {
             val extra = json.optString("@extra", "")
             if (extra.isNotEmpty()) {
                 pendingResponses.remove(extra)?.offer(json, 2, TimeUnit.SECONDS)
+                // BUG FIX #2 continued: this extra belonged to
+                // setTdlibParameters or checkAuthenticationBotToken (sent
+                // fire-and-forget) — if TDLib is telling us it errored,
+                // surface that now instead of letting ensureReady() wait
+                // out the full timeout for nothing.
+                authCriticalExtras.remove(extra)?.let { requestType ->
+                    if (json.optString("@type") == "error") {
+                        authFailure = "TDLib $requestType failed: " +
+                            "${json.optInt("code")} ${json.optString("message")}"
+                        if (authReadyLatch.count > 0L) authReadyLatch.countDown()
+                    }
+                }
             }
         }
     }
@@ -137,10 +195,19 @@ object TdlibClient {
         state ?: return
         when (state.optString("@type")) {
             "authorizationStateWaitTdlibParameters" -> {
-                send(
+                val dbDir = resolveAppContext()?.filesDir?.let { File(it, "tdlib").absolutePath }
+                    ?: run {
+                        // Genuinely couldn't get any Context (extremely
+                        // unlikely) — fail loudly instead of silently
+                        // repeating bug #1 with a relative path.
+                        authFailure = "Could not resolve app Context for TDLib database_directory"
+                        if (authReadyLatch.count > 0L) authReadyLatch.countDown()
+                        return
+                    }
+                sendAuthCritical(
                     JSONObject().apply {
                         put("@type", "setTdlibParameters")
-                        put("database_directory", "tdlib")
+                        put("database_directory", dbDir)
                         put("use_message_database", true)
                         put("use_secret_chats", false)
                         put("api_id", TdlibConfig.API_ID)
@@ -149,18 +216,16 @@ object TdlibClient {
                         put("device_model", "Android")
                         put("application_version", "A501-1.0")
                     },
-                    waitForResponse = false,
                 )
             }
             "authorizationStateWaitPhoneNumber" -> {
                 // App logs in AS THE BOT, never a personal phone number —
                 // hard constraint from the migration doc.
-                send(
+                sendAuthCritical(
                     JSONObject().apply {
                         put("@type", "checkAuthenticationBotToken")
                         put("token", TdlibConfig.BOT_TOKEN)
                     },
-                    waitForResponse = false,
                 )
             }
             "authorizationStateReady" -> authReadyLatch.countDown()
@@ -169,6 +234,18 @@ object TdlibClient {
                 clientId = -1 // allow a fresh client + login on the next ensureReady()
             }
         }
+    }
+
+    /** Fire-and-forget send (its real "result" is the next
+     *  updateAuthorizationState push) that still registers the request's
+     *  @extra in [authCriticalExtras] so receiveLoop can catch an explicit
+     *  error response instead of dropping it — see bug #2 doc comment
+     *  above [authCriticalExtras]. */
+    private fun sendAuthCritical(request: JSONObject) {
+        val extra = extraCounter.incrementAndGet().toString()
+        request.put("@extra", extra)
+        authCriticalExtras[extra] = request.optString("@type")
+        JsonClient.td_send(clientId, request.toString())
     }
 
     /** Sends a request. [waitForResponse]=false is for auth-flow requests
