@@ -133,15 +133,19 @@ object NativeDownloadManager {
             )
             if (handledByTdlib) return@Thread
 
-            // Reaching here means TDLib direct was never even attempted for
-            // this download (ENABLED=false, or the URL didn't resolve) — the
-            // HTTP path below is the existing Railway proxy. Show the exact
-            // reason (set by TdlibDownloadHelper just above) instead of a
-            // generic message, so the real cause is visible instead of guessed.
+            // ROOT-CAUSE FIX (user ask: "Railway ko download se poori tarah
+            // hata do"): reaching here NO LONGER means a Telegram download
+            // is falling back to Railway's proxy — TdlibDownloadHelper now
+            // only returns false for genuinely non-Telegram URLs (ENABLED
+            // off, or the URL simply isn't a `/dl/` Telegram link at all).
+            // A real Telegram `/dl/` link always returns true from above
+            // (success or a reported, already-retried error) and never
+            // reaches this HTTP path anymore. Show the exact reason (set by
+            // TdlibDownloadHelper just above) instead of a generic message.
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 android.widget.Toast.makeText(
                     context.applicationContext,
-                    "Railway se ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
+                    "Direct/local download ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }
