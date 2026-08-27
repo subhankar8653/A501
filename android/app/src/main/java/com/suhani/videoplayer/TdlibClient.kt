@@ -404,6 +404,22 @@ object TdlibClient {
         val cacheKey = "${chatId}_$msgId"
         messageFileCache[cacheKey]?.let { return it }
 
+        // BUG FIX #7: TDLib only knows about chats it has actually loaded
+        // into its internal chat list — a fresh login hasn't "seen" any
+        // specific chat yet unless getChat() (or an update mentioning it)
+        // has run first. Calling getMessage() directly on an unseen
+        // chat_id fails with "Chat not found" even when the bot IS a
+        // member and genuinely has access — this is exactly the "TDLib
+        // error 400: Chat not found" every real test has hit once login
+        // itself started succeeding. getChat() forces TDLib to
+        // fetch+cache the chat before we reference it by ID.
+        send(
+            JSONObject().apply {
+                put("@type", "getChat")
+                put("chat_id", chatId)
+            },
+        ) ?: throw TdlibException("getChat returned no response for chat_id=$chatId")
+
         val response = send(
             JSONObject().apply {
                 put("@type", "getMessage")
