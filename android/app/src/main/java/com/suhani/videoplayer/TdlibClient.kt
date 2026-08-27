@@ -164,9 +164,28 @@ object TdlibClient {
         while (true) {
             val raw = try {
                 JsonClient.td_receive(2.0)
-            } catch (e: Exception) {
-                Log.e(TAG, "td_receive failed", e)
-                null
+            } catch (e: Throwable) {
+                // BUG FIX #4 (likely root cause of "no updateConnectionState
+                // received yet" persisting the entire 18s wait, every time):
+                // this used to catch only `Exception`. If the native call
+                // itself fails at the JNI/linkage level (e.g.
+                // UnsatisfiedLinkError — the exact ABI's libtdjson.so
+                // missing a symbol, or a class-loading problem in the
+                // io.github.up9cloud.td.JsonClient bridge), that's an
+                // Error, not an Exception in Kotlin/Java — it was NOT
+                // caught here, so this whole daemon thread died silently
+                // on its very first iteration. Nothing ever processes
+                // updateAuthorizationState/updateConnectionState again for
+                // the rest of the process's life, which matches exactly
+                // what every test so far has shown. Catching Throwable
+                // surfaces the real error immediately instead of an
+                // eternal silent hang.
+                Log.e(TAG, "td_receive failed fatally", e)
+                authFailure = "TDLib native receive loop crashed: " +
+                    "${e::class.java.name}: ${e.message}"
+                lastConnectionState = "receiveLoop crashed: ${e::class.java.simpleName}"
+                if (authReadyLatch.count > 0L) authReadyLatch.countDown()
+                return // don't keep spinning on a fatal native error
             } ?: continue
 
             val json = try {
