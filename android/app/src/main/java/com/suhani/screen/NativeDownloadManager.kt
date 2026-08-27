@@ -127,12 +127,14 @@ object NativeDownloadManager {
 
         // Reaching here means TDLib direct was never even attempted for
         // this download (ENABLED=false, or the URL didn't resolve) — the
-        // HTTP path below is the existing Railway proxy.
+        // HTTP path below is the existing Railway proxy. Show the exact
+        // reason (set by TdlibDownloadHelper just above) instead of a
+        // generic message, so the real cause is visible instead of guessed.
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(
                 context.applicationContext,
-                "Download: Railway HTTP se ho raha hai",
-                android.widget.Toast.LENGTH_SHORT,
+                "Railway se ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
+                android.widget.Toast.LENGTH_LONG,
             ).show()
         }
 
