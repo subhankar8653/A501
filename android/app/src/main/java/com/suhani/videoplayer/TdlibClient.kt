@@ -165,17 +165,28 @@ object TdlibClient {
             clientId = JsonClient.td_create_client_id()
             lastClientIdCreated = clientId
             Thread({ receiveLoop() }, "TdlibClient-receive").apply { isDaemon = true }.start()
-            // CONFIRMED by build-6's test: adding an explicit
-            // getAuthorizationState "priming" call here (removed now) was
-            // WRONG — it raced with TDLib's own automatic first
-            // updateAuthorizationState push and caused setTdlibParameters
-            // to be sent twice, which TDLib correctly rejected the second
-            // time with "400 Unexpected setTdlibParameters". The original
-            // assumption was right all along: TDLib automatically pushes
-            // authorizationStateWaitTdlibParameters as soon as td_receive
-            // starts being polled — no priming request needed or wanted.
+            // CONFIRMED by build-7's test (diag showed 12 loop iterations,
+            // valid clientId, but "last raw: (none yet)" — td_receive()
+            // truly never returned anything, ever, without this): this
+            // specific .so build does NOT auto-push
+            // authorizationStateWaitTdlibParameters on its own — it needs
+            // an explicit nudge. build-6 had this same call and DID get a
+            // response (proving it works) but double-sent
+            // setTdlibParameters because handleAuthUpdate() wasn't
+            // idempotent — fixed below with sendGuard, not by removing
+            // this.
+            sendAuthCritical(JSONObject().apply { put("@type", "getAuthorizationState") })
         }
     }
+
+    // BUG FIX #6: handleAuthUpdate() can now legitimately be reached twice
+    // for the same state (once via getAuthorizationState's direct response,
+    // once via TDLib's own updateAuthorizationState push after processing
+    // that request) — guard each one-time send so a duplicate arrival is a
+    // harmless no-op instead of TDLib rejecting the second copy with
+    // "400 Unexpected setTdlibParameters" (which build-6 hit).
+    @Volatile private var tdlibParametersSent = false
+    @Volatile private var botTokenSent = false
 
     private fun receiveLoop() {
         while (true) {
@@ -257,6 +268,8 @@ object TdlibClient {
         state ?: return
         when (state.optString("@type")) {
             "authorizationStateWaitTdlibParameters" -> {
+                if (tdlibParametersSent) return // already sent — see sendGuard doc above
+                tdlibParametersSent = true
                 val dbDir = resolveAppContext()?.filesDir?.let { File(it, "tdlib").absolutePath }
                     ?: run {
                         // Genuinely couldn't get any Context (extremely
@@ -281,6 +294,8 @@ object TdlibClient {
                 )
             }
             "authorizationStateWaitPhoneNumber" -> {
+                if (botTokenSent) return // already sent — see sendGuard doc above
+                botTokenSent = true
                 // App logs in AS THE BOT, never a personal phone number —
                 // hard constraint from the migration doc.
                 sendAuthCritical(
@@ -294,6 +309,8 @@ object TdlibClient {
             "authorizationStateClosed" -> {
                 authFailure = "TDLib authorization closed unexpectedly"
                 clientId = -1 // allow a fresh client + login on the next ensureReady()
+                tdlibParametersSent = false
+                botTokenSent = false
             }
         }
     }
