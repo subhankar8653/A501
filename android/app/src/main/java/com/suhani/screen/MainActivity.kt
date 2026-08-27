@@ -941,6 +941,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             lastReactRequestedUri = uri
             return
         }
+        val previousUri = inlineUri
         lastReactRequestedUri = uri
         inlineUri = uri
         inlineTitle = title
@@ -1249,6 +1250,28 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             it.addListener(inlineTracksListener)
             it.addListener(inlinePlayPauseListener)
             it.addListener(inlineErrorListener)
+        }
+        // BUG FIX (user report: "episode 2 pe click karne se pehle screen par
+        // episode 1 ka purana/cached last frame dikhta hai — koi bhi episode
+        // switch hone par purana wala sath hi sath (turant) end hona chahiye,
+        // koi cached frame piche nahi chhutna chahiye"): `setKeepContentOnPlayerReset(true)`
+        // (upar, view create hote waqt set hota hai) jaan-bujh kar hai taaki
+        // PiP/fullscreen se wapas reattach hote waqt ek pal ka black-flash na
+        // dikhe — lekin bilkul wahi setting genuine episode-switch (Up Next
+        // list se naya episode click karna) par bhi purani video ka aakhri
+        // frame naya episode load/buffer hone tak screen par chipkae rakhti
+        // thi, jisse lagta tha purana episode abhi khatam hi nahi hua. Fix:
+        // sirf tab surface ko explicitly clear karo jab yeh sach mein ek NAYA
+        // episode hai (previousUri maujood tha aur naye uri se alag) —
+        // reattach/quality-switch cases (jahan previousUri null hai ya same
+        // hi hai) yahan tak pahunchte hi nahi (upar wala early-return unhe
+        // pehle hi handle kar chuka), unka black-flash-prevention waisa hi
+        // bana rehta hai.
+        val isGenuineEpisodeSwitch = previousUri != null && previousUri != uri
+        if (isGenuineEpisodeSwitch) {
+            inlinePlayerView?.setKeepContentOnPlayerReset(false)
+            player.clearMediaItems()
+            inlinePlayerView?.setKeepContentOnPlayerReset(true)
         }
         // BUG FIX (user report: "fullscreen mein quality badalne ke baad title
         // gayab ho ke sirf 'Video' likha aata hai"): yeh chhota/inline player kabhi
@@ -2123,11 +2146,23 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // (pathname + query) yahin, goBack() se theek pehle, capture kar lo —
         // taaki expand par ise history state se independent, direct navigate()
         // se wapas laaya jaa sake.
+        // BUG FIX (naya user report: "PiP karne se PiP is player screen par hi
+        // hona chahiye, home page par nahi"): pehle yahan (upar wale purane
+        // comment mein bataye gaye ek pehle wale request ke hisaab se)
+        // `webView.goBack()` call hoti thi jab bhi real PiP shuru hoti — matlab
+        // is watch page ko turant chhod kar WebView peechli (Home/Detail) page
+        // par chali jaati thi, taaki PiP window ke "peeche" wahi dikhe. Lekin
+        // isi wajah se PiP shuru hote hi background mein Home page dikhne
+        // lagta tha — bilkul jaisa ab report hua ("home main pip ho jaata
+        // hai"). Fix: ab is watch/player page ko chhodte hi nahi — WebView
+        // yahin isi page par rehta hai, PiP window bas isi ke oopar chhoti
+        // ho kar tairti hai (YouTube jaisa). `pipReturnPath` abhi bhi capture
+        // karte hain — agar user PiP ke dauraan khud kahin aur navigate kar
+        // le, expand par wapas isi watch page par le aane ke liye (neeche
+        // wale onActivityResult ka existing safety-net), lekin ab khud se
+        // kabhi goBack() nahi karte.
         pipReturnPath = if (enterPipImmediately) currentWebViewPathOrNull() else null
-        didNavigateBackForPip = enterPipImmediately && webView.canGoBack()
-        if (didNavigateBackForPip) {
-            webView.goBack()
-        }
+        didNavigateBackForPip = false
         // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
         // isi (genuinely-navigated-away) case mein overlay ka turant show
         // hona rokna hai.
