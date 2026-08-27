@@ -21,7 +21,7 @@ object TdlibDebugState {
     // code) changes — so a screenshot instantly proves whether the running
     // APK actually has the latest fix or an older build got tested by
     // mistake, instead of us guessing from unchanged symptoms.
-    const val BUILD_MARKER: String = "dbg-build-9"
+    const val BUILD_MARKER: String = "dbg-build-10"
 
     @Volatile var lastStatus: String = "TDLib: idle"
 }

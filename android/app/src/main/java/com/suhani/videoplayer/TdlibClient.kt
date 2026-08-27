@@ -404,6 +404,19 @@ object TdlibClient {
         val cacheKey = "${chatId}_$msgId"
         messageFileCache[cacheKey]?.let { return it }
 
+        // BUG FIX #8 (explains the "404: Not Found" that replaced "400:
+        // Chat not found" once bug #7's getChat() fix landed): the msgId we
+        // get back from Railway's resolve step is a plain Bot-API-style
+        // server message id (small sequential number, e.g. 306) — but
+        // TDLib's own message_id field is NOT that number directly. TDLib
+        // reserves the low 20 bits of every message_id for local/internal
+        // use and stores the real server id shifted left by 20
+        // (message_id = server_id * 1048576). Passing the raw server id
+        // straight to getMessage looks like some other, nonexistent
+        // message to TDLib — hence "Not Found" even though the chat and
+        // the real message are both completely fine.
+        val tdlibMessageId = msgId shl 20
+
         // BUG FIX #7: TDLib only knows about chats it has actually loaded
         // into its internal chat list — a fresh login hasn't "seen" any
         // specific chat yet unless getChat() (or an update mentioning it)
@@ -424,7 +437,7 @@ object TdlibClient {
             JSONObject().apply {
                 put("@type", "getMessage")
                 put("chat_id", chatId)
-                put("message_id", msgId)
+                put("message_id", tdlibMessageId)
             },
         ) ?: throw TdlibException("getMessage returned no response")
 
