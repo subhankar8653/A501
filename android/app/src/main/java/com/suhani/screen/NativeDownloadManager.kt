@@ -81,66 +81,72 @@ object NativeDownloadManager {
         val keepGoing = AtomicBoolean(true)
         active[id] = keepGoing
 
-        // A501 — direct phone<->Telegram migration (see
-        // a501-direct-streaming-migration-prompt.md, "Required behavior" #2).
-        // While TdlibConfig.ENABLED is false (default), this returns false
-        // immediately and every line below is untouched — same HTTP thread
-        // as before. See TdlibDownloadHelper for the real wiring point.
-        val outFile = fileFor(context, id)
-
-        // Debug visibility: downloads had no on-screen indicator of which
-        // path is actually moving bytes (unlike streaming's top-left
-        // "TDLib: ACTIVE" badge in PlayerActivity). onProgress() only ever
-        // fires from inside TdlibClient.downloadFull, so its first call is
-        // live proof TDLib direct is really the one downloading — not just
-        // that TdlibConfig.ENABLED is set.
-        var tdlibConfirmed = false
-        val debugWrappedOnProgress: (Int, Long) -> Unit = { pct, size ->
-            if (!tdlibConfirmed) {
-                tdlibConfirmed = true
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(
-                        context.applicationContext,
-                        "Download: TDLib direct ✅ (Railway nahi use ho raha)",
-                        android.widget.Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-            onProgress(pct, size)
-        }
-
-        val handledByTdlib = com.suhani.videoplayer.TdlibDownloadHelper.attemptDirectDownload(
-            streamUrl = url,
-            outFile = outFile,
-            onProgress = debugWrappedOnProgress,
-            onDone = { f ->
-                active.remove(id)
-                val uri = contentUriFor(context, id)
-                if (uri != null) onDone(uri) else onError("file save failed")
-            },
-            onError = { msg ->
-                active.remove(id)
-                onError(msg)
-            },
-        )
-        if (handledByTdlib) return
-
-        // Reaching here means TDLib direct was never even attempted for
-        // this download (ENABLED=false, or the URL didn't resolve) — the
-        // HTTP path below is the existing Railway proxy. Show the exact
-        // reason (set by TdlibDownloadHelper just above) instead of a
-        // generic message, so the real cause is visible instead of guessed.
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(
-                context.applicationContext,
-                "Railway se ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
-                android.widget.Toast.LENGTH_LONG,
-            ).show()
-        }
-
+        // ROOT CAUSE FIX (download's TDLib attempt was throwing
+        // "resolve failed: null" every time — that's the signature of
+        // NetworkOnMainThreadException, whose .message is always null.
+        // DownloadService.onStartCommand() runs on the main/UI thread, and
+        // this whole function used to run its TDLib network calls
+        // (TdlibResolveClient.resolve — blocking HTTP) directly on that
+        // caller's thread. Only the OLD HTTP-fallback path below had its
+        // own Thread{}; the newer TDLib path added in front of it did not.
+        // Streaming doesn't hit this because TdlibDataSource.open() runs on
+        // ExoPlayer's own background loading thread, never the UI thread.
+        // Fix: the whole thing — TDLib attempt AND the HTTP fallback — now
+        // runs on one background thread, same pattern as before.
         Thread {
-            var conn: HttpURLConnection? = null
             val outFile = fileFor(context, id)
+
+            // Debug visibility: downloads had no on-screen indicator of which
+            // path is actually moving bytes (unlike streaming's top-left
+            // "TDLib: ACTIVE" badge in PlayerActivity). onProgress() only ever
+            // fires from inside TdlibClient.downloadFull, so its first call is
+            // live proof TDLib direct is really the one downloading — not just
+            // that TdlibConfig.ENABLED is set.
+            var tdlibConfirmed = false
+            val debugWrappedOnProgress: (Int, Long) -> Unit = { pct, size ->
+                if (!tdlibConfirmed) {
+                    tdlibConfirmed = true
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(
+                            context.applicationContext,
+                            "Download: TDLib direct ✅ (Railway nahi use ho raha)",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                onProgress(pct, size)
+            }
+
+            val handledByTdlib = com.suhani.videoplayer.TdlibDownloadHelper.attemptDirectDownload(
+                streamUrl = url,
+                outFile = outFile,
+                onProgress = debugWrappedOnProgress,
+                onDone = { f ->
+                    active.remove(id)
+                    val uri = contentUriFor(context, id)
+                    if (uri != null) onDone(uri) else onError("file save failed")
+                },
+                onError = { msg ->
+                    active.remove(id)
+                    onError(msg)
+                },
+            )
+            if (handledByTdlib) return@Thread
+
+            // Reaching here means TDLib direct was never even attempted for
+            // this download (ENABLED=false, or the URL didn't resolve) — the
+            // HTTP path below is the existing Railway proxy. Show the exact
+            // reason (set by TdlibDownloadHelper just above) instead of a
+            // generic message, so the real cause is visible instead of guessed.
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(
+                    context.applicationContext,
+                    "Railway se ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+
+            var conn: HttpURLConnection? = null
             val tmpFile = File(outFile.parentFile, outFile.name + ".part")
             try {
                 var currentUrl = url
@@ -232,6 +238,6 @@ object NativeDownloadManager {
             } finally {
                 conn?.disconnect()
             }
-        }.start()
+        }.apply { isDaemon = true }.start()
     }
 }
