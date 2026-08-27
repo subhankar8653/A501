@@ -165,16 +165,15 @@ object TdlibClient {
             clientId = JsonClient.td_create_client_id()
             lastClientIdCreated = clientId
             Thread({ receiveLoop() }, "TdlibClient-receive").apply { isDaemon = true }.start()
-            // BUG FIX #5 attempt: the comment here used to claim "no
-            // priming request needed" — TDLib automatically pushing its
-            // first updateAuthorizationState once polled. That's true for
-            // some TDLib builds/versions but apparently NOT for whatever
-            // this .so actually is (receiveLoopIterations climbs — proving
-            // the loop is alive and calling td_receive() repeatedly — but
-            // ZERO updates of any kind ever arrive). Explicitly asking for
-            // the current authorization state is the standard, safe way to
-            // force that first push regardless of TDLib version.
-            sendAuthCritical(JSONObject().apply { put("@type", "getAuthorizationState") })
+            // CONFIRMED by build-6's test: adding an explicit
+            // getAuthorizationState "priming" call here (removed now) was
+            // WRONG — it raced with TDLib's own automatic first
+            // updateAuthorizationState push and caused setTdlibParameters
+            // to be sent twice, which TDLib correctly rejected the second
+            // time with "400 Unexpected setTdlibParameters". The original
+            // assumption was right all along: TDLib automatically pushes
+            // authorizationStateWaitTdlibParameters as soon as td_receive
+            // starts being polled — no priming request needed or wanted.
         }
     }
 
