@@ -344,6 +344,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private val awaitingRectHandler = Handler(Looper.getMainLooper())
     private var awaitingRectTimeoutRunnable: Runnable? = null
 
+    // BUG FIX (user report, bilkul wahi symptom dobara: "PiP karke back button
+    // dabaya, Home par aa gaye, expand karne par abhi bhi Home hi khulta hai"):
+    // pichla fix (`pipReturnPath` + unconditional navigate-on-expand) sahi
+    // disha mein tha, lekin fir bhi race/lag ka shikaar ho sakta tha — asli,
+    // pakka fix yeh hai ki PiP floating rehte waqt is WATCH PAGE ko WebView
+    // mein badalne hi mat do, taaki "wapas kahan jaana hai" wala sawaal hi na
+    // uthe. Yeh flag track karta hai ki abhi ek real PiP session live hai
+    // (`openFullscreenFromInline(enterPipImmediately=true)` se leke jab tak
+    // PlayerActivity se result wapas na aa jaaye) — is dauraan hardware back
+    // button ko yahin (neeche `onKeyDown` mein) absorb kar lete hain, WebView
+    // ko bilkul chhedte nahi. Comments/likes/title wala player page bilkul
+    // waisa hi "catch" rehta hai jaisa PiP shuru hote waqt tha, isliye expand
+    // hamesha wahi khulta hai — koi navigate-back-and-forth ki zaroorat hi
+    // nahi padti.
+    private var pipSessionActive = false
+
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
     private val inlineEqProcessor = EqualizerAudioProcessor()
@@ -2163,6 +2179,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // kabhi goBack() nahi karte.
         pipReturnPath = if (enterPipImmediately) currentWebViewPathOrNull() else null
         didNavigateBackForPip = false
+        // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
+        // is watch page ko badalne se bachaayega jab tak PlayerActivity se
+        // result wapas na aa jaaye (dekho `pipSessionActive` field comment).
+        if (enterPipImmediately) pipSessionActive = true
         // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
         // isi (genuinely-navigated-away) case mein overlay ka turant show
         // hona rokna hai.
@@ -2261,6 +2281,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // hai jab bhi yeh ek definitively genuine PiP close ho (dekho
             // PlayerActivity.handlePipGenuineClose()).
             if (pipGenuinelyClosed) {
+                pipSessionActive = false
                 didNavigateBackForPip = false
                 pipReturnPath = null
                 awaitingRectAfterPipReturn = false
@@ -2347,6 +2368,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // "kabhi-kabhi galat page par phasa reh jaana" se kahin behtar hai.
             val pipTarget = pipReturnPath
             val needsPipReturnNavigate = pipTarget != null
+            pipSessionActive = false
             if (needsPipReturnNavigate) {
                 webView.evaluateJavascript(
                     "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
@@ -2447,9 +2469,25 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
-            webView.goBack()
-            return true
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            // BUG FIX (user report: "PiP hote huye back dabane se Home aa
+            // jaata hai, expand par Home hi khulta hai — comment/like/title
+            // wale player page ka catch rakho"): jab tak real PiP session
+            // live hai (dekho `pipSessionActive`), is watch page ko WebView
+            // mein bilkul mat badlo — back-press ko yahin absorb kar lo aur
+            // app ko background mein bhej do (jaisa Home button dabane par
+            // hota, PiP window waisi hi floating rehti hai). Isse jo page
+            // (comments/likes/title/Up-Next ke saath) abhi loaded hai wahi
+            // "catch" rehta hai — expand hamesha usi par hoga, koi navigate-
+            // wapas-lao jugaad ki zaroorat hi nahi.
+            if (pipSessionActive) {
+                moveTaskToBack(true)
+                return true
+            }
+            if (webView.canGoBack()) {
+                webView.goBack()
+                return true
+            }
         }
         return super.onKeyDown(keyCode, event)
     }
