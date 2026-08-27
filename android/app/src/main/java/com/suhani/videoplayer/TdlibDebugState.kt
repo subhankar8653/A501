@@ -17,5 +17,11 @@ package com.suhani.videoplayer
  * torn reads aren't a concern here).
  */
 object TdlibDebugState {
+    // Bumped by hand every time this file (or the surrounding debug-badge
+    // code) changes — so a screenshot instantly proves whether the running
+    // APK actually has the latest fix or an older build got tested by
+    // mistake, instead of us guessing from unchanged symptoms.
+    const val BUILD_MARKER: String = "dbg-build-6"
+
     @Volatile var lastStatus: String = "TDLib: idle"
 }

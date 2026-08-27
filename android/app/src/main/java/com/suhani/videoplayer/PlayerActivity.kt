@@ -7310,7 +7310,7 @@ class PlayerActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(20, 10, 20, 10)
             typeface = Typeface.MONOSPACE
-            text = TdlibDebugState.lastStatus
+            text = "[${TdlibDebugState.BUILD_MARKER}] ${TdlibDebugState.lastStatus}"
             elevation = 999f
         }
         val params = FrameLayout.LayoutParams(
@@ -7328,10 +7328,12 @@ class PlayerActivity : AppCompatActivity() {
         var lastToasted = ""
         val poller = object : Runnable {
             override fun run() {
-                var current = TdlibDebugState.lastStatus
+                val rawStatus = TdlibDebugState.lastStatus
+                var current = "[${TdlibDebugState.BUILD_MARKER}] $rawStatus"
                 val toastKey = current // base status only, before live connection-state append
-                if (current.startsWith("TDLib: trying") && !TdlibClient.isAuthReady()) {
-                    current = "$current\nconn: ${TdlibClient.getConnectionState()}"
+                if (rawStatus.startsWith("TDLib: trying") && !TdlibClient.isAuthReady()) {
+                    current = "$current\nconn: ${TdlibClient.getConnectionState()}" +
+                        "\ndiag: ${TdlibClient.getDiagnostics()}"
                 }
                 tdlibDebugBadge?.let {
                     it.text = current
@@ -7343,7 +7345,7 @@ class PlayerActivity : AppCompatActivity() {
                 // badge theoretically could. Only fire once per distinct
                 // BASE status (not the live connection-state append, which
                 // changes every poll) so it doesn't spam.
-                if (toastKey != lastToasted && toastKey != "TDLib: idle") {
+                if (toastKey != lastToasted && rawStatus != "TDLib: idle") {
                     lastToasted = toastKey
                     Toast.makeText(this@PlayerActivity, toastKey, Toast.LENGTH_LONG).show()
                 }

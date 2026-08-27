@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A501 — direct phone<->Telegram migration.
@@ -118,6 +119,15 @@ object TdlibClient {
     // for this process, etc. — rather than a credentials problem).
     @Volatile private var lastConnectionState: String = "(no updateConnectionState received yet)"
 
+    // Pure diagnostics — no logic depends on these. They exist so the next
+    // test can tell, from the screen alone, whether receiveLoop is truly
+    // alive and calling td_receive() in a loop (iterations climbing) vs
+    // dead/never-started (stuck at 0), and what td_receive() is actually
+    // returning each call (null / some @type / a raw non-JSON string).
+    val receiveLoopIterations = AtomicInteger(0)
+    @Volatile var lastRawSeen: String = "(none yet)"
+    @Volatile var lastClientIdCreated: Int = -999
+
     private val configLoadLock = Any()
     @Volatile private var configLoaded = false
 
@@ -153,15 +163,24 @@ object TdlibClient {
         synchronized(creationLock) {
             if (clientId >= 0) return
             clientId = JsonClient.td_create_client_id()
+            lastClientIdCreated = clientId
             Thread({ receiveLoop() }, "TdlibClient-receive").apply { isDaemon = true }.start()
-            // No priming request needed — TDLib automatically pushes its
-            // first updateAuthorizationState (authorizationStateWaitTdlib-
-            // Parameters) as soon as td_receive starts being polled.
+            // BUG FIX #5 attempt: the comment here used to claim "no
+            // priming request needed" — TDLib automatically pushing its
+            // first updateAuthorizationState once polled. That's true for
+            // some TDLib builds/versions but apparently NOT for whatever
+            // this .so actually is (receiveLoopIterations climbs — proving
+            // the loop is alive and calling td_receive() repeatedly — but
+            // ZERO updates of any kind ever arrive). Explicitly asking for
+            // the current authorization state is the standard, safe way to
+            // force that first push regardless of TDLib version.
+            sendAuthCritical(JSONObject().apply { put("@type", "getAuthorizationState") })
         }
     }
 
     private fun receiveLoop() {
         while (true) {
+            receiveLoopIterations.incrementAndGet() // every pass, timeouts included
             val raw = try {
                 JsonClient.td_receive(2.0)
             } catch (e: Throwable) {
@@ -187,6 +206,8 @@ object TdlibClient {
                 if (authReadyLatch.count > 0L) authReadyLatch.countDown()
                 return // don't keep spinning on a fatal native error
             } ?: continue
+
+            lastRawSeen = raw.take(120) // diagnostic only, truncate to be badge-friendly
 
             val json = try {
                 JSONObject(raw)
@@ -220,6 +241,13 @@ object TdlibClient {
                         authFailure = "TDLib $requestType failed: " +
                             "${json.optInt("code")} ${json.optString("message")}"
                         if (authReadyLatch.count > 0L) authReadyLatch.countDown()
+                    } else if (requestType == "getAuthorizationState") {
+                        // Unlike the other two, THIS response body IS the
+                        // state object itself (same shape TDLib would push
+                        // via updateAuthorizationState) — act on it the
+                        // same way in case this build never pushes state
+                        // changes unprompted.
+                        handleAuthUpdate(json)
                     }
                 }
             }
@@ -340,6 +368,13 @@ object TdlibClient {
      *  debug badge during a cold-login wait so the person testing can see
      *  progress in real time, not just a final generic timeout. */
     fun getConnectionState(): String = lastConnectionState
+
+    /** Diagnostic snapshot for the debug badge — proves whether the
+     *  receive loop is alive/iterating and what TDLib has actually
+     *  returned, independent of the auth flow's own status text. */
+    fun getDiagnostics(): String =
+        "loop iters: ${receiveLoopIterations.get()}, clientId: $lastClientIdCreated, " +
+            "last raw: $lastRawSeen"
 
     // ------------------------------------------------------------------
     // Public API
