@@ -2323,14 +2323,36 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // kiye the ya nahi), tabhi navigate() karo. Agar already sahi page
             // par hain (user kahin gaya hi nahi tha), koi extra
             // navigate/remount na karo — bewajah reload avoid hota hai.
+            // BUG FIX (naya user report — same symptom firse: "PiP karke back
+            // button se Home aa gaye, expand karne par Home hi khula reh gaya,
+            // wapas us player page par nahi gaya jahan se PiP hui thi"): upar
+            // wala fix `webView.url` ko `pipTarget` se COMPARE karke faisla
+            // leta tha ki navigate() karna hai ya nahi — lekin PiP floating
+            // rehte waqt WebView background mein hi user ke back-press/
+            // navigation ko process karta hai, aur `webView.getUrl()` ka
+            // internal state kabhi-kabhi is comparison ke exact waqt tak
+            // React Router ke asli current path ke saath sync nahi hota
+            // (thoda lag/race) — result: `needsPipReturnNavigate` galti se
+            // `false` nikal jaata, navigate() poora skip ho jaata, aur user
+            // jahan bhi (Home) tha wahin khula reh jaata — bilkul jaisa
+            // dubara report hua.
+            //
+            // Fix: is fragile "kya hum already sahi page par hain" check par
+            // bharosa karna hi band kar do — agar `pipTarget` (jahan se PiP
+            // shuru hui thi) maujood hai, hamesha seedha wahi navigate() kar
+            // do, bina kisi comparison ke. React Router khud already-same-path
+            // par navigate() ko safe/idempotent tareeke se handle karta hai
+            // (koi extra remount/reload nahi), isliye correctness ke liye yeh
+            // trade-off theek hai — "kabhi-kabhi ek harmless extra navigate()"
+            // "kabhi-kabhi galat page par phasa reh jaana" se kahin behtar hai.
             val pipTarget = pipReturnPath
-            val needsPipReturnNavigate = pipTarget != null && pipTarget != currentWebViewPathOrNull()
+            val needsPipReturnNavigate = pipTarget != null
             if (needsPipReturnNavigate) {
                 webView.evaluateJavascript(
                     "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
                     null
                 )
-            } else if (pipTarget == null && didNavigateBackForPip && webView.canGoForward()) {
+            } else if (didNavigateBackForPip && webView.canGoForward()) {
                 // Fallback: agar kisi wajah se watch-page path capture nahi ho
                 // paya (bahut purana WebView state, ya url null) lekin humne
                 // PiP shuru karte waqt genuinely goBack() kiya tha, purana
