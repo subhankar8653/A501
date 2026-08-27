@@ -87,10 +87,32 @@ object NativeDownloadManager {
         // immediately and every line below is untouched — same HTTP thread
         // as before. See TdlibDownloadHelper for the real wiring point.
         val outFile = fileFor(context, id)
+
+        // Debug visibility: downloads had no on-screen indicator of which
+        // path is actually moving bytes (unlike streaming's top-left
+        // "TDLib: ACTIVE" badge in PlayerActivity). onProgress() only ever
+        // fires from inside TdlibClient.downloadFull, so its first call is
+        // live proof TDLib direct is really the one downloading — not just
+        // that TdlibConfig.ENABLED is set.
+        var tdlibConfirmed = false
+        val debugWrappedOnProgress: (Int, Long) -> Unit = { pct, size ->
+            if (!tdlibConfirmed) {
+                tdlibConfirmed = true
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        context.applicationContext,
+                        "Download: TDLib direct ✅ (Railway nahi use ho raha)",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+            onProgress(pct, size)
+        }
+
         val handledByTdlib = com.suhani.videoplayer.TdlibDownloadHelper.attemptDirectDownload(
             streamUrl = url,
             outFile = outFile,
-            onProgress = onProgress,
+            onProgress = debugWrappedOnProgress,
             onDone = { f ->
                 active.remove(id)
                 val uri = contentUriFor(context, id)
@@ -102,6 +124,17 @@ object NativeDownloadManager {
             },
         )
         if (handledByTdlib) return
+
+        // Reaching here means TDLib direct was never even attempted for
+        // this download (ENABLED=false, or the URL didn't resolve) — the
+        // HTTP path below is the existing Railway proxy.
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context.applicationContext,
+                "Download: Railway HTTP se ho raha hai",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
 
         Thread {
             var conn: HttpURLConnection? = null
