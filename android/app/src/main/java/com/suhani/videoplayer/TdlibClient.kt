@@ -104,6 +104,22 @@ object TdlibClient {
     // calls on the same message don't re-issue getMessage every time
     private val messageFileCache = ConcurrentHashMap<String, ResolvedFile>()
 
+    // BUG FIX #9 (root cause of the periodic short stalls/buffering during
+    // otherwise-normal playback): ensureRangeDownloaded() used to send a
+    // fresh `downloadFile` command — a BLOCKING IPC call via send(), which
+    // waits on a SynchronousQueue for TDLib's ack — on EVERY single
+    // ExoPlayer read() call (~64 KB each). That both (a) added a blocking
+    // round-trip on the hot path every ~64 KB and (b) kept re-narrowing
+    // TDLib's download window to whatever tiny range was requested *right
+    // now*, so TDLib never got to build any real read-ahead buffer.
+    // Fix: request one much larger forward window per fileId and only
+    // re-issue downloadFile when playback moves outside it (seek, or
+    // catching up near its edge) — everything else just polls local
+    // progress, no repeated IPC/ack wait.
+    private const val READ_AHEAD_BYTES = 6L * 1024 * 1024 // 6 MB
+    private data class DownloadWindow(val start: Long, val end: Long)
+    private val activeWindow = ConcurrentHashMap<Int, DownloadWindow>()
+
     @Volatile private var authReadyLatch = CountDownLatch(1)
     @Volatile private var authFailure: String? = null
 
@@ -464,16 +480,29 @@ object TdlibClient {
      *  full downloads. */
     fun ensureRangeDownloaded(fileId: Int, start: Long, length: Long, timeoutMs: Long): String {
         ensureReady()
-        send(
-            JSONObject().apply {
-                put("@type", "downloadFile")
-                put("file_id", fileId)
-                put("offset", start)
-                put("limit", length)
-                put("priority", 32)
-                put("synchronous", false)
-            },
-        )
+
+        val requestedEnd = start + length
+        val window = activeWindow[fileId]
+        // Only (re-)issue downloadFile when this request falls outside the
+        // window we already asked TDLib to fetch — a seek backward, a seek
+        // far forward, or normal playback finally catching up to the edge
+        // of the current window. Anything inside it is left alone so
+        // TDLib's own background download keeps running uninterrupted.
+        val needsNewWindow = window == null || start < window.start || requestedEnd > window.end
+        if (needsNewWindow) {
+            val windowLength = maxOf(length, READ_AHEAD_BYTES)
+            send(
+                JSONObject().apply {
+                    put("@type", "downloadFile")
+                    put("file_id", fileId)
+                    put("offset", start)
+                    put("limit", windowLength)
+                    put("priority", 32)
+                    put("synchronous", false)
+                },
+            )
+            activeWindow[fileId] = DownloadWindow(start, start + windowLength)
+        }
 
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
