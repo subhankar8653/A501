@@ -67,7 +67,21 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        # dl.google.com se kabhi-kabhi TLS handshake fail ho jata hai (GitHub
+        # Actions runner ka transient network issue, project code ka fault
+        # nahi) — isliye 3 attempts tak retry karte hain, beech mein thoda
+        # ruk kar.
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if gradle assembleDebug --no-daemon; then
+              exit 0
+            fi
+            echo "Build failed, retrying in 15s..."
+            sleep 15
+          done
+          echo "All attempts failed."
+          exit 1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
