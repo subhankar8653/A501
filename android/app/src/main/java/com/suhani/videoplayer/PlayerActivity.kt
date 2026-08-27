@@ -1069,6 +1069,19 @@ class PlayerActivity : AppCompatActivity() {
         val videoTitle = intent.getStringExtra("video_title") ?: "Video"
         playerTitleText.text = videoTitle
 
+        // SPEED FIX (user report: "play dabane se pehle 10-15 second rukna
+        // padta hai"): TDLib login ka ~10s one-time cost pehle hamesha
+        // seedha ExoPlayer ke open() call ke andar hi pay hota tha — matlab
+        // ek dum play dabaane ke baad. Ab video select hote hi, yahin se,
+        // login background thread par shuru kar dete hain — ExoPlayer/UI
+        // setup ke baaki kaam ke saath parallel chalta hai, taaki play tak
+        // pahunchte-pahunchte client zyaadatar pehle se hi warm mile.
+        // Idempotent/safe — TdlibClient khud duplicate calls guard karta hai.
+        if (videoUri != null) {
+            TdlibClient.init(applicationContext)
+            TdlibClient.prewarm(videoUri)
+        }
+
         // Web se bheji quality list parse karo (agar hai) — [{"url":"...","label":"480p"}, ...]
         availableQualities = try {
             val arr = JSONArray(intent.getStringExtra("video_qualities_json") ?: "[]")
@@ -7296,8 +7309,9 @@ class PlayerActivity : AppCompatActivity() {
 
     // A501 — direct phone<->Telegram migration, TESTING AID ONLY (see
     // TdlibDebugState.kt). Adds a small top-left overlay showing whether
-    // THIS playback is using the on-device TDLib path or fell back to the
-    // Railway proxy — and why, if it failed. Only added while
+    // THIS playback's Telegram content is going straight through TDLib
+    // (the only path now — no Railway proxy fallback left) — and why, if
+    // it genuinely failed after its internal retry. Only added while
     // TdlibConfig.ENABLED is true, so it's completely invisible for real
     // users / once this feature ships for real. Remove this call (and this
     // function) once TDLib testing is done.
@@ -7331,7 +7345,7 @@ class PlayerActivity : AppCompatActivity() {
                 val rawStatus = TdlibDebugState.lastStatus
                 var current = "[${TdlibDebugState.BUILD_MARKER}] $rawStatus"
                 val toastKey = current // base status only, before live connection-state append
-                if (rawStatus.startsWith("TDLib: trying") && !TdlibClient.isAuthReady()) {
+                if (rawStatus.startsWith("TDLib: opening") && !TdlibClient.isAuthReady()) {
                     current = "$current\nconn: ${TdlibClient.getConnectionState()}" +
                         "\ndiag: ${TdlibClient.getDiagnostics()}"
                 }

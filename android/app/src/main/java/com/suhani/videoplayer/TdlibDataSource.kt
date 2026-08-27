@@ -12,21 +12,24 @@ import java.io.IOException
  * A501 — direct phone<->Telegram migration (see
  * a501-direct-streaming-migration-prompt.md, "Required behavior" #1).
  *
- * On-device replacement for hitting Railway's `/dl/...` for actual media
- * bytes: given a stream URL, resolves the Telegram chat_id/message_id via
- * [TdlibResolveClient], then pulls bytes for the requested
- * `[position, position+length)` range straight from Telegram via
- * [TdlibClient] (TDLib/MTProto) — the on-device equivalent of what
- * `parse_range_header` / `_build_stream_headers` do server-side today.
+ * The ONLY path for actual Telegram media bytes now (Railway's `/dl/...`
+ * HTTP proxy is no longer used for this at all — see [TelegramRoutingDataSource]
+ * and [TdlibConfig] doc comments). Given a stream URL, resolves the
+ * Telegram chat_id/message_id via [TdlibResolveClient], then pulls bytes
+ * for the requested `[position, position+length)` range straight from
+ * Telegram via [TdlibClient] (TDLib/MTProto) — the on-device equivalent of
+ * what `parse_range_header` / `_build_stream_headers` do server-side today.
  *
  * Wiring is complete (see [TdlibClient] for the actual TDLib JSON calls);
  * this class only owns the [DataSource] contract — position/length
- * bookkeeping, and turning any TDLib failure into a clean throw so
- * [FallbackDataSource] can fail over to the Railway proxy. [open] does a
- * small probe read (not just a metadata lookup) before returning, so a
- * file that resolves fine but genuinely can't be downloaded (e.g. bad bot
- * permissions, TDLib session issue) is caught by [FallbackDataSource]'s
- * open()-time timeout instead of surfacing mid-playback on the first
+ * bookkeeping, and turning any TDLib failure into a clean throw. [TdlibClient]
+ * already retries once internally after clearing its own local cache on a
+ * failure (see [TdlibClient.resetFileForRetry]) — a throw that reaches this
+ * class is a genuine, already-retried failure, not a signal to fall back to
+ * anything. [open] does a small probe read (not just a metadata lookup)
+ * before returning, so a file that resolves fine but genuinely can't be
+ * downloaded (e.g. bad bot permissions, TDLib session issue) is caught
+ * cleanly at open() time instead of surfacing mid-playback on the first
  * [read].
  */
 @UnstableApi
@@ -53,9 +56,10 @@ class TdlibDataSource : DataSource {
         this.dataSpec = dataSpec
 
         if (!TdlibConfig.ENABLED) {
-            // Fast, cheap failure — see TdlibConfig doc comment for why
-            // this is off by default. FallbackDataSource treats this as
-            // "use the Railway proxy for this playback/seek instead."
+            // Master kill-switch off — see TdlibConfig doc comment.
+            // TelegramRoutingDataSource only ever routes here when this is
+            // true, so reaching this branch means someone flipped the
+            // switch off mid-run; fail cleanly rather than silently.
             throw notWiredYet("TdlibConfig.ENABLED is false")
         }
 
@@ -98,9 +102,8 @@ class TdlibDataSource : DataSource {
 
         // Prime the pump: confirm TDLib can actually deliver bytes (not
         // just resolve metadata) before declaring open() successful.
-        // FallbackDataSource is watching this whole call with a hard
-        // timeout (TdlibConfig.OPEN_TIMEOUT_MS) and falls back to Railway
-        // on any throw here — see class doc comment #4 in that file.
+        // ensureRangeDownloaded already retries once internally (clean
+        // cache + retry) before throwing for real — see TdlibClient.
         val probeLength = if (bytesRemaining in 1..65_536L) bytesRemaining else 65_536L
         try {
             TdlibClient.ensureRangeDownloaded(fileId, position, probeLength, TdlibConfig.OPEN_TIMEOUT_MS)
@@ -126,10 +129,11 @@ class TdlibDataSource : DataSource {
         val bytesRead = try {
             TdlibClient.readRange(chatId, msgId, position, buffer, offset, readLength, TdlibConfig.OPEN_TIMEOUT_MS)
         } catch (e: Exception) {
-            // On ANY failure here, throw (don't swallow) — this is
-            // mid-stream, past FallbackDataSource's open()-time timeout, so
-            // a failure here is a genuine playback error, not a signal to
-            // silently retry with zero bytes (which would look like a
+            // TdlibClient.ensureRangeDownloaded (called inside readRange)
+            // already did one clean-cache-and-retry attempt before this
+            // exception reached us — so this is a genuine, already-retried
+            // playback error. Throw it for real rather than swallowing it
+            // or silently returning zero bytes (which would look like a
             // stall instead of a clean failure).
             throw IOException("TDLib read failed at position=$position length=$readLength", e)
         }
@@ -150,5 +154,5 @@ class TdlibDataSource : DataSource {
     }
 
     private fun notWiredYet(reason: String): IOException =
-        IOException("TDLib direct path unavailable ($reason) — falling back to Railway proxy")
+        IOException("TDLib direct path unavailable ($reason)")
 }

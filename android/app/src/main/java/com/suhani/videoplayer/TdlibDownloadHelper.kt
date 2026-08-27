@@ -7,21 +7,35 @@ import java.io.File
  * behavior" #2: downloads should pull directly via TDLib to local storage,
  * same as streaming, instead of proxying through Railway).
  *
- * Mirrors [TdlibDataSource]'s shape and now shares the same real
- * [TdlibClient] wiring. Used from `NativeDownloadManager.start()`
- * (com.suhani.screen): when [TdlibConfig.ENABLED] is false (default),
- * [attemptDirectDownload] returns false immediately and the caller
- * proceeds with the existing HTTP download path, completely unchanged.
+ * ROOT-CAUSE FIX (user ask: "Railway ko download se poori tarah hata do"):
+ * previously, if [TdlibResolveClient.resolve] itself hiccuped (a plain
+ * network blip on the resolve API call — NOT a TDLib failure), this
+ * returned false, and the caller ([NativeDownloadManager]) would then
+ * download the actual media bytes over plain HTTP straight from
+ * `streamUrl` — which IS Railway's `/dl/` proxy URL. So a transient resolve
+ * hiccup used to quietly cost Railway real bandwidth for the whole file.
+ * Now a resolve failure gets one retry, and if that still fails it's
+ * reported as a genuine error (via [onError], returning true) instead of
+ * ever falling through to that HTTP/Railway path.
+ *
+ * Mirrors [TdlibDataSource]'s shape and shares the same real [TdlibClient]
+ * wiring (which itself retries once, clearing its local cache, on a
+ * download failure — see [TdlibClient.resetFileForRetry]). Used from
+ * `NativeDownloadManager.start()` (com.suhani.screen): when
+ * [TdlibConfig.ENABLED] is false, or the URL genuinely isn't a Telegram
+ * `/dl/` link at all, [attemptDirectDownload] returns false and the caller
+ * proceeds with the existing generic HTTP download path (which, for a
+ * non-Telegram URL, was never the Railway-bandwidth path this fix targets).
  */
 object TdlibDownloadHelper {
 
     /**
      * Attempts to download [streamUrl]'s file directly via TDLib into
-     * [outFile]. Returns true only if the TDLib path itself fully handled
-     * the download (success OR a definitive TDLib-side error already
-     * reported via [onError]) — false means "didn't even try, caller should
-     * fall back to the existing HTTP path," which is always what happens
-     * while [TdlibConfig.ENABLED] is false.
+     * [outFile]. Returns true once TDLib has genuinely taken ownership of
+     * this download (success OR a definitive, already-retried TDLib-side
+     * error already reported via [onError]) — false means "this wasn't a
+     * Telegram link / TDLib is off, caller's generic HTTP path handles it,"
+     * which is NOT the Railway-proxy-for-Telegram-media case anymore.
      */
     fun attemptDirectDownload(
         streamUrl: String,
@@ -37,29 +51,32 @@ object TdlibDownloadHelper {
 
         val resolveUrl = TdlibResolveClient.deriveResolveUrl(streamUrl)
         if (resolveUrl == null) {
-            // DIAGNOSTIC (was previously silent): this fires when streamUrl
-            // doesn't contain "/dl/" — happens if the download quality
-            // picker handed us a stream whose `url` isn't Railway's
-            // `/dl/{token}/{id}/{name}` proxy shape at all (e.g. a direct
-            // external/CDN link some sources return instead). Logged here
-            // so it's visible instead of silently falling back.
+            // Genuinely not a Telegram `/dl/{token}/{id}/{name}` proxy URL
+            // at all (e.g. a direct external/CDN link) — the caller's
+            // generic HTTP downloader is the right, and only, path for
+            // this, same as before.
             TdlibDebugState.lastStatus = "TDLib: download skipped (URL not /dl/ shaped): $streamUrl"
             return false
         }
 
         val resolution = try {
             TdlibResolveClient.resolve(resolveUrl)
-        } catch (e: Exception) {
-            // Resolve step itself failed — treat as "didn't attempt" so the
-            // caller's existing HTTP fallback (which uses the original
-            // streamUrl, not TDLib) still gets a clean shot.
-            TdlibDebugState.lastStatus = "TDLib: download resolve failed: ${e.message}"
-            return false
+        } catch (firstError: Exception) {
+            try {
+                TdlibResolveClient.resolve(resolveUrl)
+            } catch (e: Exception) {
+                // Retried once and it's still failing — genuine error, NOT
+                // a signal to fall back to Railway's HTTP proxy for the
+                // actual file bytes.
+                TdlibDebugState.lastStatus = "TDLib: download resolve failed after retry: ${e.message}"
+                onError(e.message ?: "TDLib resolve failed")
+                return true
+            }
         }
 
         return try {
             TdlibClient.ensureConfigLoaded(streamUrl)
-            TdlibDebugState.lastStatus = "TDLib: ACTIVE ✅ (download, not using Railway)"
+            TdlibDebugState.lastStatus = "TDLib: ACTIVE ✅ (download, direct — Railway not used)"
             TdlibClient.downloadFull(
                 chatId = resolution.chatId,
                 msgId = resolution.msgId,
@@ -70,12 +87,11 @@ object TdlibDownloadHelper {
             onDone(outFile)
             true
         } catch (e: Exception) {
-            // A real TDLib download was attempted and it failed — report it
-            // rather than silently falling back here. Unlike streaming,
-            // there's no FallbackDataSource watching downloads, so the
-            // caller needs an explicit signal (per this class's original
-            // contract) instead of a false that implies "never tried."
-            TdlibDebugState.lastStatus = "TDLib: download failed: ${e.message}"
+            // TdlibClient.downloadFull already retried once internally
+            // (clean cache + retry) before this reached us — genuine,
+            // already-retried failure. Report it; never fall back to
+            // Railway's HTTP proxy for the bytes.
+            TdlibDebugState.lastStatus = "TDLib: download failed (after retry): ${e.message}"
             onError(e.message ?: "TDLib direct download failed")
             true
         }

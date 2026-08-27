@@ -4,11 +4,19 @@ package com.suhani.videoplayer
  * A501 — direct phone<->Telegram migration (see
  * a501-direct-streaming-migration-prompt.md).
  *
- * Single on/off switch for the whole TDLib direct-path feature. Everything
- * added by this migration (TdlibDataSource, the download-side TDLib path)
- * checks this flag FIRST and, if false, skips straight to the existing
- * Railway-proxy path — so merging this scaffolding changes NOTHING about
- * current behavior until someone deliberately flips it on.
+ * Single on/off switch for the whole TDLib direct-path feature.
+ *
+ * ROOT-CAUSE FIX (user ask: "Railway ko download aur stream dono se hata
+ * do, only direct hoga"): Telegram-hosted media (any `/dl/{token}/...`
+ * URL) ab hamesha seedha TDLib se hi jaata hai — koi Railway HTTP
+ * byte-proxy fallback nahi hai, na streaming mein (dekho
+ * TelegramRoutingDataSource) na download mein (dekho
+ * TdlibDownloadHelper/NativeDownloadManager). Agar TDLib fail ho, wo khud
+ * apna local cache clear karke ek baar retry karta hai (dekho
+ * TdlibClient.resetFileForRetry) — Railway ki taraf kabhi nahi girta.
+ * (Non-Telegram URLs — local files, external CDN/m3u8 links — waise hi
+ * direct/local rehte hain jaisa pehle the; unka Railway se kabhi lena-dena
+ * nahi tha.)
  *
  * STATUS: the native dependency blocker is gone — libtdjson.so for all
  * four ABIs lives in app/src/main/jniLibs/, with its JNI entry point
@@ -49,33 +57,33 @@ object TdlibConfig {
      */
     const val PER_USER_BOT: Boolean = false
 
-    /** How long to wait for the on-device TDLib path before giving up and
-     *  falling back to the Railway proxy for THIS attempt (used both for
-     *  TdlibDataSource's open()-time probe and each read()'s range-wait).
-     *  Keep short — the fallback should feel instant to the user, not like
-     *  a hang. */
-    const val OPEN_TIMEOUT_MS: Long = 4_000L
+    /** ROOT-CAUSE-2 FIX (Railway hata diya gaya — ab koi HTTP proxy fallback
+     *  hai hi nahi jo isse "safe" bana de agar bahut chhota rakha jaaye).
+     *  Pehle yeh 4s tha kyunki FallbackDataSource ke paas ek safety net
+     *  (Railway) tha — chhota timeout matlab bas jaldi Railway pe gir jaana.
+     *  Ab TDLib hi ekmatra (only) path hai, isliye ise itna hi bada rakha hai ki
+     *  ek genuinely slow-but-working mobile network ko bhi poora mauka mile
+     *  before TdlibClient khud (see resetFileForRetry) cache clear karke
+     *  ek baar retry kare. Used for both TdlibDataSource's open()-time probe
+     *  and each read()'s range-wait. */
+    const val OPEN_TIMEOUT_MS: Long = 8_000L
 
     /** One-time login wait (config fetch + client creation +
      *  setTdlibParameters + checkAuthenticationBotToken). Only paid once
      *  per process lifetime — can afford to be longer than
      *  [OPEN_TIMEOUT_MS] since a slow first login shouldn't need to fail
      *  every stream open behind it forever; subsequent opens reuse the
-     *  already-authenticated client. */
+     *  already-authenticated client.
+     *
+     *  SPEED FIX (user report: "play dabane se pehle 10-15 second rukna
+     *  padta hai"): iska poora cost ab bhi yahi rehta hai, lekin
+     *  [TdlibClient.prewarm] ki wajah se yeh wait ab UI/player setup ke
+     *  SAATH (parallel) chalta hai — jaise hi PlayerActivity ko video_uri
+     *  milta hai, login yahin se shuru ho jaata hai, play dabane tak nahi
+     *  ruka jaata. Isliye asli user-facing delay ab is poore 10s ke bajaye
+     *  sirf "video select karne se play dabane tak" ka jo bhi thoda time
+     *  bacha hai, wahi hai — zyaadatar cases mein ~0. */
     const val AUTH_TIMEOUT_MS: Long = 10_000L
-
-    /** BUG FIX: before this, FallbackDataSource wrapped the very FIRST
-     *  TDLib open() (which pays the one-time [AUTH_TIMEOUT_MS] login cost
-     *  above, plus the remote-config HTTP fetch) in the short
-     *  [OPEN_TIMEOUT_MS] anyway — so a cold login could never actually
-     *  finish before getting cut off and falling back to Railway, every
-     *  single time, no matter how healthy TDLib was. This is the timeout
-     *  used ONLY for that first cold-login attempt (TdlibClient.isAuthReady()
-     *  == false): config fetch (up to ~6s worst case) + the full
-     *  [AUTH_TIMEOUT_MS] login wait + a small buffer for the resolve step
-     *  right after. Once logged in, later opens go back to the short
-     *  [OPEN_TIMEOUT_MS] since there's no more login to wait on. */
-    const val COLD_OPEN_TIMEOUT_MS: Long = 8_000L + AUTH_TIMEOUT_MS
 
     /** How long a full (non-streaming) TDLib download via
      *  [TdlibDownloadHelper] is allowed to run before giving up — much

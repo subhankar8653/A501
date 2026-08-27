@@ -64,6 +64,36 @@ object TdlibClient {
         if (appContext == null) appContext = context.applicationContext
     }
 
+    /** SPEED FIX (user report: "play dabane se pehle 10-15 second rukna
+     *  padta hai"): pehle TDLib login sirf tab shuru hota tha jab ExoPlayer
+     *  khud open() bulaata — matlab poora ~10s login cost seedha play
+     *  dabaane ke baad hi user ko dikhta tha. Ab caller (PlayerActivity)
+     *  isse jitni jaldi ho sake bula sakta hai (video select hote hi, play
+     *  se pehle) — login background thread par UI/player setup ke saath
+     *  parallel chalta hai, taaki play dabane tak client zyaadatar already
+     *  warm mil jaaye. Fire-and-forget aur safe hai baar-baar call karne ke
+     *  liye (ensureConfigLoaded/ensureClient/tdlibParametersSent/
+     *  botTokenSent — sab pehle se hi idempotent guards ke saath hain), so
+     *  agli video select hone par bhi dubara call karna harmless hai. */
+    fun prewarm(streamUrl: String) {
+        if (!TdlibConfig.ENABLED) return
+        Thread(
+            {
+                try {
+                    ensureConfigLoaded(streamUrl)
+                    ensureClient()
+                } catch (e: Exception) {
+                    // Non-fatal — TdlibDataSource ka apna real attempt is
+                    // failure ko dubara try karega aur genuine error surface
+                    // karega agar zaroorat pade. Prewarm ka poora point sirf
+                    // "jaldi shuru karo" hai, "guarantee karo" nahi.
+                    Log.w(TAG, "prewarm() failed (non-fatal, real attempt will retry): ${e.message}")
+                }
+            },
+            "TdlibClient-prewarm",
+        ).apply { isDaemon = true }.start()
+    }
+
     /** Best-effort automatic fallback if [init] was never called explicitly
      *  — reads the current process's Application via the standard
      *  ActivityThread trick (same technique many libraries use to avoid
@@ -119,6 +149,34 @@ object TdlibClient {
     private const val READ_AHEAD_BYTES = 6L * 1024 * 1024 // 6 MB
     private data class DownloadWindow(val start: Long, val end: Long)
     private val activeWindow = ConcurrentHashMap<Int, DownloadWindow>()
+
+    /** CLEAN-RETRY FIX (user ask: "fail ho gaya to sara cache clear karke
+     *  fir se retry karo" — ab ki Railway hata diya gaya hai, yahi harr
+     *  failure ka poora recovery path hai, koi HTTP proxy safety-net nahi
+     *  bacha). Ek fileId ke liye TDLib ka apna partial-download progress
+     *  bhula deta hai (deleteFile — disk se bhi hata deta hai) aur humara
+     *  local window/state tracking bhi reset karta hai, taaki agla attempt
+     *  bilkul saaf offset 0 se shuru ho, kisi stale/corrupt window state
+     *  ko carry na kare. [ensureRangeDownloaded]/[downloadFull] dono isse
+     *  khud-ba-khud ek baar retry ke liye use karte hain. */
+    fun resetFileForRetry(fileId: Int) {
+        activeWindow.remove(fileId)
+        latestFileState.remove(fileId)
+        try {
+            send(
+                JSONObject().apply {
+                    put("@type", "deleteFile")
+                    put("file_id", fileId)
+                },
+            )
+        } catch (e: Exception) {
+            // Best-effort — even if TDLib couldn't/wouldn't delete the local
+            // copy (e.g. never actually got any bytes yet), our own window/
+            // state tracking above is already cleared, which is the part
+            // that actually mattered for a clean retry.
+            Log.w(TAG, "resetFileForRetry: deleteFile cleanup failed for file_id=$fileId (continuing anyway): ${e.message}")
+        }
+    }
 
     @Volatile private var authReadyLatch = CountDownLatch(1)
     @Volatile private var authFailure: String? = null
@@ -388,7 +446,8 @@ object TdlibClient {
     }
 
     /** True once TDLib has logged in (authorizationStateReady) at least once
-     *  this process lifetime. [FallbackDataSource] uses this to know whether
+     *  this process lifetime. [TdlibDataSource]/[TelegramRoutingDataSource]
+     *  use this to know whether
      *  the NEXT open() attempt might still be paying the one-time cold-login
      *  cost (so it should wait [TdlibConfig.AUTH_TIMEOUT_MS]) or whether the
      *  client is already warm (so the short [TdlibConfig.OPEN_TIMEOUT_MS] is
@@ -420,6 +479,19 @@ object TdlibClient {
         val cacheKey = "${chatId}_$msgId"
         messageFileCache[cacheKey]?.let { return it }
 
+        // CLEAN-RETRY FIX: chat/message resolve is a plain RPC round-trip
+        // (no partial-download cache to poison), so a transient network
+        // blip here just needs one plain retry — no [resetFileForRetry]
+        // needed since there's nothing file-related to clean yet.
+        return try {
+            resolveFileAttempt(chatId, msgId, cacheKey)
+        } catch (e: Exception) {
+            Log.w(TAG, "resolveFile failed for chat_id=$chatId msg_id=$msgId, retrying once: ${e.message}")
+            resolveFileAttempt(chatId, msgId, cacheKey)
+        }
+    }
+
+    private fun resolveFileAttempt(chatId: Long, msgId: Long, cacheKey: String): ResolvedFile {
         // BUG FIX #8 (explains the "404: Not Found" that replaced "400:
         // Chat not found" once bug #7's getChat() fix landed): the msgId we
         // get back from Railway's resolve step is a plain Bot-API-style
@@ -480,7 +552,22 @@ object TdlibClient {
      *  full downloads. */
     fun ensureRangeDownloaded(fileId: Int, start: Long, length: Long, timeoutMs: Long): String {
         ensureReady()
+        // CLEAN-RETRY FIX (see [resetFileForRetry] doc comment) — this is
+        // the hot path for both streaming reads and download-probe, so it's
+        // the one most likely to hit a genuine transient stall. One clean
+        // retry here, with cache cleared in between, replaces what used to
+        // be "fail this attempt, let FallbackDataSource silently pay
+        // Railway's bandwidth instead."
+        return try {
+            ensureRangeDownloadedAttempt(fileId, start, length, timeoutMs)
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureRangeDownloaded failed for file_id=$fileId range [$start, ${start + length}), clearing cache and retrying once: ${e.message}")
+            resetFileForRetry(fileId)
+            ensureRangeDownloadedAttempt(fileId, start, length, timeoutMs)
+        }
+    }
 
+    private fun ensureRangeDownloadedAttempt(fileId: Int, start: Long, length: Long, timeoutMs: Long): String {
         val requestedEnd = start + length
         val window = activeWindow[fileId]
         // Only (re-)issue downloadFile when this request falls outside the
@@ -546,12 +633,29 @@ object TdlibClient {
      *  way), then copies the finished file to [outFile]. */
     fun downloadFull(chatId: Long, msgId: Long, outFile: File, timeoutMs: Long, onProgress: (progressPct: Int, sizeBytes: Long) -> Unit) {
         val resolved = resolveFile(chatId, msgId)
-        val total = resolved.totalSize
         ensureReady()
+        // CLEAN-RETRY FIX (see [resetFileForRetry] doc comment, and user
+        // ask: "Railway ko download se poori tarah hata do... fail ho gaya
+        // to sara cache clear karke fir se retry karo"): pehle ek failure
+        // yahan simply upar (NativeDownloadManager) tak throw ho jaata,
+        // jahan se Railway ke asli /dl/ proxy se poora file phir se HTTP par
+        // download hota — Telegram bandwidth ki jagah Railway ki. Ab
+        // failure ke baad ek clean retry yahin ho jaata hai; Railway ka
+        // koi role nahi bacha.
+        try {
+            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, onProgress)
+        } catch (e: Exception) {
+            Log.w(TAG, "downloadFull failed for file_id=${resolved.fileId}, clearing cache and retrying once: ${e.message}")
+            resetFileForRetry(resolved.fileId)
+            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, onProgress)
+        }
+    }
+
+    private fun downloadFullAttempt(fileId: Int, total: Long, outFile: File, timeoutMs: Long, onProgress: (progressPct: Int, sizeBytes: Long) -> Unit) {
         send(
             JSONObject().apply {
                 put("@type", "downloadFile")
-                put("file_id", resolved.fileId)
+                put("file_id", fileId)
                 put("offset", 0)
                 put("limit", 0) // 0 = no limit — download the whole file
                 put("priority", 32)
@@ -561,7 +665,7 @@ object TdlibClient {
 
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val local = latestFileState[resolved.fileId]?.optJSONObject("local")
+            val local = latestFileState[fileId]?.optJSONObject("local")
             if (local != null) {
                 val prefix = local.optLong("downloaded_prefix_size", 0L)
                 if (total > 0) onProgress(((prefix * 100) / total).toInt(), prefix)
@@ -574,6 +678,6 @@ object TdlibClient {
             }
             Thread.sleep(150)
         }
-        throw TdlibException("Timed out downloading file_id=${resolved.fileId}")
+        throw TdlibException("Timed out downloading file_id=$fileId")
     }
 }

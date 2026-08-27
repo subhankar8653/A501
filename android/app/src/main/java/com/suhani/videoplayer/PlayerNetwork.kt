@@ -70,21 +70,25 @@ object PlayerNetwork {
     }
 
     // A501 — direct phone<->Telegram migration (see
-    // a501-direct-streaming-migration-prompt.md). This is the single call
-    // site PlayerActivity uses to build its DataSource.Factory, so wrapping
-    // it here (instead of touching PlayerActivity.kt) is enough to put the
-    // on-device TDLib path in front of the existing Railway-proxy path for
-    // the WHOLE app, native-only, with zero risk to the proxy path itself.
+    // a501-direct-streaming-migration-prompt.md).
     //
-    // When TdlibConfig.ENABLED is false (default), FallbackDataSource always
-    // falls straight through to the exact same cache-backed HTTP factory
-    // this returned before this migration — behavior is unchanged until the
-    // flag is deliberately turned on with a real TDLib SDK wired in.
+    // ROOT-CAUSE FIX (user ask: "Railway ko stream se poori tarah hata do,
+    // only direct hoga"): this used to hand ExoPlayer a FallbackDataSource
+    // that tried TDLib and, on ANY failure/timeout, silently opened this
+    // same cache-backed HTTP factory pointed at Railway's `/dl/` proxy — so
+    // every TDLib hiccup quietly cost Railway bandwidth. Now
+    // TelegramRoutingDataSource decides UP FRONT (by URL shape) which path
+    // a given media item takes and never switches mid-request: genuine
+    // Telegram `/dl/` links always go straight through TDLib (with its own
+    // internal clean-cache-and-retry — see TdlibClient.resetFileForRetry),
+    // and this cache-backed HTTP factory is now only ever reached for
+    // non-Telegram content (local downloaded files, direct external
+    // CDN/m3u8 links) — which was never the Railway-bandwidth path anyway.
     fun dataSourceFactory(context: Context): DataSource.Factory {
-        val proxyFallback = cacheBackedHttpFactory(context)
-        return FallbackDataSource.Factory(
+        val localOrExternal = cacheBackedHttpFactory(context)
+        return TelegramRoutingDataSource.Factory(
             primaryFactory = TdlibDataSource.Factory(),
-            secondaryFactory = proxyFallback,
+            secondaryFactory = localOrExternal,
         )
     }
 }
