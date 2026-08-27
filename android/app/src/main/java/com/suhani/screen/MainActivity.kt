@@ -62,6 +62,7 @@ import com.suhani.videoplayer.SharedPlayerHolder
 import com.suhani.videoplayer.HistoryStore
 import com.suhani.videoplayer.HistoryEntry
 import com.suhani.videoplayer.GesturePrefs
+import com.suhani.videoplayer.TdlibClient
 import com.suhani.videoplayer.AmbientGlowView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.json.JSONArray
@@ -911,6 +912,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
     fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
+        // SPEED FIX (buffering still 10s+ dikh raha tha): TdlibClient.prewarm()
+        // already exist karta tha, lekin sirf PlayerActivity (fullscreen open)
+        // ise bulata tha — jabki user ka SABSE PEHLA tap (video card dabana)
+        // yahin mountInlinePlayer() se hota hai, aur wahi actual ExoPlayer
+        // banaata/khol ta hai jo TDLib login ka poora ~10s cost synchronously
+        // pay karta hai. Matlab jo user sabse pehle dekhta hai wahi hamesha
+        // full delay leta tha, chahe baad mein fullscreen kholne par fast lage.
+        // Fix: yahan bhi, sabse pehli line par hi (dedupe check se bhi pehle,
+        // taaki spurious duplicate mount calls par bhi harmless rahe — dono
+        // functions idempotent hain), same prewarm shuru kar do — login ab
+        // inline player ke UI/view-setup ke saath parallel chalta hai.
+        TdlibClient.init(applicationContext)
+        TdlibClient.prewarm(uri)
+
         // Overlay pehle se zinda hai AUR React ya to (a) bilkul wahi URI dobara
         // bhej raha hai jo pichli baar bheja tha (spurious/duplicate mount call —
         // React ko native-side quality-switch pehle pata nahi chalta tha), YA (b)
