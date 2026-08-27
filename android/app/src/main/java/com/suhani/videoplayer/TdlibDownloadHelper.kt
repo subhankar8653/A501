@@ -30,20 +30,36 @@ object TdlibDownloadHelper {
         onDone: (file: File) -> Unit,
         onError: (message: String) -> Unit,
     ): Boolean {
-        if (!TdlibConfig.ENABLED) return false
+        if (!TdlibConfig.ENABLED) {
+            TdlibDebugState.lastStatus = "TDLib: download skipped (TdlibConfig.ENABLED=false)"
+            return false
+        }
 
-        val resolveUrl = TdlibResolveClient.deriveResolveUrl(streamUrl) ?: return false
+        val resolveUrl = TdlibResolveClient.deriveResolveUrl(streamUrl)
+        if (resolveUrl == null) {
+            // DIAGNOSTIC (was previously silent): this fires when streamUrl
+            // doesn't contain "/dl/" — happens if the download quality
+            // picker handed us a stream whose `url` isn't Railway's
+            // `/dl/{token}/{id}/{name}` proxy shape at all (e.g. a direct
+            // external/CDN link some sources return instead). Logged here
+            // so it's visible instead of silently falling back.
+            TdlibDebugState.lastStatus = "TDLib: download skipped (URL not /dl/ shaped): $streamUrl"
+            return false
+        }
+
         val resolution = try {
             TdlibResolveClient.resolve(resolveUrl)
         } catch (e: Exception) {
             // Resolve step itself failed — treat as "didn't attempt" so the
             // caller's existing HTTP fallback (which uses the original
             // streamUrl, not TDLib) still gets a clean shot.
+            TdlibDebugState.lastStatus = "TDLib: download resolve failed: ${e.message}"
             return false
         }
 
         return try {
             TdlibClient.ensureConfigLoaded(streamUrl)
+            TdlibDebugState.lastStatus = "TDLib: ACTIVE ✅ (download, not using Railway)"
             TdlibClient.downloadFull(
                 chatId = resolution.chatId,
                 msgId = resolution.msgId,
@@ -59,6 +75,7 @@ object TdlibDownloadHelper {
             // there's no FallbackDataSource watching downloads, so the
             // caller needs an explicit signal (per this class's original
             // contract) instead of a false that implies "never tried."
+            TdlibDebugState.lastStatus = "TDLib: download failed: ${e.message}"
             onError(e.message ?: "TDLib direct download failed")
             true
         }
