@@ -61,6 +61,7 @@ import com.suhani.videoplayer.PlayerActivity
 import com.suhani.videoplayer.SharedPlayerHolder
 import com.suhani.videoplayer.HistoryStore
 import com.suhani.videoplayer.HistoryEntry
+import com.suhani.videoplayer.CorruptStore
 import com.suhani.videoplayer.GesturePrefs
 import com.suhani.videoplayer.TdlibClient
 import com.suhani.videoplayer.AmbientGlowView
@@ -256,6 +257,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var audioManuallyDisabled = false
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
+
+    // BUG FIX (user report: "kafi baar video inline mein play nahi hota, fullscreen
+    // mein try karo to chal jaata hai, kaafi videos aise hi hote hain"): inlineErrorListener
+    // pehle sirf ek Toast dikha kar user ko khud fullscreen kholne ko bolta tha — poora
+    // decoder-escalation aur I/O-retry recovery (jo neeche buildInlineExoPlayer() /
+    // rebuildInlinePlayer() ke through pehle se hi possible tha) sirf PlayerActivity mein
+    // wire tha, chhote player mein kabhi call hi nahi hota tha. Isiliye HW decoder jis bhi
+    // track/codec ko handle nahi kar paata (jo fullscreen mein khud-ba-khud HW+ ya SW par
+    // switch ho jaata) — inline mein seedha error ban jaata, aur user ko fullscreen mein
+    // (jahan same video ab HW+/SW ki wajah se chal jaata) manually jaana padta. Fix: neeche
+    // wale fields + onPlayerError() rebuild ab fullscreen jaisa hi auto-recovery karte hain.
+    private var inlineIoRetryCount = 0
+    private val inlineMaxIoRetries = 2
+    private val inlineErrorRetryHandler = Handler(Looper.getMainLooper())
+    private var inlineDecoderButtonRef: TextView? = null
+
     private var inlineLongPressSpeedActive = false
     private var inlineSpeedBeforeLongPress = 1f
 
@@ -442,6 +459,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // ek hi cheez dikhti hai, jhatka-free premium feel.
         override fun onPlaybackStateChanged(playbackState: Int) {
             setInlineBuffering(playbackState == Player.STATE_BUFFERING)
+            // I/O retry counter ko sirf ek baar sahi-me READY hone par reset karo,
+            // taaki dobara koi transient glitch aaye to fresh 2 retries milein.
+            if (playbackState == Player.STATE_READY) {
+                inlineIoRetryCount = 0
+            }
         }
     }
 
@@ -479,21 +501,88 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    // Bug fix: chhote (inline) player mein pehle koi onPlayerError handling hi nahi
-    // thi — fullscreen (PlayerActivity) network/decoder/format errors par proper
-    // fallback + message deta hai, lekin yahan stream fail hone par player bas
-    // silently ruk jaata (black/frozen frame), user ko pata hi nahi chalta kyun.
-    // Poora fallback-logic (decoder switch, quality retry waghera) yahan dobara
-    // banana overkill hai — us robust handling ke liye already fullscreen hai —
-    // isliye yahan minimum zaroori cheez: user ko batao, aur poore-screen mein
-    // (jahan asli recovery/fallback hai) khud khulne ka option do.
+    // BUG FIX (see inlineIoRetryCount/inlineDecoderButtonRef comment upar): ab fullscreen
+    // PlayerActivity.playerListener.onPlayerError() jaisa hi asli recovery karte hain —
+    // sirf ek generic Toast dikha kar chhodne ke bajaye. Decoder-related errors par khud-
+    // ba-khud agla zyada-compatible decoder mode try karte hain (HW -> HW+ -> SW), usi
+    // position se resume karte hue (rebuildInlinePlayer() already yeh handle karta tha,
+    // bas kabhi trigger hi nahi hota tha). Container/manifest corrupt files ko fullscreen
+    // jaisa hi CorruptStore mein tag karte hain. Momentary I/O/network glitches ko 1-2 baar
+    // chup-chaap retry karte hain. Sirf teeno decoder mode fail ho jaane par, ya genuinely
+    // corrupt file par, user ko batate hain aur fullscreen (jahan poori chapter/subtitle-
+    // auto-search recovery hai) mein try karne ka sujhaav dete hain.
     private val inlineErrorListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            android.widget.Toast.makeText(
-                this@MainActivity,
-                "Video play nahi ho paya — fullscreen mein try karein",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val player = inlinePlayer ?: return
+            val resumePos = player.currentPosition
+
+            when (error.errorCode) {
+                androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES -> {
+                    if (decoderMode < 2) {
+                        decoderMode += 1
+                        inlineDecoderButtonRef?.text = when (decoderMode) {
+                            1 -> "HW+"
+                            else -> "SW"
+                        }
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Is track ke liye HW decoder support nahi tha, software decoder try kiya jaa raha hai\u2026",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        rebuildInlinePlayer()
+                    } else {
+                        CorruptStore.markCorrupt(this@MainActivity, inlineUri, error.errorCodeName)
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Ye file is device par play nahi ho paa rahi: ${error.errorCodeName}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
+                    CorruptStore.markCorrupt(this@MainActivity, inlineUri, error.errorCodeName)
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "Ye file corrupt/damaged lag rahi hai: ${error.errorCodeName}",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> {
+                    if (inlineIoRetryCount < inlineMaxIoRetries) {
+                        inlineIoRetryCount += 1
+                        inlineErrorRetryHandler.postDelayed({
+                            val p = inlinePlayer ?: return@postDelayed
+                            p.prepare()
+                            p.seekTo(resumePos)
+                            p.playWhenReady = true
+                        }, 800L)
+                    } else {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Video play nahi ho paya (network/I-O error) — fullscreen mein try karein",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                else -> {
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "Video play nahi ho paya — fullscreen mein try karein",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
     }
 
@@ -996,6 +1085,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             inlineQualityButtonRef = qualityButton
             inlineBufferingIndicatorRef = bufferingIndicator
+            inlineDecoderButtonRef = decoderButton
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
