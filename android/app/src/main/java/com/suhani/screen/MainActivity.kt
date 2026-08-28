@@ -319,6 +319,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
     // browser history state par bharosa nahi.
     private var pipReturnPath: String? = null
+    // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): jab tak PiP-
+    // expand ka navigate() genuinely safal na ho jaaye, target path yahan
+    // yaad rakha jaata hai — taaki `onPageFinished()` bhi (agar is beech
+    // WebView reload ho jaaye) isi target par retry kar sake, is Handler-based
+    // retry loop se poori tarah independent ek dusra safety-net ban kar.
+    private var pendingPipReturnPath: String? = null
+    private val pipReturnRetryHandler = Handler(Looper.getMainLooper())
     // BUG FIX (user report + screenshot: "expand ke baad video Home page ke
     // upar hi atka reh jaata hai, apni jagah par nahi"): neeche wale
     // onActivityResult ka "normal return" branch pehle HAMESHA turant
@@ -745,6 +752,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
                 fadeOutLoadingView()
+                // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): agar
+                // ek PiP-expand restore abhi bhi pending hai (target set hai)
+                // JAB WebView genuinely ek naya page load poora karti hai (jaise
+                // background renderer-restart ke baad ka fresh reload), yahan
+                // se bhi ek turant fresh attempt kar do — is Handler-based retry
+                // loop ke upar/alawa ek dusra, independent safety-net, taaki
+                // "React abhi load hi ho raha tha" wali exact timing miss na ho.
+                pendingPipReturnPath?.let { attemptPipReturnNavigate(it, attemptsLeft = 13) }
             }
 
             // BUG FIX (user report: "app ke Home mein PiP ki wajah se video
@@ -2308,6 +2323,35 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
+    /** BUG FIX (user report + screenshot: "PiP expand karne par watch page ki
+     *  jagah app ke Home tab par khul jaata hai"): dekho onActivityResult() ke
+     *  restore-path wale comment mein poori wajah. Yeh helper
+     *  `window.__suhaniPipReturnTo(path)` ko call karta hai aur JS se
+     *  confirm leta hai ki bridge function genuinely mila/chala ya nahi
+     *  (function-not-yet-registered hone par JS `false` return karta hai).
+     *  Agar abhi safal nahi hua (React abhi WebView reload/restart ke baad
+     *  poora mount nahi hua), 150ms baad khud ko dobara call karta hai — kul
+     *  ~13 attempts (~2 second) tak, jab tak safal na ho jaaye ya `unmount`/
+     *  naya PiP session shuru na ho jaaye (dekho `pendingPipReturnPath` check
+     *  — agar target beech mein badal/clear ho jaaye to purana retry chup-
+     *  chaap ruk jaata hai). */
+    private fun attemptPipReturnNavigate(path: String, attemptsLeft: Int) {
+        if (pendingPipReturnPath != path) return // koi naya session/target aa chuka, yeh stale retry hai
+        webView.evaluateJavascript(
+            "(function(){ if (window.__suhaniPipReturnTo) { window.__suhaniPipReturnTo(${JSONObject.quote(path)}); return true; } return false; })()",
+        ) { result ->
+            val succeeded = result == "true"
+            if (succeeded || attemptsLeft <= 0) {
+                if (pendingPipReturnPath == path) pendingPipReturnPath = null
+            } else {
+                pipReturnRetryHandler.postDelayed(
+                    { attemptPipReturnNavigate(path, attemptsLeft - 1) },
+                    150L
+                )
+            }
+        }
+    }
+
     // Bug fix (dekho `pipReturnPath` field ka comment): WebView ke current
     // loaded URL (jo SPA route ke saath hamesha in-sync rehta hai — React
     // Router BrowserRouter asli address bar URL hi use karta hai) se sirf
@@ -2446,10 +2490,37 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val needsPipReturnNavigate = pipTarget != null
             pipSessionActive = false
             if (needsPipReturnNavigate) {
-                webView.evaluateJavascript(
-                    "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
-                    null
-                )
+                // BUG FIX (user report: "PiP expand karne par watch page ki
+                // jagah app ke Home tab par khul jaata hai"): pehle yahan
+                // sirf ek EK-SHOT evaluateJavascript() call hoti thi, bina
+                // yeh confirm kiye ki `window.__suhaniPipReturnTo` us waqt
+                // genuinely maujood/ready hai ya nahi. Real PiP floating
+                // rehte waqt MainActivity poora paused rehta hai — kai
+                // devices par is lambe background period mein Android
+                // WebView ka SEPARATE renderer process (jahan poora React
+                // app chalta hai) memory-pressure mein reclaim/restart kar
+                // deta hai, jabki yeh Activity khud zinda rehti hai (dekho
+                // upar `onRenderProcessGone()` ka comment — bilkul isi tarah
+                // ka ek pehle se documented case). Us case mein WebView
+                // reload hoke seedha default/Home route par khulta hai, aur
+                // React ko is bridge function ko dobara register karne mein
+                // thoda waqt lagta hai — agar hamara evaluateJavascript() us
+                // chhoti window mein hi fire ho jaaye, `window.__suhaniPipReturnTo`
+                // abhi undefined hota hai, poora call silently no-op ho
+                // jaata hai, aur user Home page par hi phasa reh jaata hai —
+                // bilkul jaisa report hua.
+                //
+                // Fix: injected JS ab batata hai ki call genuinely hua ya
+                // nahi (return true/false), aur agar nahi hua to hum khud
+                // thodi der baad (150ms) dobara try karte hain — kai baar
+                // tak (2 second tak), jab tak ya to safal ho jaaye ya time-out
+                // ho jaaye. `onPageFinished()` mein bhi ek matching retry hai
+                // (dekho wahan ka comment) — agar is beech WebView genuinely
+                // reload ho jaaye, wahi fresh page-load ke turant baad ek
+                // aur koshish karta hai, is Handler-based retry loop ke
+                // upar/alawa ek dusra independent safety-net.
+                pendingPipReturnPath = pipTarget
+                attemptPipReturnNavigate(pipTarget!!, attemptsLeft = 13)
             } else if (didNavigateBackForPip && webView.canGoForward()) {
                 // Fallback: agar kisi wajah se watch-page path capture nahi ho
                 // paya (bahut purana WebView state, ya url null) lekin humne
@@ -2514,6 +2585,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // rect ke saath dikhayega. Ek safety-net timeout bhi laga do — agar
             // kisi wajah se woh call kabhi na aaye, video hamesha ke liye chhupa
             // na reh jaaye.
+            // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment — "PiP
+            // expand karne par Home khul jaata hai"): yeh timeout pehle 1500ms
+            // tha, jabki naya retry-with-confirmation mechanism khud hi poore
+            // ~2000ms (13 attempts * 150ms) tak try karta rehta hai jab tak
+            // WebView/React reload ke baad ready na ho. Agar yeh timeout usse
+            // PEHLE hi fire ho jaata, overlay Home page ke oopar hi (rect update
+            // aane se pehle) dikha diya jaata — bilkul wahi symptom jo report
+            // hua. Fix: is timeout ko retry-window se aaraam se zyada (2600ms)
+            // kar diya, taaki genuine retry ko poora waqt mile safal hone ka.
             awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
             if (awaitingRectAfterPipReturn) {
                 val timeoutRunnable = Runnable {
@@ -2523,7 +2603,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     }
                 }
                 awaitingRectTimeoutRunnable = timeoutRunnable
-                awaitingRectHandler.postDelayed(timeoutRunnable, 1500L)
+                awaitingRectHandler.postDelayed(timeoutRunnable, 2600L)
             } else {
                 showInlineOverlayWithFade()
             }
