@@ -5,6 +5,9 @@ package com.suhani.videoplayer
 // import zaroori hai.
 import com.suhani.screen.R
 
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,8 +16,10 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Icon
 import android.media.MediaScannerConnection
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
@@ -28,6 +33,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Rational
 import android.view.Gravity
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
@@ -117,29 +123,167 @@ class PlayerActivity : AppCompatActivity() {
     private var currentLoadedUri: String? = null
 
     companion object {
-        // (no PiP-specific broadcast actions needed anymore — real Android
-        // system Picture-in-Picture hata diya gaya hai; sirf background-play
-        // notification ka apna ACTION_PAUSE_PLAYBACK reh gaya hai, dekho neeche.)
+        // YouTube jaisa "background/floating mini player" feature: back dabate
+        // hi Android ke native Picture-in-Picture (PiP) mode mein video chota
+        // hoke floating window mein chalta rehta hai. Ye actions PiP window ke
+        // apne buttons (system overlay, RemoteAction) ke liye hain — PiP ke
+        // andar app ko normal touch/gesture events nahi milte (Android system
+        // hi us chhote floating window ka touch handle karta hai: tap se expand,
+        // drag se move), isliye "hold to 2x" / "double-tap 10s skip" jaisे real
+        // gestures PiP ke andar possible nahi hain. In RemoteAction buttons se
+        // wahi kaam ho jaata hai: Rewind10 / 2x toggle / Forward10 / Play-Pause.
+        private const val ACTION_PIP_PLAY_PAUSE = "com.suhani.videoplayer.ACTION_PIP_PLAY_PAUSE"
+        private const val ACTION_PIP_REWIND = "com.suhani.videoplayer.ACTION_PIP_REWIND"
+        private const val ACTION_PIP_FORWARD = "com.suhani.videoplayer.ACTION_PIP_FORWARD"
+        private const val ACTION_PIP_SPEED_TOGGLE = "com.suhani.videoplayer.ACTION_PIP_SPEED_TOGGLE"
     }
 
-    // Real Android system Picture-in-Picture (enterPictureInPictureMode /
-    // PictureInPictureParams) is app se poori tarah hata diya gaya hai — usmein
-    // "PiP expand karne par Home screen khul jaata hai" jaisi fragile/crashy
-    // behavior thi. Iski jagah ab "shrink"/back/swipe-down triggers seedha
-    // shrinkToMiniPlayer() call karte hain, jo bas is Activity ko finish() karta
-    // hai — MainActivity apna already-chalta hua in-app floating mini-player
-    // (chhota box, bottom-right corner, WebView content ke oopar) khud dikha
-    // deta hai. Dekho MainActivity.enterFloatingMiniPlayer().
-    private var wantsMiniPlayerOnFinish = false
+    private var pipSpeedBoosted = false
+    // Bug fix (PiP shrink animation ke shuru mein black frame ka flash): dekho
+    // enterPipWhenFrameReady() ka comment neeche.
+    private var pipEntryFrameListener: Player.Listener? = null
 
-    // Background-play notification (screen off/app switched ke waqt bhi audio
-    // continue) ke "Stop" button ke liye — dekho BackgroundPlaybackService.
-    private var bgReceiverRegistered = false
-    private val bgPlaybackActionReceiver = object : BroadcastReceiver() {
+    // Bug fix (PiP band karne ke baad black screen + audio chalte rehna): pehle
+    // "isFinishing" akela hi signal tha ye decide karne ke liye ki player ko
+    // pause karna hai ya nahi — lekin wahi signal do bilkul alag cases mein
+    // aata hai: (1) normal back-navigation jab usingSharedPlayer hai (yahan
+    // MainActivity turant onActivityResult() mein player wapas le leta hai,
+    // isliye yahan chhedna nahi chahiye), aur (2) system PiP window ka "X"/
+    // swipe-away close (yahan bhi MainActivity turant player wapas le lega,
+    // BAS agar app ke bahar / kisi doosre app mein PiP band ki gayi hai to
+    // audio background mein leak na ho, isliye pause zaroor karo).
+    // Fix: track karo ki hum abhi-abhi real PiP mode mein the ya nahi — agar
+    // haan, to "false + isFinishing" callback ka matlab hai PiP genuinely band
+    // hui hai (X ya swipe se): player ko turant pause karo (audio-leak na ho),
+    // LEKIN release/SharedPlayerHolder-clear MAT karo (dekho niche wala
+    // onPictureInPictureModeChanged() ka comment — release karne se MainActivity
+    // ko naya ExoPlayer banana padta, jisse black-screen/buffering dikhti thi).
+    private var wasInRealPipMode = false
+    // finish() ke time par read hone wala stable snapshot — dekho
+    // onPictureInPictureModeChanged() ka comment ("X dabane par cut nahi hota").
+    private var pipCloseFlagForResult = false
+    // PiP mein jaate waqt playback state ka snapshot — PiP-se-fullscreen
+    // restore par forcibly re-assert karne ke liye (audio-focus-pause bug fix).
+    private var pipEntryWasPlaying = false
+    // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): MainActivity se
+    // enter_pip_immediately=true ke saath aane par, chhote inline player ka EXACT
+    // on-screen rect (pip_src_* extras) yahan store hota hai — pehli hi real PiP
+    // entry ke liye buildPipParams() isi rect ko sourceRectHint banata hai (poori-
+    // screen wale playerView rect ki jagah), taaki system ka shrink animation
+    // seedha usi chhoti jagah se shuru ho jahan video pehle se dikh raha tha. Ek
+    // hi baar consume hota hai — tryEnterPipOnBack() call ke turant baad null kar
+    // diya jaata hai, taaki baad ki (back-button/swipe se) PiP entries hamesha
+    // live fullscreen rect hi use karein.
+    private var pendingImmediatePipSourceRect: Rect? = null
+    // Bug fix (user report): jab "normal" (inline) player se turant-PiP banaya
+    // gaya ho (enter_pip_immediately), aur user us PiP window ko tap karke
+    // expand kare, to Android bas is Activity ko fullscreen mein wapas la deta
+    // hai — matlab user ko galti se poora FULLSCREEN player dikhta tha, jabki
+    // yeh PiP kabhi genuinely "fullscreen dekhi gayi" video thi hi nahi, sirf
+    // normal/inline player se seedhi PiP mein gayi thi. Yeh flag track karta hai
+    // ki iss session ki PiP inline se aayi thi — expand hote hi (onPictureIn-
+    // PictureModeChanged, isFinishing=false wala case) hum seedha finish() kar
+    // dete hain taaki control MainActivity ko wapas mile aur wahi NORMAL
+    // (inline) player dobara dikhe — bilkul waisi hi jaisi PiP se pehle thi.
+    private var pipOriginFromInline = false
+    // onPictureInPictureModeChanged() mein wasInRealPipMode already false ho
+    // chuka hota hai jab tak onDestroy() chalta hai (dono alag callbacks hain,
+    // life-cycle mein pehla dusre se pehle fire hota hai) — isliye onDestroy()
+    // tak "yeh genuine PiP close tha" wala fact yaad rakhne ke liye alag,
+    // longer-lived flag chahiye.
+    private var releasePlayerFullyOnDestroy = false
+    // Jab genuine PiP close (X/swipe) par upar wala fix player ko force-pause
+    // karta hai (background audio-leak rokne ke liye), wahi "playWhenReady"
+    // value niche finish() ke setResult() mein bhi chali jaati thi — matlab
+    // MainActivity ko galat sandesh milta "video pause thi", aur PiP band
+    // karne ke baad wapas app kholne par inline player play hi nahi hota tha
+    // (user maang raha hai: usi duration se play hona chahiye, na ki paused).
+    // Yeh field asli "PiP band hone se pehle video chal rahi thi ya nahi"
+    // yaad rakhta hai, taaki finish() sahi resume_playing value bhej sake.
+    private var resumePlayingIntentOverride: Boolean? = null
+
+    // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut nahi
+    // hota, video kahin na kahin chalta reh jaata hai"): saari pichli koshishein
+    // system ke `isFinishing` flag par depend karti thi, jo humare control mein
+    // nahi hai aur kai devices/OEM builds par turant (ya kabhi bhi) reliably
+    // settle nahi hota — isliye ek chhoti race window mein galat decision
+    // ("close" ki jagah "expand") le liya jaata tha, aur ek baar galat decision
+    // lene ke baad (controls wapas dikha diye / playback resume kar diya /
+    // galat result extras ke saath finish() bhi ho chuka) koi baad ka watchdog
+    // usko theek nahi kar sakta tha.
+    //
+    // Naya approach: `isFinishing` per bharosa hi mat karo. Iski jagah Android
+    // khud jo DO GUARANTEED, ordering-safe lifecycle signal deta hai unhi par
+    // bharosa karo:
+    //   - Genuine "tap to expand": Activity hamesha wapas RESUMED state mein
+    //     aati hai -> onResume() zaroor call hota hai.
+    //   - Genuine "X"/swipe close: Activity kabhi RESUMED nahi hoti, seedha
+    //     onStop() (phir onDestroy()) par chali jaati hai -> onResume() KABHI
+    //     call nahi hota.
+    // `pendingPipExitDecision` PiP se bahar aate hi true set hota hai, aur
+    // jo bhi lifecycle callback PEHLE genuinely fire ho (onResume ya onStop),
+    // wahi is flag ko consume karke sahi faisla leta hai — koi timer/race nahi.
+    private var pendingPipExitDecision = false
+
+    // BUG FIX (user report — "app mein PiP ka X dabane par bhi background
+    // audio chalta rehta hai", website jaisa nahi): upar wala poora
+    // `pendingPipExitDecision`/`isFinishing` based mechanism kai real devices
+    // par bhi fail hota hai — kuch OEM/launchers par system PiP window ka "X"
+    // dabane par Android `isFinishing` ko turant (ya kabhi bhi, is Activity ke
+    // `onStop()` fire hone tak) `true` set hi nahi karta; woh sirf Activity ko
+    // "stopped" kar deta hai aur baad mein kisi aur waqt destroy karta hai. Us
+    // case mein `onStop()` ka neeche wala `isFinishing`-based fallback bhi
+    // kabhi trigger nahi hota, isliye code use "abhi bhi PiP mein hai (bas
+    // covered/backgrounded)" samajh kar `BackgroundPlaybackService` start kar
+    // deta — audio backgroud mein bajta reh jaata hai.
+    //
+    // User confirm kar chuka hai ki background-continue (jaise screen-lock par
+    // bhi chalte rehna) koi zaroori feature nahi hai — PiP band (X se) hote hi
+    // turant SAB band ho jaana chahiye. Isliye ab `isFinishing` par bharosa
+    // hataakar ek simple, reliable time-based signal use karte hain: agar
+    // real PiP window kam se kam ek chhota grace-period (taaki PiP mein
+    // ABHI-ABHI enter hone par kuch launchers jo turant ek spurious/false
+    // `onStop()` fire kar dete hain, unse bacha rahe — dekho onStop() ka
+    // comment) se zyada der se open thi, aur is beech Activity kabhi
+    // `onResume()` (= genuine expand) tak nahi pahunchi, to agla bhi
+    // `onStop()` seedha genuine "X"/swipe close maana jaata hai — `isFinishing`
+    // ki koi shart nahi.
+    private var pipEnteredAtMs = 0L
+    private val PIP_CLOSE_GRACE_MS = 350L
+
+    private var pipReceiverRegistered = false
+    private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!::player.isInitialized) return
-            if (intent?.action == BackgroundPlaybackService.ACTION_PAUSE_PLAYBACK) {
-                player.playWhenReady = false
+            when (intent?.action) {
+                ACTION_PIP_PLAY_PAUSE -> {
+                    player.playWhenReady = !player.playWhenReady
+                }
+                ACTION_PIP_REWIND -> {
+                    player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+                }
+                ACTION_PIP_FORWARD -> {
+                    val dur = player.duration
+                    val target = player.currentPosition + 10_000
+                    player.seekTo(if (dur > 0) target.coerceAtMost(dur) else target)
+                }
+                ACTION_PIP_SPEED_TOGGLE -> {
+                    pipSpeedBoosted = !pipSpeedBoosted
+                    player.playbackParameters = PlaybackParameters(if (pipSpeedBoosted) 2f else 1f)
+                }
+                // Bug fix: "Background Play" notification ka "Stop" button pehle sirf
+                // notification/service hata deta tha, ExoPlayer chalta rehta tha. Ab
+                // BackgroundPlaybackService yahan yeh broadcast bhejta hai jise sunkar
+                // hum player ko genuinely pause karte hain.
+                BackgroundPlaybackService.ACTION_PAUSE_PLAYBACK -> {
+                    player.playWhenReady = false
+                }
+                else -> return
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    setPictureInPictureParams(buildPipParams().build())
+                } catch (_: Exception) {}
             }
         }
     }
@@ -687,16 +831,20 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_player)
         hideSystemBars()
 
-        val bgFilter = IntentFilter().apply {
+        val pipFilter = IntentFilter().apply {
+            addAction(ACTION_PIP_PLAY_PAUSE)
+            addAction(ACTION_PIP_REWIND)
+            addAction(ACTION_PIP_FORWARD)
+            addAction(ACTION_PIP_SPEED_TOGGLE)
             addAction(BackgroundPlaybackService.ACTION_PAUSE_PLAYBACK)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(bgPlaybackActionReceiver, bgFilter, Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(pipActionReceiver, pipFilter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(bgPlaybackActionReceiver, bgFilter)
+            registerReceiver(pipActionReceiver, pipFilter)
         }
-        bgReceiverRegistered = true
+        pipReceiverRegistered = true
 
         playerView = findViewById(R.id.playerView)
         playerContainer = findViewById(R.id.playerContainer)
@@ -839,7 +987,21 @@ class PlayerActivity : AppCompatActivity() {
 
         abHandler.post(abRunnable)
         // Bug fix ("badi wali screen khulti hai fir PiP hoti hai" jhatka, part 2):
-        showAllControls()
+        // pehle yahan hamesha showAllControls() call hota tha — chahe hum turant
+        // (kuch hi ms mein) PiP mein shrink hone hi wale ho (enter_pip_immediately).
+        // Matlab top bar/title/icons ek pal ke liye fade-in hote dikhte the phir
+        // turant PiP shrink ho jaata — isi flash se "pehle bada player khula"
+        // jaisa mehsoos hota tha. Ab is specific case mein controls kabhi dikhaye
+        // hi nahi jaate — sirf raw video frame render hota hai jab tak
+        // enterPipWhenFrameReady() (loadVideoFromIntent() mein) PiP mein le nahi
+        // jaata, taaki koi bhi button/text kabhi ek frame ke liye bhi na dikhe.
+        if (!intent.getBooleanExtra("enter_pip_immediately", false)) {
+            showAllControls()
+        } else {
+            playerView.useController = false
+            topBar.visibility = View.GONE
+            quickActionsScroll.visibility = View.GONE
+        }
 
         featuresHandler.post(ambientGlowRunnable)
         featuresHandler.post(statsForNerdsRunnable)
@@ -865,9 +1027,36 @@ class PlayerActivity : AppCompatActivity() {
         // jo abhi already load/playing hai, to kuch bhi rebuild na karo — bas turant return.
         val incomingUri = intent.getStringExtra("video_uri")
         if (::player.isInitialized && incomingUri != null && incomingUri == currentLoadedUri) {
+            // BUG FIX (user report: "PiP se expand karne par fullscreen page ki
+            // jagah home page par (inline) expand ho jaata hai"): yahan pehle
+            // sirf tabhi `pipOriginFromInline = true` set hota tha jab is naye
+            // intent mein bhi `enter_pip_immediately` maanga gaya ho — agar nahi
+            // maanga gaya (matlab yeh ek GENUINE fullscreen open hai, jaise
+            // fullscreenButton se, isi video ke liye jo already is (singleTask)
+            // Activity mein reused ho rahi hai), to variable ko kabhi false
+            // reset hi nahi kiya jaata tha. Matlab agar kabhi pehle (isi video
+            // ke liye) PiP button/Home-press se `pipOriginFromInline = true` ho
+            // chuka ho, to woh stale/purana `true` hamesha ke liye chipka reh
+            // jaata — chahe user ab genuinely fullscreen dekh raha ho. Baad mein
+            // PiP → expand karne par `handlePipExpand()` isi stale flag ko dekh
+            // kar galti se "yeh kabhi fullscreen thi hi nahi" maan leta aur
+            // seedha finish() karke MainActivity ke inline player par bhej deta
+            // — asli fullscreen page kabhi wapas nahi aata. Fix: is naye intent
+            // ke exact `enter_pip_immediately` value se hamesha sync karo (jaisa
+            // neeche wala main/reload branch already karta hai), sirf true ke
+            // liye special-case mat karo.
+            pipOriginFromInline = intent.getBooleanExtra("enter_pip_immediately", false)
+            // Reload skip ho raha hai, lekin agar isi tap ne PiP maangi thi to wo
+            // honour zaroor honi chahiye (warna dobara PiP button dabana silently
+            // kuch na kare, aisa nahi hona chahiye).
+            if (pipOriginFromInline) {
+                pendingImmediatePipSourceRect = readPipSourceRectExtra()
+                enterPipWhenFrameReady()
+            }
             return
         }
         currentLoadedUri = incomingUri
+        pipOriginFromInline = intent.getBooleanExtra("enter_pip_immediately", false)
 
         // Bug fix: is Activity ke singleTask hone ki wajah se yahi instance baar baar reuse
         // hoti hai (Home se koi bhi naya/alag video khulne par bhi) — isliye pichle video ka
@@ -962,6 +1151,29 @@ class PlayerActivity : AppCompatActivity() {
                 forcePlayWhenReady = if (resumePositionMs >= 0) resumePlaying else null
             )
         }
+
+        // Chhote inline player ke PiP button se aaye the to yahan aate hi turant
+        // real PiP mein chale jaao — isi Activity ka apna, already-working PiP.
+        // enterPipWhenFrameReady() pehle frame render hone tak wait karta hai
+        // (dekho uska comment) taaki shrink animation shuru hote hi video already
+        // visible ho, black-frame flash na dikhe.
+        if (intent.getBooleanExtra("enter_pip_immediately", false)) {
+            pendingImmediatePipSourceRect = readPipSourceRectExtra()
+            enterPipWhenFrameReady()
+        }
+    }
+
+    // MainActivity se aaya chhote inline player ka on-screen rect (agar hai) parse
+    // karta hai — dekho pendingImmediatePipSourceRect field ka comment.
+    private fun readPipSourceRectExtra(): Rect? {
+        val left = intent.getIntExtra("pip_src_left", Int.MIN_VALUE)
+        if (left == Int.MIN_VALUE) return null
+        val top = intent.getIntExtra("pip_src_top", Int.MIN_VALUE)
+        val right = intent.getIntExtra("pip_src_right", Int.MIN_VALUE)
+        val bottom = intent.getIntExtra("pip_src_bottom", Int.MIN_VALUE)
+        if (top == Int.MIN_VALUE || right == Int.MIN_VALUE || bottom == Int.MIN_VALUE) return null
+        if (right <= left || bottom <= top) return null
+        return Rect(left, top, right, bottom)
     }
 
     // Bug fix: PlayerActivity ab manifest mein "singleTask" hai (see AndroidManifest), isliye
@@ -1606,6 +1818,7 @@ class PlayerActivity : AppCompatActivity() {
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
             updateVideoInfoBadge()
             applyOrientationForVideo(videoSize.width, videoSize.height, videoSize.unappliedRotationDegrees)
+            refreshPipParams()
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -1887,6 +2100,17 @@ class PlayerActivity : AppCompatActivity() {
      */
     private fun applyOrientationForVideo(width: Int, height: Int, unappliedRotationDegrees: Int = 0) {
         if (width <= 0 || height <= 0) return
+        // Bug fix (user report: "PiP se pehle full screen player dikhta hai"):
+        // agar yeh session seedha inline player se PiP mein jaane wala hai, to
+        // yahan requestedOrientation badalna (portrait se landscape, video ke
+        // hisaab se) khud apna ek poora device-rotation animation trigger karta
+        // — jo activity-launch ki 0ms/invisible transition se bilkul alag,
+        // ROKA nahi ja sakta — result: user ko ek pal ke liye poori screen
+        // ghoomti/full-size dikhti, TABHI PiP shrink shuru hoti. PiP window
+        // apna aspect ratio khud (buildPipParams) handle karta hai, isko
+        // Activity ke screen-orientation lock ki zaroorat hi nahi — isliye is
+        // case mein orientation-force poora skip kar do.
+        if (pipOriginFromInline) return
         val rotated = unappliedRotationDegrees == 90 || unappliedRotationDegrees == 270
         val displayWidth = if (rotated) height else width
         val displayHeight = if (rotated) width else height
@@ -2003,17 +2227,28 @@ class PlayerActivity : AppCompatActivity() {
 
         moreButton.setOnClickListener { showMoreMenu() }
 
-        // More menu ka "PiP" button — YouTube-jaisa in-app floating mini-player.
-        backgroundPlayLabel.text = "Mini player"
+        // Bug fix: More menu ka "BG Play" button pehle purane audio-only
+        // Background Play (screen off par sirf sound chalta tha) ko toggle
+        // karta tha. Ab yeh bhi corner wale PiP button jaisa hi — click karte
+        // hi asli Picture-in-Picture floating window khulega.
+        backgroundPlayLabel.text = "PiP"
         backgroundPlayButton.setImageResource(R.drawable.ic_pip)
-        backgroundPlayButton.setOnClickListener { shrinkToMiniPlayer() }
+        backgroundPlayButton.setOnClickListener {
+            if (!tryEnterPipOnBack()) {
+                showGestureFeedback("PiP is not supported on this device")
+            }
+        }
 
-        // Corner wala PiP button bhi wahi mini-player kholta hai jo back
+        // Corner wala PiP button bhi wahi floating window kholta hai jo back
         // dabane par khulta hai.
         bottomPipButton.setImageResource(R.drawable.ic_pip)
-        bottomPipButton.setOnClickListener { shrinkToMiniPlayer() }
+        bottomPipButton.setOnClickListener {
+            if (!tryEnterPipOnBack()) {
+                showGestureFeedback("PiP is not supported on this device")
+            }
+        }
 
-        // Swipe-down gesture -> mini-player. Sirf topContainer (title/icon strip)
+        // Swipe-down gesture -> PiP. Sirf topContainer (title/icon strip)
         // se — video-surface (playerView) ka apna touch listener pehle se
         // volume/brightness/seek gestures handle karta hai, wahan add karne
         // se un sabse conflict hota, isliye yeh alag, safe zone mein hai.
@@ -2044,15 +2279,18 @@ class PlayerActivity : AppCompatActivity() {
                     val dy = event.rawY - pipSwipeStartY
                     pipSwipeDragging = false
                     if (wasDragging && dy > 90) {
-                        // Instant reset (not animated) right before handing off to
-                        // the floating mini-player — animating back to full size at
-                        // the same time as finish()/exit would cause a visible
-                        // snap/flash.
+                        // Instant reset (not animated) right before the real system
+                        // PiP shrink kicks in — animating back to full size at the
+                        // same time as the system's own shrink animation caused a
+                        // visible snap/flash. See same fix on the video-surface
+                        // swipe handler below for the reasoning.
                         v.translationY = 0f
                         v.alpha = 1f
                         v.scaleX = 1f
                         v.scaleY = 1f
-                        shrinkToMiniPlayer()
+                        if (!tryEnterPipOnBack()) {
+                            showGestureFeedback("PiP is not supported on this device")
+                        }
                     } else {
                         v.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
                     }
@@ -6138,17 +6376,19 @@ class PlayerActivity : AppCompatActivity() {
                         val downAmount = event.y - startY
                         isSwipingToPipFromVideo = false
                         if (wasDragging && downAmount > 90) {
-                            // Floating mini-player le raha hai ab — apna local
+                            // Real system PiP animation le raha hai ab — apna local
                             // shrink-transform ko ANIMATE karke wapas normal size
-                            // laane ki koshish nahi karte (mini-player khud shrink
-                            // hote hue dikhega, MainActivity ke andar). Seedha
-                            // instantly reset karke phir shrink request karo, taaki
-                            // handoff ek hi smooth motion jaisa lage.
+                            // laane ki koshish nahi karte (wo system ke transition
+                            // ke saath collide karke jerky/double-jump dikhta tha).
+                            // Seedha instantly reset karke phir PiP request karo,
+                            // taaki handoff ek hi smooth motion jaisa lage.
                             playerContainer.translationY = 0f
                             playerContainer.alpha = 1f
                             playerContainer.scaleX = 1f
                             playerContainer.scaleY = 1f
-                            shrinkToMiniPlayer()
+                            if (!tryEnterPipOnBack()) {
+                                showGestureFeedback("PiP is not supported on this device")
+                            }
                         } else {
                             playerContainer.animate()
                                 .translationY(0f).alpha(1f).scaleX(1f).scaleY(1f)
@@ -6434,15 +6674,214 @@ class PlayerActivity : AppCompatActivity() {
     // pehle jaisa hi normal back/finish hota hai.
     // ---------------------------------------------------------------------
 
-    // MainActivity ke YouTube-jaisa in-app floating mini-player mein "shrink" karne
-    // ke liye — bas is Activity ko finish() kar do (position/playing-state result
-    // extras se), "want_mini_player" extra ke saath. MainActivity apna already-live
-    // in-app overlay khud floating mode mein dikha dega — koi real system PiP nahi.
-    private fun shrinkToMiniPlayer() {
-        wantsMiniPlayerOnFinish = true
-        @Suppress("DEPRECATION")
-        overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
-        finish()
+    // Bug fix (PiP shrink animation "smooth" nahi lagti thi — shuru mein ek black
+    // frame flash hota tha): chhote inline player (MainActivity) se seedha yahan
+    // aane par shared ExoPlayer instance is (naye) playerView se abhi-abhi attach
+    // hui hoti hai — uska pehla frame is naye Surface par render hone mein ek-do
+    // vsync (10-30ms) lag sakte hain. Pehle hum bas `playerView.post { }` ke turant
+    // baad hi enterPictureInPictureMode() call kar dete the, jo kabhi-kabhi us
+    // pehle frame se PEHLE hi fire ho jaata tha — result: PiP shrink animation ek
+    // khaali/black rectangle ko shrink karte hue shuru hoti, video 1-2 frame baad
+    // "pop" karta — jhatka-sa/non-premium feel.
+    //
+    // Fix: agar player abhi tak koi frame render nahi kar chuka (onRenderedFirstFrame
+    // fire nahi hua), thoda wait karo (max 150ms timeout safety ke saath, taaki
+    // kisi wajah se listener na fire ho to bhi PiP hamesha ke liye atki na rahe)
+    // — phir hi enterPictureInPictureMode() call karo. Isse shrink animation
+    // shuru hote hi video already visible hota hai, bilkul YouTube jaisa smooth feel.
+    private fun enterPipWhenFrameReady() {
+        if (!::player.isInitialized || !::playerView.isInitialized) return
+        pipEntryFrameListener?.let { player.removeListener(it) }
+        pipEntryFrameListener = null
+
+        if (player.isPlaying) {
+            // Shared player already actively playing tha (MainActivity mein) — naye
+            // Surface par bhi decoder turant hi ek fresh frame push karega, isliye
+            // ek chhota fixed delay hi kaafi hai (koi listener overhead nahi chahiye).
+            playerView.postDelayed({ tryEnterPipOnBack() }, 32L)
+            return
+        }
+
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                pipEntryFrameListener?.let { player.removeListener(it) }
+                pipEntryFrameListener = null
+                playerView.post { tryEnterPipOnBack() }
+            }
+        }
+        pipEntryFrameListener = listener
+        player.addListener(listener)
+        // Safety timeout — agar kisi wajah se onRenderedFirstFrame fire hi na ho
+        // (edge case), PiP request phir bhi honi chahiye, warna button/swipe "kuch
+        // nahi hua" jaisa feel dega.
+        playerView.postDelayed({
+            if (pipEntryFrameListener === listener) {
+                player.removeListener(listener)
+                pipEntryFrameListener = null
+                tryEnterPipOnBack()
+            }
+        }, 150L)
+    }
+
+    private fun tryEnterPipOnBack(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return unsupportedPipFallback()
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return unsupportedPipFallback()
+        if (!::player.isInitialized) return false
+        if (isInPictureInPictureMode) return false
+        val result = try {
+            enterPictureInPictureMode(buildPipParams().build())
+        } catch (_: Exception) {
+            false
+        }
+        if (!result) unsupportedPipFallback()
+        // Sirf pehli (direct-from-inline) PiP entry ke liye tha — consume ho gaya,
+        // ab se hamesha live fullscreen rect hi use hona chahiye (dekho field
+        // comment).
+        pendingImmediatePipSourceRect = null
+        return result
+    }
+
+    // Bug fix: agar device PiP support hi nahi karta (purana Android ya
+    // FEATURE_PICTURE_IN_PICTURE missing) ya enterPictureInPictureMode() kisi
+    // wajah se fail ho jaaye, to inline-origin session hamesha ke liye
+    // orientation-force suppress kiye baithi rehti thi (applyOrientationForVideo
+    // guard dekho) — matlab video kabhi sahi (landscape) orientation mein
+    // dikhta hi nahi, na PiP na hi normal fullscreen. Fix: aisi situation mein
+    // "inline-origin" treatment turant hata do taaki yeh normal fullscreen
+    // player ki tarah hi (sahi orientation ke saath) kaam kare — expand-to-
+    // inline shortcut bhi ab lagu nahi hoga (jo sahi hai, kyunki PiP bani hi
+    // nahi thi).
+    private fun unsupportedPipFallback(): Boolean {
+        if (pipOriginFromInline) {
+            pipOriginFromInline = false
+            if (::player.isInitialized) {
+                val vw = player.videoSize.width
+                val vh = player.videoSize.height
+                if (vw > 0 && vh > 0) applyOrientationForVideo(vw, vh, player.videoSize.unappliedRotationDegrees)
+            }
+        }
+        return false
+    }
+
+    private fun buildPipParams(): PictureInPictureParams.Builder {
+        val builder = PictureInPictureParams.Builder()
+        // Bug fix (jhatke wala/gadbad shrink animation): sourceRectHint ke bina Android
+        // ek generic "poori screen se center/corner tak zoom-out" animation deta hai,
+        // jo letterboxed (aspect-fit) video ke saath khaas taur par jhatka-sa/galat
+        // dikhta hai. Yeh hint dene se OS video-surface ke asli on-screen rect (playerView
+        // ke andar jahan actual video content hai, letterbox bars ke bina) se seedha
+        // shrink karta hai — bilkul YouTube jaisa smooth "video hi shrink ho raha hai"
+        // feel deta hai.
+        //
+        // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka): jab yeh chhote
+        // inline player se turant PiP (enter_pip_immediately) ke through aaya ho, to
+        // is poore-screen wale playerView rect ki jagah ORIGINAL chhote inline player
+        // ka on-screen rect (pendingImmediatePipSourceRect, MainActivity se aaya) use
+        // karo. Isse system ka shrink animation seedha usi chhoti jagah se shuru hota
+        // hai jahan video pehle se dikh raha tha — poori screen kabhi flash nahi hoti,
+        // ek hi continuous "chhota video seedha PiP corner tak shrink" motion dikhta hai.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val immediateRect = pendingImmediatePipSourceRect
+            if (immediateRect != null && immediateRect.width() > 0 && immediateRect.height() > 0) {
+                try { builder.setSourceRectHint(immediateRect) } catch (_: Exception) {}
+            } else if (::playerView.isInitialized) {
+                try {
+                    val videoRect = Rect()
+                    playerView.getGlobalVisibleRect(videoRect)
+                    if (videoRect.width() > 0 && videoRect.height() > 0) {
+                        builder.setSourceRectHint(videoRect)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        if (::player.isInitialized) {
+            val vw = player.videoSize.width
+            val vh = player.videoSize.height
+            if (vw > 0 && vh > 0) {
+                // Android PiP sirf 1:2.39 se 2.39:1 tak ke aspect ratio allow
+                // karta hai, isse bahar jaane par crash hota hai — isliye clamp.
+                var num = vw
+                var den = vh
+                val maxRatio = 2.39f
+                if (num.toFloat() / den.toFloat() > maxRatio) {
+                    num = (den * maxRatio).toInt()
+                } else if (den.toFloat() / num.toFloat() > maxRatio) {
+                    den = (num * maxRatio).toInt()
+                }
+                try {
+                    builder.setAspectRatio(Rational(num, den))
+                } catch (_: Exception) {}
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setActions(
+                listOf(
+                    buildRemoteAction(
+                        android.R.drawable.ic_media_rew, "Rewind 10s", ACTION_PIP_REWIND
+                    ),
+                    buildPlayPauseRemoteAction(),
+                    buildRemoteAction(
+                        android.R.drawable.ic_media_ff, "Forward 10s", ACTION_PIP_FORWARD
+                    ),
+                    buildRemoteAction(
+                        if (pipSpeedBoosted) R.drawable.ic_play_arrow else R.drawable.ic_fast_forward,
+                        if (pipSpeedBoosted) "Normal Speed" else "2x Speed",
+                        ACTION_PIP_SPEED_TOGGLE
+                    )
+                )
+            )
+        }
+        // Bug fix ("sab jagah jhatka-sa lagta hai" — asli wajah): ab tak hum
+        // Home/back-gesture par khud manually onUserLeaveHint() se
+        // enterPictureInPictureMode() bulaate the — yeh hamesha ek REACTION
+        // thi (activity pehle se hi background hone lagi hoti, PHIR hum shrink
+        // shuru karte), isliye system ka apna leave-gesture/animation aur
+        // hamara PiP-shrink do ALAG motions ban jaate — thoda lag/snap jaisa
+        // feel deta, chahe sourceRectHint sahi ho.
+        //
+        // Android 12+ (API 31) par setAutoEnterEnabled(true) ke saath, OS khud
+        // hi back-gesture/Home ke EXACT saath synchronized ek single seamless
+        // shrink animation karta hai (bilkul YouTube jaisa) — hume manually
+        // enterPictureInPictureMode() call karne ki zaroorat hi nahi padti,
+        // isliye koi do-motion jhatka nahi banta. (Dekho onUserLeaveHint() ka
+        // guard neeche, aur refreshPipParams() jo params ko hamesha up-to-date
+        // rakhta hai taaki OS ke paas seamless-enter ke waqt sahi sourceRectHint
+        // /aspect-ratio pehle se maujood ho.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { builder.setAutoEnterEnabled(true) } catch (_: Exception) {}
+        }
+        return builder
+    }
+
+    // Params ko hamesha fresh rakhne ke liye (onResume, video-size change, orientation
+    // change par) — taaki setAutoEnterEnabled(true) wala seamless auto-enter hamesha
+    // sahi sourceRectHint/aspect-ratio ke saath fire ho, kabhi stale rect se nahi.
+    private fun refreshPipParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!::player.isInitialized || isInPictureInPictureMode) return
+        try { setPictureInPictureParams(buildPipParams().build()) } catch (_: Exception) {}
+    }
+
+    private fun buildRemoteAction(iconRes: Int, title: String, action: String): RemoteAction {
+        val icon = Icon.createWithResource(this, iconRes)
+        val intent = Intent(action).setPackage(packageName)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        // Har action ka apna unique request code chahiye, warna PendingIntent.getBroadcast()
+        // sab ek hi PendingIntent reuse kar leta (extras/action update nahi hote).
+        val requestCode = action.hashCode()
+        val pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, flags)
+        return RemoteAction(icon, title, title, pendingIntent)
+    }
+
+    private fun buildPlayPauseRemoteAction(): RemoteAction {
+        val isPlaying = ::player.isInitialized && player.isPlaying
+        val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val icon = Icon.createWithResource(this, iconRes)
+        val title = if (isPlaying) "Pause" else "Play"
+        val intent = Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, flags)
+        return RemoteAction(icon, title, title, pendingIntent)
     }
 
     // Chhote inline player (MainActivity) se yahan aaye the to wapas jaate waqt current
@@ -6455,16 +6894,22 @@ class PlayerActivity : AppCompatActivity() {
                 Intent().apply {
                     putExtra("resume_position_ms", player.currentPosition)
                     // Bug fix: normally player.playWhenReady abhi ka live state
-                    // reflect karta hai — MainActivity isi (ya, jab shrink-to-
-                    // mini se aaya ho, onActivityResult ke "want_mini_player"
-                    // branch ke) resume_playing extra se sync ho jaata hai.
-                    putExtra("resume_playing", player.playWhenReady)
-                    // MainActivity ko batao ki yeh finish() ek "shrink to
-                    // mini-player" trigger (PiP button/chevron/swipe-down/back-
-                    // while-playing) ki wajah se hua — taaki wahan docked inline
-                    // ki jagah floating mini-player dikhaya jaaye. Dekho
-                    // MainActivity.onActivityResult().
-                    putExtra("want_mini_player", wantsMiniPlayerOnFinish)
+                    // reflect karta hai — lekin genuine PiP-close case mein hum
+                    // usse jaan-bujh kar false kar chuke hote hain (background
+                    // audio-leak rokne ke liye). Agar wahi live value yahan bhej
+                    // dete to MainActivity video ko paused hi resume karta —
+                    // isliye agar upar wala override maujood hai (PiP close se
+                    // pehle ka asli intent), usi ko priority do.
+                    putExtra("resume_playing", resumePlayingIntentOverride ?: player.playWhenReady)
+                    // User ki request: MainActivity ko batao ki yeh finish() ek
+                    // genuine PiP "X"/swipe-away close ki wajah se ho raha hai (na
+                    // ki expand-to-fullscreen ke baad ka normal back-press) — taaki
+                    // wahan na background mein kuchh resume ho, na WebView wapas us
+                    // watch page par forward jaaye (dekho MainActivity.onActivityResult()).
+                    // wasInRealPipMode abhi bhi true hota hai sirf genuine PiP-close
+                    // ke waqt hi — expand ke baad onPictureInPictureModeChanged() ise
+                    // pehle hi false kar chuka hota hai (dekho uska comment).
+                    putExtra("pip_closed", pipCloseFlagForResult)
                 }
             )
         }
@@ -6500,17 +6945,183 @@ class PlayerActivity : AppCompatActivity() {
         overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
     }
 
-    // Real system PiP hata diya gaya hai — Home button/app-switch par ab koi
-    // special auto-shrink nahi hoti (default Android behavior: app bas
-    // background mein chala jaata hai, onPause() player ko pause kar deta
-    // hai). Explicit shrink sirf PiP button/chevron/swipe-down/back se hoti
-    // hai (shrinkToMiniPlayer()).
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Android 12+ (API 31) par setAutoEnterEnabled(true) (buildPipParams() dekho)
+        // OS ko khud hi is exact moment par seamless PiP shrink karne deta hai — agar
+        // hum yahan bhi manually enterPictureInPictureMode() bulaate to do transitions
+        // race karke hi jhatka wapas laa dete. Sirf purane devices (< API 31, jahan
+        // auto-enter available hi nahi) ke liye manual fallback chahiye.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            tryEnterPipOnBack()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            wasInRealPipMode = true
+            // Naya time-based genuine-close signal (dekho `pipEnteredAtMs` field
+            // ka comment upar) — grace-period yahin se count hoti hai.
+            pipEnteredAtMs = System.currentTimeMillis()
+            // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
+            // ExoPlayer khud audio-focus handle karta hai (handleAudioFocus=true,
+            // dekho initializePlayer()). PiP <-> fullscreen ke beech window-manager
+            // transition ke dauraan kai devices par ek chhoti transient audio-focus
+            // loss/gain spuriously fire ho jaati hai — ExoPlayer usko genuine focus-
+            // loss maan kar khud hi playWhenReady=false kar deta hai, aur focus-regain
+            // wapas theek se receive na hone par video paused hi reh jaata hai. Yahan
+            // "PiP mein jaate waqt kya chal raha tha" record kar lo, taaki restore ke
+            // waqt (neeche) isko forcibly wapas assert kiya jaa sake.
+            if (::player.isInitialized) pipEntryWasPlaying = player.playWhenReady
+            // Chhote floating window mein hamara bhaara-bharkam custom UI (top
+            // bar, quick actions, gesture overlays) dikhana theek nahi — sab
+            // chhupa do, sirf video + system ka apna minimal play/pause chrome.
+            controlsHandler.removeCallbacks(hideControlsRunnable)
+            topBar.visibility = View.GONE
+            quickActionsScroll.visibility = View.GONE
+            gestureIndicator.visibility = View.GONE
+            speedIndicatorBadge.visibility = View.GONE
+            seekIndicatorLeft.visibility = View.GONE
+            seekIndicatorRight.visibility = View.GONE
+            volumeSliderContainer.visibility = View.GONE
+            brightnessSliderContainer.visibility = View.GONE
+            playerView.useController = false
+        } else {
+            wasInRealPipMode = false
+            // BUG FIX (rewrite — dekho `pendingPipExitDecision` field ka comment
+            // upar): yahan koi isFinishing-based faisla NAHI liya jaata ab. Bas
+            // itna record karo ki "PiP se abhi-abhi bahar aaye hain, faisla
+            // baaki hai" — asli faisla onResume() (= expand) ya onStop()
+            // (= genuine close) mein, jo bhi pehle genuinely fire ho, wahan
+            // hota hai.
+            pendingPipExitDecision = true
+        }
+    }
+
+    // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut nahi
+    // hota"): yeh function sirf tabhi kuch karta hai jab `pendingPipExitDecision`
+    // set ho (matlab hum abhi-abhi real PiP se bahar aaye the aur faisla baaki
+    // tha). Isko onResume() se bulaya jaata hai — Android guarantee karta hai ki
+    // "tap to expand" ONLY yahi path hai jahan Activity dobara RESUMED hoti hai,
+    // isliye yahan pahunchna khud hi pakka signal hai ki yeh genuine expand hai,
+    // koi isFinishing check ki zaroorat nahi.
+    private fun handlePipExpand() {
+        if (!pendingPipExitDecision) return
+        pendingPipExitDecision = false
+
+        // FIX (user report): yeh PiP normal/inline player se seedhi bani thi
+        // (pipOriginFromInline) — isko tap karke "bada" karne par Android bas
+        // is Activity ko wapas fullscreen dikha deta hai, jo galat hai: yeh
+        // video kabhi genuinely fullscreen dekhi hi nahi gayi thi. User yahan
+        // NORMAL (inline) player hi expect karta hai, fullscreen nahi.
+        if (pipOriginFromInline) {
+            pipCloseFlagForResult = false
+            if (usingSharedPlayer && ::player.isInitialized) {
+                player.setForegroundMode(true)
+                playerView.player = null
+            }
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
+            finish()
+            return
+        }
+
+        // Wapas full-size par aane par controls/controller dobara enable karo.
+        playerView.useController = true
+        if (::topBar.isInitialized) showAllControls()
+        // Bug fix ("PiP se fullscreen hote waqt video pause ho jaata hai"):
+        // upar record kiya gaya pipEntryWasPlaying ab forcibly assert karo.
+        if (::player.isInitialized) {
+            val shouldResume = pipEntryWasPlaying
+            playerView.postDelayed({
+                if (!isFinishing && ::player.isInitialized) player.playWhenReady = shouldResume
+            }, 150)
+        }
+    }
+
+    // BUG FIX (major rewrite — dekho `pendingPipExitDecision` field ka comment
+    // upar): agar onStop() fire ho raha hai jabki PiP-exit ka faisla abhi bhi
+    // pending hai (matlab beech mein onResume() KABHI nahi aaya), to yeh pakka
+    // ek genuine "X"/swipe close hai — Activity kabhi RESUMED hui hi nahi.
+    // isFinishing par bharosa kiye bina, yahin definitively cut kar do.
+    // BUG FIX (root cause of "PiP X se band karne ke baad bhi audio/video
+    // background mein chalta rehta hai" — yeh bug pichhle fix ke baad bhi bana
+    // raha): saara upar wala `pendingPipExitDecision` mechanism is baat par
+    // depend karta tha ki system PiP window ka "X" (close) button dabane par
+    // Android `onPictureInPictureModeChanged(false)` callback fire karega —
+    // lekin bahut saare devices/launchers par aisa HOTA HI NAHI. X dabane par
+    // Android seedha Activity ko stop/finish kar deta hai jabki
+    // isInPictureInPictureMode abhi bhi `true` hi report karta rehta hai — mode
+    // "false" mein kabhi transition hi nahi hota, isliye woh callback kabhi
+    // fire nahi hota. Result: `pendingPipExitDecision` kabhi `true` set hi nahi
+    // hota, `handlePipGenuineClose()` (jo isi flag par depend karta tha) khud
+    // ek no-op ban jaata, aur neeche `onStop()` mein `isFinishing &&
+    // usingSharedPlayer` wala branch turant `return` kar deta bina player ko
+    // pause/release kiye — isliye "cut" sirf visually (PiP window gayab) hota
+    // tha, player andar se chalta hi reh jaata tha.
+    //
+    // Fix: is poore close-out logic ko ek chhoti, idempotent helper mein nikaal
+    // diya (`performGenuinePipClose()`), aur ab ise DO independent jagah se
+    // trigger kiya jaata hai — (1) jahan `onPictureInPictureModeChanged(false)`
+    // genuinely fire ho jaaye (purana path, kuch devices par kaam karta hai),
+    // AUR (2) ek naya `isFinishing`-based fallback seedha `onStop()` ke
+    // shuruaat mein (dekho neeche), jo un devices par bhi kaam karta hai jahan
+    // pehla callback kabhi nahi aata. `pipGenuineCloseHandled` guard ensure
+    // karta hai ki dono trigger ek saath fire ho jaayein to bhi kaam sirf ek
+    // baar ho.
+    private var pipGenuineCloseHandled = false
+
+    private fun performGenuinePipClose() {
+        if (pipGenuineCloseHandled) return
+        pipGenuineCloseHandled = true
+        pendingPipExitDecision = false
+        // MainActivity ko hamesha batao ki yeh genuine PiP close hai — origin
+        // (inline se ho ya fullscreen se) se koi farak nahi padta, taaki wahan
+        // inlinePlayer FORCIBLY resume na ho jaaye.
+        pipCloseFlagForResult = true
+        // Taaki onDestroy() mein player poora release ho aur SharedPlayerHolder
+        // clear ho — agle video ke liye koi orphaned/stale instance reuse na ho
+        // (black-screen bug).
+        releasePlayerFullyOnDestroy = true
+        if (::player.isInitialized) {
+            resumePlayingIntentOverride = player.playWhenReady
+            player.playWhenReady = false
+            player.pause()
+        }
+        BackgroundPlaybackService.stop(this)
+        if (!isFinishing) finish()
+    }
+
+    private fun handlePipGenuineClose() {
+        if (!pendingPipExitDecision) return
+        performGenuinePipClose()
+    }
 
     override fun onResume() {
         super.onResume()
+        // Genuine "tap to expand" ka pakka signal — dekho handlePipExpand()
+        // function ka comment.
+        handlePipExpand()
+        // BUG FIX (regression guard for the naya time-based `onStop()`
+        // genuine-close fallback upar): `onResume()` khud pakka signal hai ki
+        // hum abhi genuinely wapas foreground/resumed hain (chahe PiP se
+        // expand ho ya normal launch). Us purani PiP-session ka "still looks
+        // like PiP" state (`wasInRealPipMode` + `pipEnteredAtMs`) yahan reset
+        // karna zaroori hai — warna kuch devices par jahan
+        // `onPictureInPictureModeChanged(false)` kabhi fire hi nahi hota,
+        // `wasInRealPipMode` galti se `true` atka reh sakta tha, aur baad mein
+        // ek bilkul NORMAL (non-PiP) home-press/backgrounding par bhi
+        // `onStop()` ka naya fallback ise galti se "X-close" samajh kar
+        // activity ko wrongly finish/pause kar deta.
+        wasInRealPipMode = false
+        pipEnteredAtMs = 0L
         // Wapas app khulte hi background service band kar do — ab notification
         // aur foreground-priority ki zaroorat nahi, Activity khud foreground me hai.
         BackgroundPlaybackService.stop(this)
+        // Params ko fresh rakho — taaki agla seamless auto-enter (setAutoEnterEnabled)
+        // hamesha abhi ka sahi playerView rect/aspect use kare.
+        refreshPipParams()
     }
 
     override fun onPause() {
@@ -6557,37 +7168,128 @@ class PlayerActivity : AppCompatActivity() {
                 )
             )
         }
-        // Real system PiP hata diya gaya hai — background continue ab sirf
-        // MainActivity ke in-app floating mini-player ke through hota hai (shrink
-        // hote hi control turant wahin handoff ho jaata hai, dekho neeche
-        // `handingOffToInline`). Yahan (fullscreen Activity ke andar) background
-        // mein jaate hi bas pause kar do — koi foreground service/notification
-        // is Activity se ab shuru nahi hoti.
+        // Ab background continue sirf PiP floating window ke through hota hai
+        // (purana alag "Background Play" audio-only toggle hata diya gaya hai —
+        // dono buttons ab PiP hi kholte hain). PiP mein nahi hai to pause karo.
+        // BUG FIX (PiP "X" close ke baad bhi audio background mein chalta rehta
+        // tha): system ke PiP window ka "X" (close) button dabane par Android
+        // seedha isFinishing=true kar deta hai lekin isInPictureInPictureMode
+        // abhi bhi true hi report karta hai (mode kabhi "exit" hua hi nahi,
+        // activity seedha finish ho rahi hai) — isliye pehle yeh code isse
+        // ek genuine ongoing PiP samajh kar foreground service START kar deta
+        // tha aur player ko pause hi nahi karta tha. Ab isFinishing bhi check
+        // karte hain: agar activity finish ho rahi hai to turant pause + service
+        // stop, chahe isInPictureInPictureMode abhi bhi true dikha raha ho.
         //
-        // BUG FIX: agar yeh Activity apna shared/borrowed player MainActivity ko
-        // wapas handoff kar rahi hai (usingSharedPlayer && isFinishing), to
-        // playWhenReady ko yahan CHHEDO MAT. MainActivity ka onActivityResult()
-        // is Activity ke onPause() ke turant baad hi (onStop() se PEHLE) chalta
-        // hai aur khud playWhenReady = wasPlaying set karta hai — agar hum yahan
-        // pehle hi false kar dein, to woh sahi resume state ke bawajood bhi
-        // kabhi-kabhi galat/stale state pe fight karta reh jaata, aur baad mein
-        // aane wala onStop() (isFinishing abhi bhi true) us resume ko dobara
-        // undo kar deta — video wahin frozen/black reh jaata jabki audio ek pal
-        // ke liye already bajj chuka hota.
+        // BUG FIX (audio thodi der ke liye "leak" hoti thi + inline player black
+        // screen reh jaata tha): agar yeh Activity apna shared/borrowed player
+        // MainActivity ko wapas handoff kar rahi hai (usingSharedPlayer &&
+        // isFinishing), to playWhenReady ko yahan CHHEDO MAT. MainActivity ka
+        // onActivityResult() is Activity ke onPause() ke turant baad hi (onStop()
+        // se PEHLE) chalta hai aur khud playWhenReady = wasPlaying set karta hai —
+        // agar hum yahan pehle hi false kar dein, to woh sahi resume state ke
+        // bawajood bhi kabhi-kabhi galat/stale state pe fight karta reh jaata,
+        // aur baad mein aane wala onStop() (isFinishing abhi bhi true) us resume
+        // ko dobara undo kar deta — video wahin frozen/black reh jaata jabki
+        // audio ek pal ke liye already bajj chuka hota (isi wajah se dono bugs
+        // saath dikhte the: "audio aata hai" aur "black screen rehta hai").
         val handingOffToInline = isFinishing && usingSharedPlayer
+        val isPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode && !isFinishing
         if (handingOffToInline) {
             // Control (aur play/pause state) MainActivity ke onActivityResult()
             // ko de diya — foreground service ab bhi band kar do (MainActivity
             // khud foreground hai, isliye notification ki zaroorat nahi).
             BackgroundPlaybackService.stop(this)
-        } else if (::player.isInitialized) {
+        } else if (!isPip) {
             player.playWhenReady = false
             if (isFinishing) BackgroundPlaybackService.stop(this)
+        } else if (::player.isInitialized) {
+            // Foreground service start karo taaki Android process ko background
+            // me kill/suspend na kare — isi ke bina pehle sirf thodi der audio
+            // chalta tha ya screen off hote hi ruk jaata tha.
+            //
+            // CRASH FIX (PiP mein jaate hi app crash): yeh call pehle bina
+            // try/catch ke thi. Android 12+ par agar is exact PiP-transition
+            // ke moment par system ko lagta hai ki app abhi "visible/foreground"
+            // exemption ke liye eligible nahi hai (background-service-start
+            // restriction), to `startForegroundService()`/`startForeground()`
+            // seedha `ForegroundServiceStartNotAllowedException` (ya kuch OEMs
+            // par `SecurityException`/`IllegalStateException`) throw karta hai —
+            // yeh crash sabse zyada online/streaming videos par dikhta hai kyunki
+            // wahan buffering/network state changes ke saath extra onPause()/
+            // onResume() cycles chalte hain, jisse timing-sensitive is restriction
+            // ke andar aane ke chances badh jaate hain. Ab isse pakad kar ignore
+            // karte hain — worst case sirf itna hota hai ki background-kill-
+            // protection is baar nahi milti (jo crash se kahin behtar hai), PiP
+            // window aur playback khud unaffected rehte hain.
+            try {
+                val title = player.currentMediaItem?.mediaMetadata?.title?.toString()
+                    ?: queue.getOrNull(player.currentMediaItemIndex)?.title
+                    ?: "Video"
+                BackgroundPlaybackService.start(this, title)
+            } catch (_: Exception) {
+            }
         }
     }
 
     override fun onStop() {
         super.onStop()
+        // BUG FIX (major rewrite — user report: "PiP ka X dabane par bhi cut
+        // nahi hota"): agar `pendingPipExitDecision` abhi bhi pending hai yahan
+        // tak (matlab PiP se bahar aane ke baad Activity kabhi onResume() tak
+        // nahi pahunchi), to yeh 100% pakka ek genuine "X"/swipe close hai —
+        // dekho handlePipGenuineClose() ka comment. Ise sabse pehle, kisi bhi
+        // aur logic se pehle handle karo.
+        handlePipGenuineClose()
+        // BUG FIX (asli fallback — dekho `performGenuinePipClose()` ka bada
+        // comment upar): agar `pendingPipExitDecision`-based path is device par
+        // kabhi trigger hi nahi hua (X-close par onPictureInPictureModeChanged
+        // callback nahi aaya), to bhi yahan seedha `isFinishing` se detect kar
+        // ke definitively cut karo. Yeh sirf genuine PiP-close ke liye hi fire
+        // hota hai (`wasInRealPipMode` ya abhi bhi `isInPictureInPictureMode`
+        // true hone se pakka), normal (non-PiP) back-press/finish() ko yeh
+        // chhedta nahi — us case mein dono false hote hain.
+        val stillLooksLikePip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            (wasInRealPipMode || isInPictureInPictureMode)
+        if (!pipGenuineCloseHandled && isFinishing && stillLooksLikePip) {
+            performGenuinePipClose()
+        }
+        // BUG FIX (asli fix — "PiP ka X dabane par app mein bhi background
+        // audio chalta rehta hai", website ki tarah turant band ho): upar wala
+        // `isFinishing`-based fallback kuch devices par kabhi trigger nahi
+        // hota (dekho `pipEnteredAtMs` field ka comment). Isliye ab `isFinishing`
+        // ki koi shart nahi lagate — sirf itna dekhte hain ki Activity abhi bhi
+        // (ya abhi-abhi) real PiP mein thi, PiP mein aaye kaafi (grace-period se
+        // zyada) der ho chuki thi (taaki launcher ke "enter karte hi turant
+        // onStop()" wale false-positive se na ulajhein), aur beech mein kabhi
+        // genuinely expand (onResume()) nahi hua. Aisi har `onStop()` ab
+        // definitively "X"/swipe se genuine close" maani jaati hai — turant
+        // sab band.
+        if (!pipGenuineCloseHandled && stillLooksLikePip &&
+            pipEnteredAtMs != 0L &&
+            (System.currentTimeMillis() - pipEnteredAtMs) >= PIP_CLOSE_GRACE_MS
+        ) {
+            performGenuinePipClose()
+        }
+        // BUG FIX (PiP black screen): pehle yahan bina kisi shart ke turant
+        // pause kar dete the ye soch kar ki "onStop() ka matlab hi hai Activity
+        // dikh nahi rahi". Lekin galat nikla — kai devices/launchers (especially
+        // gesture-nav wale) PiP mein enter karte hi turant onStop() bhi fire
+        // kar dete hain jabki PiP window abhi-abhi screen par visible ho raha
+        // hota hai. Result: player turant pause ho jaata, naya frame kabhi
+        // render hi nahi hota naye (chhote) PiP surface size par — isliye PiP
+        // window sirf ek solid BLACK box dikhta tha, video kabhi dikhta hi
+        // nahi tha.
+        // Fix: agar hum abhi PiP mein hain to yahan pause mat karo — video
+        // chalta rahega jaisa real PiP mein hona chahiye. "X" button se PiP
+        // close karne wala case already onPictureInPictureModeChanged() mein
+        // (isFinishing check ke saath) alag se handle hota hai, isliye yahan
+        // unconditional pause hataane se woh purana fix bhi nahi tootta.
+        // Yahan bhi wahi isFinishing check (upar onPause() mein detail comment
+        // dekho) — PiP "X" close case mein isInPictureInPictureMode abhi bhi
+        // true reh sakta hai, isFinishing hi asli signal hai ki activity band
+        // ho rahi hai aur audio ab turant rukna chahiye.
+        //
         // BUG FIX: agar shared player hai aur handoff MainActivity ko ho raha hai,
         // to yahan bhi (jaise onPause() mein) playWhenReady ko chhedo mat — onStop()
         // MainActivity ke onActivityResult() ke BAAD chalta hai (jo already resume
@@ -6598,7 +7300,8 @@ class PlayerActivity : AppCompatActivity() {
             if (::player.isInitialized) BackgroundPlaybackService.stop(this)
             return
         }
-        if (::player.isInitialized) {
+        val isPip = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode && !isFinishing
+        if (::player.isInitialized && !isPip) {
             player.playWhenReady = false
             BackgroundPlaybackService.stop(this)
         }
@@ -6669,9 +7372,9 @@ class PlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         tdlibDebugHandler.removeCallbacksAndMessages(null)
-        if (bgReceiverRegistered) {
-            try { unregisterReceiver(bgPlaybackActionReceiver) } catch (_: Exception) {}
-            bgReceiverRegistered = false
+        if (pipReceiverRegistered) {
+            try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
+            pipReceiverRegistered = false
         }
         BackgroundPlaybackService.stop(this)
         abHandler.removeCallbacksAndMessages(null)
@@ -6708,15 +7411,24 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         if (::player.isInitialized) {
+            pipEntryFrameListener?.let { player.removeListener(it) }
+            pipEntryFrameListener = null
             player.removeListener(playerListener)
             player.removeAnalyticsListener(statsAnalyticsListener)
-            if (usingSharedPlayer) {
-                // MainActivity ka inline/floating-mini player hai — release nahi
-                // karna, wahi isi instance ko wapas apne overlay mein istemal
-                // karega. Bas playerView se detach kar do taaki is (ab destroy ho
-                // rahi) Activity ka koi reference player par bacha na rahe.
+            if (usingSharedPlayer && !releasePlayerFullyOnDestroy) {
+                // MainActivity ka inline player hai — release nahi karna, wahi isi
+                // instance ko wapas apne overlay mein istemal karega. Bas playerView
+                // se detach kar do taaki is (ab destroy ho rahi) Activity ka koi
+                // reference player par bacha na rahe.
                 playerView.player = null
             } else {
+                // Bug fix (PiP band karne ke baad black screen + audio chalte
+                // rehna, phir wahi video dobara khola jaaye to bhi black screen):
+                // agar yeh genuine PiP close (X/swipe) hai to shared player hone
+                // ke bawajood ise poori tarah release karo aur SharedPlayerHolder
+                // (upar wale block mein) pehle hi clear ho chuka hai — taaki agli
+                // baar wahi video khulne par ek bilkul fresh player bane, kisi
+                // orphaned/broken instance ko reuse na kiya jaaye.
                 playerView.player = null
                 player.release()
             }
