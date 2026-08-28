@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.GestureDetector
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -291,34 +290,75 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         inlineSeekAccumulatedUnits = 0
     }
 
-    // Swipe-down-to-minimize on the inline player itself — video ko hold karke
-    // neeche push karne se bhi chevron jaisa hi minimize hota hai (ab yeh
-    // seedha floating mini-player mein jaata hai, real PiP mein nahi).
+    // Swipe-down-to-PiP on the inline player itself — video ko hold karke
+    // neeche push karne se bhi chevron jaisa hi minimize hota hai.
     private var inlineSwipeStartX = 0f
     private var inlineSwipeStartY = 0f
     private var inlineSwipeDragging = false
-    private val INLINE_DRAG_MINI_THRESHOLD = 90f
+    private val INLINE_DRAG_PIP_THRESHOLD = 90f
 
-    // YouTube-style in-app floating mini-player.
-    //
-    // Purana system rea-PiP (enterPictureInPictureMode / PictureInPictureParams,
-    // PlayerActivity round-trip, WebView goBack()/goForward() jugaad,
-    // pipReturnPath/didNavigateBackForPip/awaitingRectAfterPipReturn/
-    // pipSessionActive jaisi saari bookkeeping) poori tarah hata diya gaya hai
-    // — usi mein "expand karne par Home screen khul jaata hai" jaisi fragile
-    // behavior thi. Iski jagah ab yeh chhota overlay khud MainActivity ke andar
-    // hi ek chhota floating box ban kar tairta hai (WebView content ke oopar,
-    // bottom-right corner mein, bilkul YouTube app jaisa) — koi doosri Activity/
-    // window launch nahi hoti, koi WebView navigation bhi nahi karni padti,
-    // isliye "wapas kahan jaana hai" wali poori purani dikkat khud-ba-khud
-    // khatam ho jaati hai.
-    private var inlineIsFloatingMini = false
-    private var miniPlayerCloseButton: ImageView? = null
-    // Docked (page ke andar wale) rect ke layout params yahan yaad rakhte hain
-    // taaki mini-player band karke wapas docked mode mein aane par (agar kabhi
-    // zaroorat pade) turant restore ho sake — practically hum expand par seedha
-    // fullscreen kholte hain, lekin yeh safety-net ke roop mein rakha hai.
-    private var dockedInlineParams: FrameLayout.LayoutParams? = null
+    // User ki request: jab chhote inline player se PiP shuru ki jaaye, to WebView
+    // ko is (watch) page se PEECHE (info/Detail page) navigate kar do — taaki PiP
+    // floating window ke peeche wahi "clean" pichli page dikhe, is page ka khaali/
+    // black video-hole nahi. Yeh flag track karta hai ki aisi ek back-navigation
+    // abhi pending hai, taaki PlayerActivity se wapas aane par sahi se decide ho
+    // sake: expand/normal-return par WebView ko usi watch page par FORWARD wapas
+    // le jaana hai (aur video resume karna hai), lekin genuine PiP "X" close par
+    // kuchh bhi nahi karna — na forward navigate, na koi playback background mein.
+    private var didNavigateBackForPip = false
+    // BUG FIX (user report: "PiP expand karne par Home page par khul jaata hai,
+    // asli watch page par nahi"): `didNavigateBackForPip` + `webView.goForward()`
+    // is assumption par tika tha ki PiP floating rehte waqt WebView ki forward-
+    // history bilkul waisi hi rahegi jaisi goBack() karte waqt thi. Lekin PiP ke
+    // dauraan user WebView mein kahin bhi normally ghoom sakta hai (Home tab,
+    // koi doosra title) — koi bhi naya client-side navigate() us forward-entry
+    // ko turant discard kar deta hai, isliye goForward() expand par ya to kuch
+    // nahi karta ya galat page par le jaata — result: "Home par hi khula reh
+    // jaana", bilkul jaisa report hua. Fix: exact watch-page path yahan yaad
+    // rakho (goBack() se theek pehle capture karke) aur expand par isi ko
+    // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
+    // browser history state par bharosa nahi.
+    private var pipReturnPath: String? = null
+    // BUG FIX (user report + screenshot: "expand ke baad video Home page ke
+    // upar hi atka reh jaata hai, apni jagah par nahi"): neeche wale
+    // onActivityResult ka "normal return" branch pehle HAMESHA turant
+    // `inlineOverlay.visibility = VISIBLE` kar deta tha — apne ANTIM/purane
+    // (PiP-se-pehle wale) rect par, chahe WebView us waqt genuinely wapas
+    // watch page par pahunchi ho ya nahi. `mountInlinePlayer()` ka apna
+    // same-URI dedupe guard (upar dekho) is se koi rishta nahi rakhta — wo
+    // sirf overlay CREATE/reuse control karta hai, iski VISIBILITY yahin se
+    // aati hai. Result: agar `pipReturnPath` wali navigation abhi poori nahi
+    // hui (ya kisi wajah se fail ho gayi), video turant dikh jaata — lekin
+    // apni PURANI jagah (jahan Player.jsx pehle tha) par, jo ab galat page
+    // (jaise Home) ke upar overlap kar rahi hoti.
+    // Fix: jab yeh return ek real-PiP-se-navigate-away session ke baad ho
+    // (`didNavigateBackForPip` true tha), overlay ko turant show mat karo —
+    // iske bajaye wait karo JS ke agle genuine `updateInlinePlayerRect()`
+    // bridge call ka (jo sirf Player.jsx ke sahi route par dobara mount hone
+    // ke baad hi aata hai — dekho VideoPlayer.jsx ka rect-effect). Wahi call
+    // ab overlay ko sahi, FRESH rect par show karega. Agar navigation kisi
+    // wajah se poori kabhi nahi hoti, ek chhota safety-net timeout (neeche)
+    // fir bhi ise show kar dega — taaki video hamesha ke liye chhupa na reh
+    // jaaye, sirf thoda late dikhe (galat jagah par turant dikhne se behtar).
+    private var awaitingRectAfterPipReturn = false
+    private val awaitingRectHandler = Handler(Looper.getMainLooper())
+    private var awaitingRectTimeoutRunnable: Runnable? = null
+
+    // BUG FIX (user report, bilkul wahi symptom dobara: "PiP karke back button
+    // dabaya, Home par aa gaye, expand karne par abhi bhi Home hi khulta hai"):
+    // pichla fix (`pipReturnPath` + unconditional navigate-on-expand) sahi
+    // disha mein tha, lekin fir bhi race/lag ka shikaar ho sakta tha — asli,
+    // pakka fix yeh hai ki PiP floating rehte waqt is WATCH PAGE ko WebView
+    // mein badalne hi mat do, taaki "wapas kahan jaana hai" wala sawaal hi na
+    // uthe. Yeh flag track karta hai ki abhi ek real PiP session live hai
+    // (`openFullscreenFromInline(enterPipImmediately=true)` se leke jab tak
+    // PlayerActivity se result wapas na aa jaaye) — is dauraan hardware back
+    // button ko yahin (neeche `onKeyDown` mein) absorb kar lete hain, WebView
+    // ko bilkul chhedte nahi. Comments/likes/title wala player page bilkul
+    // waisa hi "catch" rehta hai jaisa PiP shuru hote waqt tha, isliye expand
+    // hamesha wahi khulta hai — koi navigate-back-and-forth ki zaroorat hi
+    // nahi padti.
+    private var pipSessionActive = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -994,8 +1034,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // is div ko nahi. Ab PiP tap karne par pehle fullscreen khulta hai (jahan
             // poori window sirf video hi hai), aur wahi turant real PiP mein chala
             // jaata hai — yahi sahi/kaam karne wala tareeka hai.
-            pipButton.setOnClickListener { enterFloatingMiniPlayer() }
-            pipChevron.setOnClickListener { enterFloatingMiniPlayer() }
+            pipButton.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
+            pipChevron.setOnClickListener { openFullscreenFromInline(enterPipImmediately = true) }
 
             val prevButton = root.findViewById<ImageButton>(R.id.inlinePrevButton)
             val nextButton = root.findViewById<ImageButton>(R.id.inlineNextButton)
@@ -1186,16 +1226,17 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                             inlinePlayer?.playbackParameters = PlaybackParameters(inlineSpeedBeforeLongPress)
                             speedBadge.visibility = View.GONE
                         }
-                        if (wasDragging && dy > INLINE_DRAG_MINI_THRESHOLD) {
+                        if (wasDragging && dy > INLINE_DRAG_PIP_THRESHOLD) {
                             // Instant reset (not animated) right before handing off to
-                            // the floating mini-player transition — animating back to
-                            // full size at the same moment the mini-player shrink kicks
-                            // in caused a visible snap/flash.
+                            // the real PiP transition — same reasoning as the fullscreen
+                            // player's swipe fix: animating back to full size at the same
+                            // moment the fullscreen-open + system-PiP shrink kicks in
+                            // caused a visible snap/flash.
                             root.translationY = 0f
                             root.alpha = 1f
                             root.scaleX = 1f
                             root.scaleY = 1f
-                            enterFloatingMiniPlayer()
+                            openFullscreenFromInline(enterPipImmediately = true)
                         } else {
                             root.animate().translationY(0f).alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
                         }
@@ -1782,7 +1823,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         sheet.show()
     }
 
-    // Chhoti fade-in animation — mount/reattach/unmount teeno jagah reuse hoti hai.
+    // Dekho `awaitingRectAfterPipReturn` field ka comment upar — is ek chhoti
+    // fade-in animation ko ek helper mein nikaal diya hai taaki normal-return
+    // path AUR updateInlinePlayerRect() (real-PiP-return path) dono ise
+    // istemal kar sakein.
     private fun showInlineOverlayWithFade() {
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
@@ -1801,10 +1845,6 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
     fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
-        // Floating mini-player apni khud ki fixed (bottom-right corner) jagah
-        // manage karta hai — jab tak woh active hai, page ke andar wale docked
-        // rect ke JS updates ignore karo, warna dono ek-doosre se ladte rehte.
-        if (inlineIsFloatingMini) return
         val overlay = inlineOverlay ?: return
         val density = resources.displayMetrics.density
         val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
@@ -1814,7 +1854,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         params.leftMargin = (left * density).toInt()
         params.topMargin = statusBarInsetPx + (top * density).toInt()
         overlay.layoutParams = params
-        dockedInlineParams = params
+        // BUG FIX (dekho `awaitingRectAfterPipReturn` field ka comment): yeh
+        // pakka signal hai ki JS ab WAAKI (sahi) page par dobara mount ho
+        // chuki hai aur is video ke container ka asli, current rect bhej
+        // chuki hai — ab safely (aur sahi jagah par) overlay dikhao.
+        if (awaitingRectAfterPipReturn) {
+            awaitingRectAfterPipReturn = false
+            awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+            awaitingRectTimeoutRunnable = null
+            showInlineOverlayWithFade()
+        }
     }
 
     fun unmountInlinePlayer() {
@@ -2060,11 +2109,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    /** Chhote player ke fullscreen button se poora native PlayerActivity khulta hai,
+    /** Chhote player ke fullscreen/more/PiP button se poora native PlayerActivity khulta hai,
      *  wahi position/playing-state ke saath; wapas aane par onActivityResult se sync hota hai.
-     *  (PiP button/chevron/swipe ab isse alag path — enterFloatingMiniPlayer() — use karte
-     *  hain, dekho neeche.) */
-    private fun openFullscreenFromInline() {
+     *  enterPipImmediately=true ho to PlayerActivity khulte hi turant real PiP mein chala jaata hai
+     *  (isi Activity ka apna already-working PiP implementation use karke). */
+    private fun openFullscreenFromInline(enterPipImmediately: Boolean = false) {
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         // Bug fix (premium smoothness / "buffering" feel): pehle yahan turant
@@ -2075,7 +2124,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // hota. Ab pause bilkul nahi karte — same-instance handoff ke dauraan
         // player continuously chalta rehta hai (bas Surface thodi der ke liye
         // kisi bhi PlayerView se attach nahi hota), YouTube jaisa gapless feel.
+        // ExoPlayer.setForegroundMode(true) yahan decoder ko is chhoti
+        // surface-less gap ke dauraan zinda/ready rakhta hai, taaki naye
+        // (fullscreen) Surface par attach hote hi bina kisi re-init/rebuffer ke
+        // turant continue ho jaaye.
         inlinePlayer?.setForegroundMode(true)
+        // Bug fix (PiP button/swipe par "badi wali screen khulti hai fir PiP
+        // hoti hai" jhatka): yahi rect ab do jagah kaam aata hai — (1) niche
+        // activity-launch ko poori tarah invisible/instant banane ke liye, aur
+        // (2) intent extras (pip_src_*) ke through PlayerActivity ko bhejte hain
+        // taaki wahan ka system PiP-shrink animation seedha isi chhote inline-
+        // player ki jagah se shuru ho, poori screen se nahi — dekho niche wala
+        // startActivityForResult() block aur PlayerActivity.buildPipParams().
+        val launchRect = Rect()
+        if (enterPipImmediately) {
+            try { inlinePlayerView?.getGlobalVisibleRect(launchRect) } catch (_: Exception) {}
+        }
         // Bug fix (black screen with audio-only playing): pehle sirf overlay ko GONE
         // karte the, lekin inlinePlayerView ka `.player` reference wahi rehta tha —
         // matlab ExoPlayer ka video-output Surface do PlayerView (yeh inline wala,
@@ -2087,99 +2151,118 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // waqt is player se juda ho.
         inlinePlayerView?.player = null
         inlineOverlay?.visibility = View.GONE
-        inlineIsFloatingMini = false
+        // User ki request: PiP shuru hote hi is watch page ko poora hata kar
+        // WebView ko peechli (info/Detail) page par le jao, taaki PiP window ke
+        // peeche wahi saaf page dikhe — is page ka khaali video-hole nahi. Sirf
+        // real PiP wale trigger (pip button/chevron/swipe/home-button) ke liye,
+        // plain "fullscreen" button (enterPipImmediately=false) page ko chhedta
+        // nahi — wahan user seedha isi page par wapas aana chahta hai.
+        // Bug fix (dekho `pipReturnPath` field ka comment): browser forward-
+        // history par bharosa karne se pehle, is watch page ka exact path
+        // (pathname + query) yahin, goBack() se theek pehle, capture kar lo —
+        // taaki expand par ise history state se independent, direct navigate()
+        // se wapas laaya jaa sake.
+        // BUG FIX (naya user report: "PiP karne se PiP is player screen par hi
+        // hona chahiye, home page par nahi"): pehle yahan (upar wale purane
+        // comment mein bataye gaye ek pehle wale request ke hisaab se)
+        // `webView.goBack()` call hoti thi jab bhi real PiP shuru hoti — matlab
+        // is watch page ko turant chhod kar WebView peechli (Home/Detail) page
+        // par chali jaati thi, taaki PiP window ke "peeche" wahi dikhe. Lekin
+        // isi wajah se PiP shuru hote hi background mein Home page dikhne
+        // lagta tha — bilkul jaisa ab report hua ("home main pip ho jaata
+        // hai"). Fix: ab is watch/player page ko chhodte hi nahi — WebView
+        // yahin isi page par rehta hai, PiP window bas isi ke oopar chhoti
+        // ho kar tairti hai (YouTube jaisa). `pipReturnPath` abhi bhi capture
+        // karte hain — agar user PiP ke dauraan khud kahin aur navigate kar
+        // le, expand par wapas isi watch page par le aane ke liye (neeche
+        // wale onActivityResult ka existing safety-net), lekin ab khud se
+        // kabhi goBack() nahi karte.
+        //
+        // BUG FIX (root cause of "PiP expand par kabhi-kabhi ab bhi Home khul
+        // jaata hai"): `pipReturnPath` aur `pipSessionActive` pehle SIRF
+        // `enterPipImmediately` (chhote inline player ke PiP button) wale case
+        // mein set hote the. Lekin real PiP normal FULLSCREEN se bhi shuru ho
+        // sakti hai — Home button/app-switch dabane par (dekho PlayerActivity
+        // ka onUserLeaveHint()/setAutoEnterEnabled auto-enter), jab video
+        // pehle `openFullscreenFromInline(enterPipImmediately = false)` se
+        // khola gaya ho. Us path mein `pipReturnPath` hamesha `null` reh jaata
+        // tha, isliye onActivityResult() ka safety-net kabhi navigate() nahi
+        // karta tha, aur `pipSessionActive` false hone ki wajah se PiP ke
+        // dauraan koi bhi back-press seedha WebView ko badal deta tha (Home
+        // par le jaata) — expand karne par wahi galat (Home) page khuli reh
+        // jaati. Fix: ab dono hamesha (chahe PiP turant-inline se bane ya
+        // baad mein fullscreen se Home-button se), taaki koi bhi real-PiP
+        // session is safety-net se cover ho, na ki sirf ek hi entry-point se.
+        pipReturnPath = currentWebViewPathOrNull()
+        didNavigateBackForPip = false
+        // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
+        // is watch page ko badalne se bachaayega jab tak PlayerActivity se
+        // result wapas na aa jaaye (dekho `pipSessionActive` field comment).
+        pipSessionActive = true
+        // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
+        // isi (genuinely-navigated-away) case mein overlay ka turant show
+        // hona rokna hai.
+        awaitingRectAfterPipReturn = didNavigateBackForPip
         val intent = Intent(this, PlayerActivity::class.java).apply {
             putExtra("video_uri", inlineUri)
             putExtra("video_title", inlineTitle)
             putExtra("video_qualities_json", inlineQualitiesJson)
             putExtra("resume_position_ms", pos)
             putExtra("resume_playing", wasPlaying)
+            putExtra("enter_pip_immediately", enterPipImmediately)
+            // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka — asli wajah):
+            // PlayerActivity ko yeh chhote inline player ka EXACT on-screen rect bhi
+            // bhej do, taaki wahan real PiP mein jaate waqt system ka shrink animation
+            // seedha ISI chhoti jagah se shuru ho, poori-screen wale playerView rect se
+            // nahi — dekho PlayerActivity.buildPipParams().
+            if (enterPipImmediately && launchRect.width() > 0 && launchRect.height() > 0) {
+                putExtra("pip_src_left", launchRect.left)
+                putExtra("pip_src_top", launchRect.top)
+                putExtra("pip_src_right", launchRect.right)
+                putExtra("pip_src_bottom", launchRect.bottom)
+            }
         }
-        startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
+        @Suppress("DEPRECATION")
+        if (enterPipImmediately) {
+            // Bug fix ("bada player khulta hai fir PiP hota hai" — do jhatkon wala
+            // flash): pehle yahan makeScaleUpAnimation() se activity ko chhote inline
+            // rect se POORI SCREEN tak "grow" hote dikhate the, aur uske turant baad
+            // ek ALAG system PiP-shrink animation shuru hoti thi (enterPipWhenFrameReady()
+            // se) — yeh do alag-alag animations back-to-back chalti thi, isliye beech
+            // mein ek pal ke liye poori screen "flash" hoti dikhti thi (pehle grow ho
+            // kar ruk jaata, fir shrink shuru hota) — bilkul "bada player khula fir PiP
+            // hua" jaisa laga, chahe dono animations back-to-back hi kyun na hon.
+            //
+            // Fix: is activity-launch transition ko ab poori tarah invisible/instant kar
+            // do (0ms — koi grow-animation nahi dikhta) — sirf EK hi visible motion honi
+            // chahiye: khud system ka PiP-enter shrink animation, jiska sourceRectHint
+            // (upar bheje gaye pip_src_* extras se, PlayerActivity.buildPipParams() mein)
+            // ab isi launchRect (chhote inline player ki jagah) se seedha shuru hota hai.
+            // Result: chhota inline video seedha turant PiP corner tak "shrink" hote
+            // dikhta hai — koi beech mein full-screen flash nahi, ek hi continuous
+            // motion, YouTube jaisa "direct PiP".
+            val options = android.app.ActivityOptions.makeCustomAnimation(this, 0, 0)
+            startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER, options.toBundle())
+        } else {
+            startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
+        }
     }
 
-    /** YouTube-style floating mini-player: chhote inline player ko docked (page ke
-     *  andar wale) rect se nikaal kar screen ke bottom-right corner mein ek chhota
-     *  fixed box bana deta hai, jo WebView content ke oopar tairta rehta hai chahe
-     *  user page scroll/browse kare. Koi Activity launch nahi hoti — playback isi
-     *  MainActivity ke andar, isi ExoPlayer instance par, bina rukawat chalta rehta
-     *  hai. Tap karne par wapas fullscreen khulta hai, "X" se band ho jaata hai. */
-    private fun enterFloatingMiniPlayer() {
-        val overlay = inlineOverlay ?: return
-        if (inlineIsFloatingMini) return
-        // Docked rect yaad rakho taaki chahen to wapas restore kiya jaa sake.
-        (overlay.layoutParams as? FrameLayout.LayoutParams)?.let { dockedInlineParams = it }
-        inlineIsFloatingMini = true
-
-        val density = resources.displayMetrics.density
-        val miniWidth = (148 * density).toInt()
-        val miniHeight = (83 * density).toInt()
-        val margin = (10 * density).toInt()
-        val params = FrameLayout.LayoutParams(miniWidth, miniHeight, Gravity.BOTTOM or Gravity.END).apply {
-            rightMargin = margin
-            bottomMargin = margin + (56 * density).toInt() // bottom nav jaisi UI se upar rakho
+    // Bug fix (dekho `pipReturnPath` field ka comment): WebView ke current
+    // loaded URL (jo SPA route ke saath hamesha in-sync rehta hai — React
+    // Router BrowserRouter asli address bar URL hi use karta hai) se sirf
+    // path + query nikaal deta hai, taaki React Router ke apne navigate() ko
+    // seedha wahi diya jaa sake (poora origin/scheme uske liye zaroori nahi).
+    private fun currentWebViewPathOrNull(): String? {
+        val url = webView.url ?: return null
+        return try {
+            val uri = Uri.parse(url)
+            val path = uri.path?.takeIf { it.isNotBlank() } ?: "/"
+            val query = uri.query
+            if (!query.isNullOrEmpty()) "$path?$query" else path
+        } catch (_: Exception) {
+            null
         }
-        overlay.layoutParams = params
-        overlay.animate().cancel()
-        overlay.scaleX = 1f
-        overlay.scaleY = 1f
-        overlay.alpha = 1f
-
-        ensureMiniPlayerCloseButton(overlay)
-        miniPlayerCloseButton?.visibility = View.VISIBLE
-
-        // Poore overlay par tap = expand (bilkul YouTube jaisa) — sirf "X" button
-        // isse bachta hai (apna alag click listener hai, neeche dekho).
-        overlay.setOnClickListener { exitFloatingMiniPlayerToFullscreen() }
-    }
-
-    /** Floating mini-player par ek chhota "X" close button lazily add karta hai
-     *  (sirf pehli baar) — tap karne par playback poora band ho jaata hai. */
-    private fun ensureMiniPlayerCloseButton(overlay: FrameLayout) {
-        if (miniPlayerCloseButton != null) return
-        val density = resources.displayMetrics.density
-        val size = (22 * density).toInt()
-        val close = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            setColorFilter(android.graphics.Color.WHITE)
-            setBackgroundColor(android.graphics.Color.argb(140, 0, 0, 0))
-            setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
-            setOnClickListener { closeFloatingMiniPlayer() }
-        }
-        val closeParams = FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.END).apply {
-            topMargin = (2 * density).toInt()
-            rightMargin = (2 * density).toInt()
-        }
-        overlay.addView(close, closeParams)
-        miniPlayerCloseButton = close
-    }
-
-    /** Mini-player ko tap karke wapas poora fullscreen player kholta hai — mini
-     *  overlay khud hide ho jaata hai (PlayerActivity ab isi live player instance
-     *  ko SharedPlayerHolder ke through le leta hai). */
-    private fun exitFloatingMiniPlayerToFullscreen() {
-        if (!inlineIsFloatingMini) return
-        inlineOverlay?.setOnClickListener(null)
-        openFullscreenFromInline()
-    }
-
-    /** Mini-player ka "X" — playback poori tarah band karke overlay hata deta hai. */
-    private fun closeFloatingMiniPlayer() {
-        inlineIsFloatingMini = false
-        inlineOverlay?.setOnClickListener(null)
-        inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
-        saveInlineWatchProgress()
-        inlinePlayer?.playWhenReady = false
-        inlinePlayer?.pause()
-        if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
-        inlinePlayerView?.player = null
-        inlinePlayer?.release()
-        inlinePlayer = null
-        inlineOverlay?.visibility = View.GONE
-        dockedInlineParams?.let { inlineOverlay?.layoutParams = it }
-        webView.evaluateJavascript(
-            "if (window.__suhaniOnNativeClosed) window.__suhaniOnNativeClosed();", null
-        )
     }
 
     @Suppress("DEPRECATION")
@@ -2188,12 +2271,140 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode == RESULT_OK) {
             val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
             val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
-            // PlayerActivity yeh extra bhejta hai jab user ne wahan (fullscreen mein)
-            // pip button/chevron/swipe-down/back-while-playing se "shrink" kiya ho —
-            // aisi return par hum seedha floating mini-player mein jaate hain, docked
-            // inline mein nahi. WebView ko kabhi chhedne/navigate karne ki zaroorat
-            // nahi padti — yeh poori tarah isi Activity ke andar hi handle hota hai.
-            val wantsMiniPlayer = data?.getBooleanExtra("want_mini_player", false) ?: false
+            val pipGenuinelyClosed = data?.getBooleanExtra("pip_closed", false) ?: false
+
+            // User ki request: agar yeh genuinely PiP window ke "X"/swipe-away se
+            // close hua hai (dekho PlayerActivity.finish()'s "pip_closed" extra),
+            // to poora cut kar do — na koi inline player wapas dikhao ya resume
+            // karo, na WebView ko us watch page par forward navigate karo. User
+            // jahan (peeche navigate ki gayi page par) hai, wahi rahe — bilkul
+            // khaali/silent, koi background playback nahi.
+            //
+            // BUG FIX (asli root cause — "PiP cut ho jaata hai lekin audio
+            // background mein chalta rehta hai"): pehle yahan `didNavigateBackForPip
+            // && pipGenuinelyClosed` check hota tha — matlab yeh "poora cut karo"
+            // wala path SIRF tabhi chalta jab PiP turant-inline se bani ho (jahan
+            // WebView bhi peeche navigate hui thi). Sabse aam case mein — video
+            // fullscreen se dekha gaya, phir home/swipe se PiP mein gaye, phir "X"
+            // se band kiya — didNavigateBackForPip false hi rehta (kyunki wo sirf
+            // enterPipImmediately wale flow mein set hota hai), isliye yeh poora
+            // block skip ho jaata aur code neeche wale "normal wapas aana" branch
+            // mein gir jaata, jo inlinePlayer ko FORCIBLY RESUME (playWhenReady =
+            // true) kar deta — result: PiP window gayab ho jaati (cut dikhta hai)
+            // lekin audio/video background mein chalta rehta. Ab sirf
+            // `pipGenuinelyClosed` par hi bharosa karo — PlayerActivity ab yeh flag
+            // origin (inline ho ya fullscreen) ki parwah kiye bina hamesha bhejta
+            // hai jab bhi yeh ek definitively genuine PiP close ho (dekho
+            // PlayerActivity.handlePipGenuineClose()).
+            if (pipGenuinelyClosed) {
+                pipSessionActive = false
+                didNavigateBackForPip = false
+                pipReturnPath = null
+                awaitingRectAfterPipReturn = false
+                awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+                awaitingRectTimeoutRunnable = null
+                inlinePlayer?.playWhenReady = false
+                inlinePlayer?.pause()
+                if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
+                inlinePlayerView?.player = null
+                inlinePlayer?.release()
+                inlinePlayer = null
+                inlineOverlay?.visibility = View.GONE
+                // BUG FIX (asli gap jo aapne pakda — "website side to add hi
+                // nahi kiya"): ab tak yahan sirf NATIVE side (Kotlin) poora cut
+                // kar raha tha — inlinePlayer release, SharedPlayerHolder clear.
+                // Lekin website (VideoPlayer.jsx) ko iska koi pata hi nahi chalta
+                // tha — usne `window.AndroidPlayer.mount(...)` pehle hi call kar
+                // diya tha aur usse lagta hai ki chhota native player abhi bhi
+                // wahin mounted/zinda hai. Isliye is div ki jagah khaali/dead reh
+                // jaati thi — na play-button kaam karta, na scroll-back-in-view
+                // par kuch dikhta, jab tak user manually page reload/re-navigate
+                // na kare.
+                // Fix: yahan website ko explicitly bata do ki native player cut ho
+                // gaya hai, taaki JS side apna state reset kar ke chhote player ko
+                // dobara fresh mount kar sake (jaise woh already prev/next button
+                // ke liye window.__suhaniOnNativePrev/Next se karta hai). Website
+                // side ka matching handler VideoPlayer.jsx mein add kiya gaya hai.
+                webView.evaluateJavascript(
+                    "if (window.__suhaniOnNativeClosed) window.__suhaniOnNativeClosed();", null
+                )
+                return
+            }
+
+            // Genuine PiP ko "bada" karke (ya normal fullscreen se seedha) wapas
+            // aana — hamesha check karo ki WebView abhi bhi usi watch page par
+            // hai jahan se PiP shuru hui thi; agar nahi, to seedha wahi par
+            // navigate kar do, taaki "clear" page dikhe aur video wahi
+            // (fullscreen se laayi gayi) position/playing-state ke saath,
+            // YouTube jaisa, resume ho.
+            //
+            // BUG FIX (user report: "PiP jahan se shuru hui udhar hi expand
+            // hona chahiye, chahe popup kahin bhi ho"): pehle yeh poora block
+            // `if (didNavigateBackForPip)` ke andar tha — matlab restore SIRF
+            // tabhi try hota jab PiP shuru karte waqt genuinely ek goBack()
+            // hua ho. Lekin `didNavigateBackForPip` sirf `webView.canGoBack()`
+            // true hone par hi set hota hai (dekho openFullscreenFromInline).
+            // Jab PiP us watch page se shuru hoti jiske PEECHE koi WebView
+            // history hi nahi thi (jaise app khulte hi seedha ek video par —
+            // koi Detail/Home page pehle load hi nahi hua tha is session
+            // mein), `didNavigateBackForPip` false reh jaata, aur is poore
+            // if-block ko hi skip kar diya jaata — chahe `pipReturnPath` set
+            // ho. Result: agar user PiP ke dauraan WebView mein kahin bhi
+            // ghooma (Home tab, koi doosra title), expand par wahi galat/
+            // current page hi khuli reh jaati, kabhi wapas asli watch page par
+            // nahi jaata — bilkul jaisa report hua.
+            //
+            // Fix: `didNavigateBackForPip` par bharosa mat karo — seedha
+            // compare karo ki WebView abhi kis path par hai vs `pipReturnPath`
+            // kya tha. Agar dono match nahi karte (chahe hum kabhi goBack()
+            // kiye the ya nahi), tabhi navigate() karo. Agar already sahi page
+            // par hain (user kahin gaya hi nahi tha), koi extra
+            // navigate/remount na karo — bewajah reload avoid hota hai.
+            // BUG FIX (naya user report — same symptom firse: "PiP karke back
+            // button se Home aa gaye, expand karne par Home hi khula reh gaya,
+            // wapas us player page par nahi gaya jahan se PiP hui thi"): upar
+            // wala fix `webView.url` ko `pipTarget` se COMPARE karke faisla
+            // leta tha ki navigate() karna hai ya nahi — lekin PiP floating
+            // rehte waqt WebView background mein hi user ke back-press/
+            // navigation ko process karta hai, aur `webView.getUrl()` ka
+            // internal state kabhi-kabhi is comparison ke exact waqt tak
+            // React Router ke asli current path ke saath sync nahi hota
+            // (thoda lag/race) — result: `needsPipReturnNavigate` galti se
+            // `false` nikal jaata, navigate() poora skip ho jaata, aur user
+            // jahan bhi (Home) tha wahin khula reh jaata — bilkul jaisa
+            // dubara report hua.
+            //
+            // Fix: is fragile "kya hum already sahi page par hain" check par
+            // bharosa karna hi band kar do — agar `pipTarget` (jahan se PiP
+            // shuru hui thi) maujood hai, hamesha seedha wahi navigate() kar
+            // do, bina kisi comparison ke. React Router khud already-same-path
+            // par navigate() ko safe/idempotent tareeke se handle karta hai
+            // (koi extra remount/reload nahi), isliye correctness ke liye yeh
+            // trade-off theek hai — "kabhi-kabhi ek harmless extra navigate()"
+            // "kabhi-kabhi galat page par phasa reh jaana" se kahin behtar hai.
+            val pipTarget = pipReturnPath
+            val needsPipReturnNavigate = pipTarget != null
+            pipSessionActive = false
+            if (needsPipReturnNavigate) {
+                webView.evaluateJavascript(
+                    "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
+                    null
+                )
+            } else if (didNavigateBackForPip && webView.canGoForward()) {
+                // Fallback: agar kisi wajah se watch-page path capture nahi ho
+                // paya (bahut purana WebView state, ya url null) lekin humne
+                // PiP shuru karte waqt genuinely goBack() kiya tha, purana
+                // behavior hi try karo, kuch na hone se behtar.
+                webView.goForward()
+            }
+            didNavigateBackForPip = false
+            pipReturnPath = null
+            // Overlay ko turant show karna hai ya JS ke agle fresh rect call
+            // ka wait karna hai — yeh ab isi baat par tika hai ki humne abhi
+            // upar genuinely navigate() kiya ya nahi (na ki purani
+            // `didNavigateBackForPip` value par, jo entry-time par set hui
+            // thi aur is asli decision ko sahi se reflect nahi karti thi).
+            awaitingRectAfterPipReturn = needsPipReturnNavigate
 
             // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
             // tha (SharedPlayerHolder ke through) — agar wo abhi bhi zinda hai (decoder
@@ -2201,10 +2412,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // koi naya buffer na bane. Sirf tabhi rebuild karo jab wo genuinely
             // release ho chuka ho (ya system ne background mein kill kar diya ho).
             // Bug fix (premium smoothness / "buffering" feel — asli root cause):
-            // agar hum SAME live instance reuse kar rahe hon, koi seek hi mat karo —
-            // wo already sahi (ya usse bhi aage, sahi) position par hai. Sirf jab
-            // genuinely NAYA player banaya gaya ho (mountInlinePlayer — jiske paas
-            // khud ka resume-position logic nahi tha yahan) tabhi seekTo(pos) chahiye.
+            // pehle yahan har case mein (shared instance reuse ho ya fresh build)
+            // seekTo(pos) unconditionally chal jaata tha. "pos" PlayerActivity ke
+            // finish() ke waqt capture hui thi — us aur is line ke beech, agar
+            // shared player continuously chalta raha (jo ab hum karte hain, upar
+            // dekho), current position us "pos" se already AAGE nikal chuki hoti
+            // — seekTo(pos) use jabardasti PEECHE, ek stale/purane timestamp par
+            // ROLLBACK kar deta tha. Yahi asli "jhatka + buffering" ka kaaran
+            // tha: live chal rahi video ko har handoff par thodا peeche seek
+            // karke ExoPlayer ko dubara us position ke aas-paas resync/rebuffer
+            // karna padta.
+            // Fix: jab hum SAME live instance reuse kar rahe hon, koi seek hi
+            // mat karo — wo already sahi (ya usse bhi aage, sahi) position par
+            // hai. Sirf jab genuinely NAYA player banaya gaya ho (mountInlinePlayer
+            // — jiske paas khud ka resume-position logic nahi tha yahan) tabhi
+            // seekTo(pos) chahiye.
             if (SharedPlayerHolder.player != null && SharedPlayerHolder.uri == inlineUri) {
                 inlinePlayer = SharedPlayerHolder.player
                 inlinePlayerView?.player = inlinePlayer
@@ -2217,15 +2439,32 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlinePlayer?.seekTo(pos)
             }
             inlinePlayer?.playWhenReady = wasPlaying
-
-            if (wantsMiniPlayer) {
-                inlineOverlay?.visibility = View.VISIBLE
-                inlineIsFloatingMini = false // enterFloatingMiniPlayer() no-ops agar already true
-                enterFloatingMiniPlayer()
+            // Bug fix / polish: pehle overlay seedha VISIBLE ho jaata tha — ek chhota
+            // fade-in (jaisa swipe-down-to-PiP wapas reset hone par pehle se hai)
+            // smoother/premium feel deta hai, aur reattach ke turant baad wale ek-do
+            // frame ke "settle" hone ko bhi chhupa deta hai.
+            // Premium polish: ab baaki dono jagah (mountInlinePlayer/unmountInlinePlayer)
+            // jaisa hi halka scale bhi hai — teeno jagah ka overlay show/hide motion
+            // ab consistent hai, poore app mein ek hi "material" feel.
+            // BUG FIX (dekho `awaitingRectAfterPipReturn` field ka comment): agar
+            // yeh return ek real-PiP-navigate-away session ke baad hai, overlay ko
+            // yahan turant mat dikhao — WebView abhi tak sahi (watch) page par
+            // wapas pahunchi hi nahi hai (async navigate() abhi chal raha hai).
+            // updateInlinePlayerRect() (JS ke fresh mount ke baad) hi ab ise sahi
+            // rect ke saath dikhayega. Ek safety-net timeout bhi laga do — agar
+            // kisi wajah se woh call kabhi na aaye, video hamesha ke liye chhupa
+            // na reh jaaye.
+            awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+            if (awaitingRectAfterPipReturn) {
+                val timeoutRunnable = Runnable {
+                    if (awaitingRectAfterPipReturn) {
+                        awaitingRectAfterPipReturn = false
+                        showInlineOverlayWithFade()
+                    }
+                }
+                awaitingRectTimeoutRunnable = timeoutRunnable
+                awaitingRectHandler.postDelayed(timeoutRunnable, 1500L)
             } else {
-                // Bug fix / polish: pehle overlay seedha VISIBLE ho jaata tha — ek
-                // chhota fade-in smoother/premium feel deta hai, aur reattach ke
-                // turant baad wale ek-do frame ke "settle" hone ko bhi chhupa deta hai.
                 showInlineOverlayWithFade()
             }
         }
@@ -2247,11 +2486,17 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            // Floating mini-player ke saath (YouTube jaisa): back-press WebView ko
-            // navigate nahi karta — app ko bas background mein bhej do, mini-player
-            // apni jagah floating rehta hai. WebView ka page bhi waisa hi "catch"
-            // rehta hai jaisa mini-player shuru hote waqt tha.
-            if (inlineIsFloatingMini) {
+            // BUG FIX (user report: "PiP hote huye back dabane se Home aa
+            // jaata hai, expand par Home hi khulta hai — comment/like/title
+            // wale player page ka catch rakho"): jab tak real PiP session
+            // live hai (dekho `pipSessionActive`), is watch page ko WebView
+            // mein bilkul mat badlo — back-press ko yahin absorb kar lo aur
+            // app ko background mein bhej do (jaisa Home button dabane par
+            // hota, PiP window waisi hi floating rehti hai). Isse jo page
+            // (comments/likes/title/Up-Next ke saath) abhi loaded hai wahi
+            // "catch" rehta hai — expand hamesha usi par hoga, koi navigate-
+            // wapas-lao jugaad ki zaroorat hi nahi.
+            if (pipSessionActive) {
                 moveTaskToBack(true)
                 return true
             }
@@ -2281,13 +2526,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         webView.onResume()
     }
 
-    // Purana real system-PiP auto-enter (Home button dabane par) yahan se hata
-    // diya gaya hai — is app mein ab real Android PiP istemal hi nahi hota, sirf
-    // in-app floating mini-player (YouTube jaisa). Home button dabane par app
-    // normal Android behavior follow karta hai: bas background mein chala jaata
-    // hai (onPause() pehle se hi inlinePlayer ko pause kar deta hai) — agar user
-    // mini-player ko pehle se hi float kar chuka tha, wo state waisi hi (paused)
-    // background mein reh jaati hai aur wapas aane par continue ho jaati hai.
+    // Manifest mein MainActivity ke liye android:supportsPictureInPicture="true"
+    // pehle se tha, lekin koi bhi PiP-trigger karne wala code nahi tha — flag
+    // effectively dead thi. Ab agar chhota inline player abhi play ho raha ho
+    // (genuinely video dekhte waqt) aur user Home button dabaye / app switch
+    // kare, to already-built fullscreen+PiP path (jo PiP button/swipe-down se
+    // already kaam karta hai) reuse karke seedha real PiP mein chala jaate hain
+    // — ExoPlayer instance wahi rehta hai (SharedPlayerHolder ke through), koi
+    // naya buffer nahi banta.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val overlayVisible = inlineOverlay?.visibility == View.VISIBLE
+        val isPlaying = inlinePlayer?.isPlaying == true
+        if (overlayVisible && isPlaying) {
+            openFullscreenFromInline(enterPipImmediately = true)
+        }
+    }
 
     override fun onDestroy() {
         // Sirf apna hi listener registration hataao — agar kisi wajah se ek
