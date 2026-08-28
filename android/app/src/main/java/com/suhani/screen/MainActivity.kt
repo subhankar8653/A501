@@ -410,6 +410,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // completely ignore kar deta hai (na pause, na hide) — genuine "page chhodo"
     // unmount (jahan yeh flag false hi hoga) pehle jaisa hi normal kaam karta hai.
     private var suppressNextInlineUnmount = false
+    // BUG FIX (user report: "PiP ki vajah se video player Home page par khula
+    // reh jaata hai"): `suppressNextInlineUnmount` pehle indefinitely true reh
+    // sakta tha agar expected spurious unmount() (quality-switch remount se)
+    // kisi wajah se kabhi na aaye — us case mein agli baar jab user GENUINELY
+    // page/video chhodta (jaise Home par navigate karta), wahi asli unmount()
+    // call is stale flag se silently nigal li jaati, aur overlay HAMESHA ke
+    // liye stuck/visible reh jaata (jahan bhi last dikha tha, jaise Home ke
+    // oopar). Fix: is flag ko ab ek chhoti time-window (600ms) ke baad khud hi
+    // auto-reset kar dete hain — asli spurious round-trip is se kahin pehle hi
+    // (usually next JS tick par) aa jaata hai, isliye normal quality-switch flow
+    // par koi asar nahi, lekin flag ab kabhi bhi permanently "stuck true" nahi
+    // reh sakta.
+    private val suppressNextInlineUnmountHandler = Handler(Looper.getMainLooper())
+    private val suppressNextInlineUnmountReset = Runnable { suppressNextInlineUnmount = false }
     private var inlineHasNextEpisode = false
     private var inlineHasPrevEpisode = false
     private var inlinePrevButtonRef: ImageButton? = null
@@ -731,6 +745,38 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
                 fadeOutLoadingView()
+            }
+
+            // BUG FIX (user report: "app ke Home mein PiP ki wajah se video
+            // player home page par khula/open reh jaata hai"): ab tak inline
+            // overlay ko hide/unmount karne ka poora zimma sirf website (React
+            // side ke VideoPlayer.jsx unmount-cleanup effect, ya native-close
+            // bridge calls jaise __suhaniOnNativeClosed) par tha. Agar kisi
+            // race/edge-case mein woh JS-side unmount() call kabhi miss ho
+            // jaaye (jaise upar wale `suppressNextInlineUnmount` ke purane
+            // stuck-flag bug mein), overlay apni AAKHRI jagah (jahan wo watch
+            // page ka video-slot tha) par hi fixed reh jaata — aur WebView ke
+            // kisi bhi doosre route (jaise Home) par navigate karte hi, overlay
+            // wahi dikhta rehta, us naye page ke bilkul oopar chipka hua,
+            // bilkul jaisa report hua.
+            //
+            // Fix: yeh ek dusra, poori tarah independent safety-net hai — SPA
+            // (React Router pushState/replaceState) navigation yahin, native
+            // WebViewClient level par bhi track karo, aur jab bhi current path
+            // "/watch/" se shuru na ho, overlay ko definitively/forcefully hide
+            // kar do — chahe website side se koi unmount() call aaya ho ya
+            // nahi. Real PiP session (`pipSessionActive`) ke dauraan is check
+            // ko jaan-bujh kar skip karte hain, kyunki us waqt WebView khud
+            // isi watch page par jaan-bujh kar rakha jaata hai (real PiP
+            // window floating rehte waqt bhi) — dekho
+            // `openFullscreenFromInline()` ka comment.
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                if (pipSessionActive) return
+                val path = try { url?.let { Uri.parse(it).path } } catch (_: Exception) { null }
+                if (path == null || !path.startsWith("/watch/")) {
+                    forceHideInlineOverlay()
+                }
             }
 
             // Naya overload (WebResourceRequest/WebResourceError) — yehi hai jo
@@ -1606,6 +1652,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // unmount()+mount() round-trip bhejega — usse pehle flag laga do
         // (dekho `suppressNextInlineUnmount` ka comment).
         suppressNextInlineUnmount = true
+        suppressNextInlineUnmountHandler.removeCallbacks(suppressNextInlineUnmountReset)
+        suppressNextInlineUnmountHandler.postDelayed(suppressNextInlineUnmountReset, 600L)
         val escapedUrl = JSONObject.quote(newUrl)
         webView.evaluateJavascript(
             "if (window.__suhaniOnNativeQualityChange) window.__suhaniOnNativeQualityChange($escapedUrl);",
@@ -1866,6 +1914,33 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
+    /** `unmountInlinePlayer()` jaisa hi hard-hide (pause + fade-out), lekin
+     *  `suppressNextInlineUnmount` flag ko jaan-bujh kar BYPASS karta hai — sirf
+     *  `doUpdateVisitedHistory()` wale safety-net se bulaya jaata hai jab
+     *  WebView genuinely watch page se hat chuki ho. Isse koi bhi stale/stuck
+     *  suppress-flag is definitive cleanup ko kabhi rok nahi paata — dekho
+     *  `suppressNextInlineUnmount` field aur `doUpdateVisitedHistory()` ke
+     *  comments. Already-hidden overlay par no-op hai (bewajah re-animate
+     *  nahi karta). */
+    private fun forceHideInlineOverlay() {
+        val overlay = inlineOverlay ?: return
+        if (overlay.visibility != View.VISIBLE) return
+        inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
+        saveInlineWatchProgress()
+        inlinePlayer?.pause()
+        overlay.animate().cancel()
+        overlay.animate()
+            .alpha(0f).scaleX(0.92f).scaleY(0.92f)
+            .setDuration(150)
+            .withEndAction {
+                overlay.visibility = View.GONE
+                overlay.alpha = 1f
+                overlay.scaleX = 1f
+                overlay.scaleY = 1f
+            }
+            .start()
+    }
+
     fun unmountInlinePlayer() {
         // Dekho `suppressNextInlineUnmount` ki declaration ke paas ka comment —
         // yeh call genuinely "page/video chhodi" ki wajah se nahi, balki humaari
@@ -1875,6 +1950,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // no-op ho jaayega (same URI guard).
         if (suppressNextInlineUnmount) {
             suppressNextInlineUnmount = false
+            suppressNextInlineUnmountHandler.removeCallbacks(suppressNextInlineUnmountReset)
             return
         }
         inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
