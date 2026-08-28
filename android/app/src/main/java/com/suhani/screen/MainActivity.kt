@@ -108,14 +108,36 @@ class WebAppInterface(private val activity: MainActivity) {
         activity.runOnUiThread { if (!activity.isFinishing && !activity.isDestroyed) action() }
     }
 
+    // PERMANENT FIX (user report + screenshot: pehla hi fix "PiP → Home par
+    // player" wala regression laaya — "video khulte hi bilkul black screen,
+    // koi control nahi, sirf background mein audio chalta hai"): pichla fix
+    // (`isCurrentlyOnWatchPage()`) overlay dikhane se pehle NATIVE
+    // `webView.url` se current path confirm karta tha. Root cause of THIS
+    // naye regression: `webView.getUrl()` Chromium ke renderer<->browser
+    // process IPC ke through async update hota hai — jab bhi user pehli baar
+    // video par tap karta (Detail -> navigate('/watch/...') -> Player.jsx
+    // turant mount -> VideoPlayer ka effect turant `mount()` bridge call
+    // karta), yeh sab EK hi JS tick mein back-to-back hota hai. Us waqt
+    // native `webView.url` abhi tak purane path (jaha se navigate hua) par
+    // hi ho sakta hai — IPC ko catch-up karne ka waqt hi nahi mila. Result:
+    // `isCurrentlyOnWatchPage()` galti se false nikalta, overlay kabhi
+    // VISIBLE hi nahi hota (chahe player khud bilkul sahi chal/play ho raha
+    // ho — isiliye audio sunayi deta tha, sirf visual overlay stuck-hidden
+    // reh jaata).
+    // Fix: WebView ke apne (racy) `url` par bharosa karne ke bajaye, JS
+    // khud apna `window.location.pathname` — jo us EXACT waqt already
+    // sahi/updated hota hai (history.pushState turant, synchronously hota
+    // hai) — seedha isi bridge call ke saath bhej deta hai. Ab koi IPC-lag
+    // wali race hi nahi bachti; native side ko kabhi native `webView.url`
+    // par guess karne ki zaroorat nahi padti jab JS khud sach bata sakta hai.
     @JavascriptInterface
-    fun mount(uri: String, title: String, qualitiesJson: String) {
-        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson) }
+    fun mount(uri: String, title: String, qualitiesJson: String, currentPath: String) {
+        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson, currentPath) }
     }
 
     @JavascriptInterface
-    fun updateRect(left: Double, top: Double, width: Double, height: Double) {
-        runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height) }
+    fun updateRect(left: Double, top: Double, width: Double, height: Double, currentPath: String) {
+        runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height, currentPath) }
     }
 
     @JavascriptInterface
@@ -1020,7 +1042,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
-    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
+    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String, currentPath: String? = null) {
         // SPEED FIX (buffering still 10s+ dikh raha tha): TdlibClient.prewarm()
         // already exist karta tha, lekin sirf PlayerActivity (fullscreen open)
         // ise bulata tha — jabki user ka SABSE PEHLA tap (video card dabana)
@@ -1427,7 +1449,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // ho chuka ho), overlay seedha WAHIN (Home ke oopar) VISIBLE ho
         // jaata — bilkul jaisa report hua. Ab yahan bhi WebView ke ACTUAL
         // current URL se ground-truth confirm karte hain pehle.
-        if (isCurrentlyOnWatchPage()) {
+        // PERMANENT FIX (dekho `WebAppInterface.mount()` ka bada comment
+        // upar — "video khulte hi black screen" regression): pehle sirf
+        // native `webView.url` (racy, IPC-lag-prone) par bharosa karte the.
+        // Ab JS khud ka (us waqt already-accurate) `currentPath` bhejta hai —
+        // usi ko priority do. `currentPath` sirf tabhi null hota hai jab yeh
+        // call kisi purane Kotlin-internal caller se aayi ho (JS bridge se
+        // nahi) — sirf us case mein purana native-url-based check fallback
+        // ke roop mein istemal karo.
+        val onWatchPage = currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage()
+        if (onWatchPage) {
             inlineOverlay?.let { overlay ->
                 if (overlay.visibility != View.VISIBLE) {
                     overlay.animate().cancel()
@@ -1934,21 +1965,26 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // fade-in animation ko ek helper mein nikaal diya hai taaki normal-return
     // path AUR updateInlinePlayerRect() (real-PiP-return path) dono ise
     // istemal kar sakein.
-    private fun showInlineOverlayWithFade() {
+    private fun showInlineOverlayWithFade(currentPath: String? = null) {
         // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment
         // upar): yeh sabse aakhri "gate" hai. Chahe caller (onActivityResult
         // ka PiP-return path, updateInlinePlayerRect() ka
         // awaitingRectAfterPipReturn resolve, ya koi bhi future caller) kitna
         // bhi sochta ho ki WebView abhi /watch/ page par hai — yahan dobara,
-        // definitively, WebView ke ACTUAL current URL se confirm karo. Agar
-        // nahi, to bilkul show hi mat karo — overlay VISIBLE karke use kisi
-        // galat page (jaise Home) ke oopar dikhne dena is poore bug-class ka
-        // asli symptom hai. Retry-mechanisms (attemptPipReturnNavigate() ki
-        // 13x retry, onPageFinished() ka safety-net) khud hi WebView ko sahi
-        // page par le aayenge — us fresh "/watch/" mount se aane wala genuine
-        // updateInlinePlayerRect() call hi tab is function ko dobara,
-        // successfully call karega.
-        if (!isCurrentlyOnWatchPage()) return
+        // definitively confirm karo. JS-supplied `currentPath` (jab
+        // available ho — accurate, IPC-lag-free) ko priority do; sirf jab
+        // yeh purane, purely-native-triggered call-site se aaya ho (JS
+        // pairing ke bina — jaise onActivityResult ka safety-net timeout),
+        // native `webView.url`-based check par fallback karo. Agar nahi, to
+        // bilkul show hi mat karo — overlay VISIBLE karke use kisi galat
+        // page (jaise Home) ke oopar dikhne dena is poore bug-class ka asli
+        // symptom hai. Retry-mechanisms (attemptPipReturnNavigate() ki 13x
+        // retry, onPageFinished() ka safety-net) khud hi WebView ko sahi
+        // page par le aayenge — us fresh "/watch/" mount se aane wala
+        // genuine updateInlinePlayerRect() call hi tab is function ko
+        // dobara, successfully call karega.
+        val onWatchPage = currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage()
+        if (!onWatchPage) return
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
             overlay.alpha = 0f
@@ -1965,7 +2001,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
-    fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
+    fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double, currentPath: String? = null) {
         val overlay = inlineOverlay ?: return
         val density = resources.displayMetrics.density
         val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
@@ -1983,7 +2019,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             awaitingRectAfterPipReturn = false
             awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
             awaitingRectTimeoutRunnable = null
-            showInlineOverlayWithFade()
+            // PERMANENT FIX (dekho `WebAppInterface.mount()` ka bada comment
+            // — "black screen" regression): yahan bhi JS-supplied
+            // `currentPath` ko priority do (agar bridge caller ne bheja ho),
+            // native racy `webView.url` fallback sirf tab jab JS side se
+            // path na aaya ho.
+            showInlineOverlayWithFade(currentPath)
         }
     }
 
