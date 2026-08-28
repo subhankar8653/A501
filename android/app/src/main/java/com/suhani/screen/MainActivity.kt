@@ -2177,28 +2177,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // le, expand par wapas isi watch page par le aane ke liye (neeche
         // wale onActivityResult ka existing safety-net), lekin ab khud se
         // kabhi goBack() nahi karte.
-        //
-        // BUG FIX (root cause of "PiP expand par kabhi-kabhi ab bhi Home khul
-        // jaata hai"): `pipReturnPath` aur `pipSessionActive` pehle SIRF
-        // `enterPipImmediately` (chhote inline player ke PiP button) wale case
-        // mein set hote the. Lekin real PiP normal FULLSCREEN se bhi shuru ho
-        // sakti hai — Home button/app-switch dabane par (dekho PlayerActivity
-        // ka onUserLeaveHint()/setAutoEnterEnabled auto-enter), jab video
-        // pehle `openFullscreenFromInline(enterPipImmediately = false)` se
-        // khola gaya ho. Us path mein `pipReturnPath` hamesha `null` reh jaata
-        // tha, isliye onActivityResult() ka safety-net kabhi navigate() nahi
-        // karta tha, aur `pipSessionActive` false hone ki wajah se PiP ke
-        // dauraan koi bhi back-press seedha WebView ko badal deta tha (Home
-        // par le jaata) — expand karne par wahi galat (Home) page khuli reh
-        // jaati. Fix: ab dono hamesha (chahe PiP turant-inline se bane ya
-        // baad mein fullscreen se Home-button se), taaki koi bhi real-PiP
-        // session is safety-net se cover ho, na ki sirf ek hi entry-point se.
-        pipReturnPath = currentWebViewPathOrNull()
+        pipReturnPath = if (enterPipImmediately) currentWebViewPathOrNull() else null
         didNavigateBackForPip = false
         // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
         // is watch page ko badalne se bachaayega jab tak PlayerActivity se
         // result wapas na aa jaaye (dekho `pipSessionActive` field comment).
-        pipSessionActive = true
+        if (enterPipImmediately) pipSessionActive = true
         // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
         // isi (genuinely-navigated-away) case mein overlay ka turant show
         // hona rokna hai.
