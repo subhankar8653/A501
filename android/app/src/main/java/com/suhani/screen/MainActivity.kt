@@ -366,6 +366,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // hamesha wahi khulta hai — koi navigate-back-and-forth ki zaroorat hi
     // nahi padti.
     private var pipSessionActive = false
+    // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment):
+    // `pipSessionActive` ab tak kabhi bhi khud-ba-khud reset nahi hoti thi —
+    // sirf `onActivityResult()` (REQUEST_FULLSCREEN_PLAYER) ise false karta
+    // tha. Is file mein pehle bhi bilkul yahi "flag hamesha ke liye stuck true
+    // reh sakta hai" pattern ek baar mil chuka hai (dekho
+    // `suppressNextInlineUnmount` ka comment) — agar PlayerActivity kabhi
+    // (rare OS-level kill/crash/edge-case) `onActivityResult` deliver kiye
+    // baghair hi khatam ho jaaye, yeh flag hamesha ke liye true reh jaata,
+    // aur hardware back-button hamesha ke liye `moveTaskToBack()` mein
+    // absorb hota rehta (kabhi normal WebView-back kaam na kare) — bilkul
+    // waisa hi ek "chhota" leftover symptom jaisa is file mein pehle dikh
+    // chuka hai. Fix: ek generous (10-minute) watchdog — real PiP session
+    // itni der floating rehna normal hai, isliye yeh kabhi legitimate use
+    // mein fire nahi hoga, sirf ek genuine stuck-flag ke liye safety-net hai.
+    private val pipSessionWatchdogHandler = Handler(Looper.getMainLooper())
+    private val pipSessionWatchdogReset = Runnable { pipSessionActive = false }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -787,7 +803,23 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // `openFullscreenFromInline()` ka comment.
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                 super.doUpdateVisitedHistory(view, url, isReload)
-                if (pipSessionActive) return
+                // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada
+                // comment): pehle `if (pipSessionActive) return` yahan poore
+                // is safety-net ko HI skip kar deta tha — is galat assumption
+                // par ki "real PiP session ke dauraan WebView hamesha isi
+                // watch page par rahegi." Lekin overlay ab (upar
+                // `mountInlinePlayer()`/`showInlineOverlayWithFade()` mein)
+                // khud apne current-path ka ground-truth check karta hai,
+                // isliye yeh purana skip ab sirf ek EXTRA cheez karta tha:
+                // agar overlay kabhi (kisi bhi wajah se) galat page par
+                // VISIBLE ho jaata, is definitive safety-net ko hi nishkriya
+                // kar deta — exact wahi jo use theek karna chahiye tha. Ab
+                // yeh hamesha chalta hai, PiP session ke dauraan bhi — agar
+                // overlay genuinely sahi (/watch/) page par hai (jo normal
+                // flow mein hamesha hona chahiye), `forceHideInlineOverlay()`
+                // khud kuch nahi karega (already-hidden ya sahi-page overlay
+                // par no-op hai, dekho uska comment) — koi regression nahi,
+                // sirf ek aur hamesha-active defense layer.
                 val path = try { url?.let { Uri.parse(it).path } } catch (_: Exception) { null }
                 if (path == null || !path.startsWith("/watch/")) {
                     forceHideInlineOverlay()
@@ -1385,18 +1417,30 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // chhota scale+fade pop dete hain — same treatment jo fullscreen se wapas
         // aane par onActivityResult mein already istemal hoti hai, taaki dono
         // jagah ka feel consistent rahe.
-        inlineOverlay?.let { overlay ->
-            if (overlay.visibility != View.VISIBLE) {
-                overlay.animate().cancel()
-                overlay.alpha = 0f
-                overlay.scaleX = 0.92f
-                overlay.scaleY = 0.92f
-                overlay.visibility = View.VISIBLE
-                overlay.animate()
-                    .alpha(1f).scaleX(1f).scaleY(1f)
-                    .setDuration(200)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .start()
+        // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment
+        // upar `currentWebViewPathOrNull()` ke neeche): pehle yahan sirf
+        // `overlay.visibility != View.VISIBLE` check hota tha — matlab agar
+        // React kisi bhi wajah se `window.AndroidPlayer.mount()` call kar de
+        // (naya src, kisi race mein duplicate-guard bypass, waghera) us waqt
+        // jab WebView asal mein "/watch/" page par hai hi nahi (jaise ek real
+        // PiP session floating rehte waqt background mein Home par navigate
+        // ho chuka ho), overlay seedha WAHIN (Home ke oopar) VISIBLE ho
+        // jaata — bilkul jaisa report hua. Ab yahan bhi WebView ke ACTUAL
+        // current URL se ground-truth confirm karte hain pehle.
+        if (isCurrentlyOnWatchPage()) {
+            inlineOverlay?.let { overlay ->
+                if (overlay.visibility != View.VISIBLE) {
+                    overlay.animate().cancel()
+                    overlay.alpha = 0f
+                    overlay.scaleX = 0.92f
+                    overlay.scaleY = 0.92f
+                    overlay.visibility = View.VISIBLE
+                    overlay.animate()
+                        .alpha(1f).scaleX(1f).scaleY(1f)
+                        .setDuration(200)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
             }
         }
 
@@ -1891,6 +1935,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // path AUR updateInlinePlayerRect() (real-PiP-return path) dono ise
     // istemal kar sakein.
     private fun showInlineOverlayWithFade() {
+        // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment
+        // upar): yeh sabse aakhri "gate" hai. Chahe caller (onActivityResult
+        // ka PiP-return path, updateInlinePlayerRect() ka
+        // awaitingRectAfterPipReturn resolve, ya koi bhi future caller) kitna
+        // bhi sochta ho ki WebView abhi /watch/ page par hai — yahan dobara,
+        // definitively, WebView ke ACTUAL current URL se confirm karo. Agar
+        // nahi, to bilkul show hi mat karo — overlay VISIBLE karke use kisi
+        // galat page (jaise Home) ke oopar dikhne dena is poore bug-class ka
+        // asli symptom hai. Retry-mechanisms (attemptPipReturnNavigate() ki
+        // 13x retry, onPageFinished() ka safety-net) khud hi WebView ko sahi
+        // page par le aayenge — us fresh "/watch/" mount se aane wala genuine
+        // updateInlinePlayerRect() call hi tab is function ko dobara,
+        // successfully call karega.
+        if (!isCurrentlyOnWatchPage()) return
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
             overlay.alpha = 0f
@@ -2273,7 +2331,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
         // is watch page ko badalne se bachaayega jab tak PlayerActivity se
         // result wapas na aa jaaye (dekho `pipSessionActive` field comment).
-        if (enterPipImmediately) pipSessionActive = true
+        if (enterPipImmediately) {
+            pipSessionActive = true
+            pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
+            pipSessionWatchdogHandler.postDelayed(pipSessionWatchdogReset, 10 * 60 * 1000L)
+        }
         // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
         // isi (genuinely-navigated-away) case mein overlay ka turant show
         // hona rokna hai.
@@ -2369,6 +2431,51 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // PERMANENT ROOT-CAUSE FIX (user report + screenshots: "PiP expand karte
+    // waqt video player Home page ke oopar chipka reh jaata hai, asli watch
+    // page par nahi").
+    //
+    // Poori is class mein ab tak jitne bhi PiP-related bug fixes the (upar
+    // `pipReturnPath`, `pipSessionActive`, `awaitingRectAfterPipReturn`,
+    // `attemptPipReturnNavigate()` waghera), sab isi ek tareeke se kaam karte
+    // the: "sahi choreography/timing/flags maintain karo taaki overlay sirf
+    // TABHI VISIBLE ho jab WebView genuinely /watch/ page par ho." Yeh saare
+    // fixes zaroori aur sahi the, lekin fundamentally FRAGILE approach hai —
+    // koi bhi naya race (WebView renderer restart, activity-result miss,
+    // memory-pressure, ek naya future PiP-trigger jo kisi flag ko update
+    // karna bhool jaaye) isi symptom ko wapas la sakta hai — jaisa ki is file
+    // ke comments mein dikh raha hai, yeh EXACT bug baar-baar alag-alag
+    // choreography-race ki wajah se dobara report hua hai.
+    //
+    // ROOT CAUSE jo ab tak kabhi guard nahi hui thi: overlay ko VISIBLE
+    // banane wali dono jagah — `mountInlinePlayer()` (naya mount) aur
+    // `showInlineOverlayWithFade()` (PiP-return/resume) — kabhi bhi WebView
+    // ka CURRENT path check nahi karti thi. Woh dono sirf apne internal
+    // flags/state (`awaitingRectAfterPipReturn`, dedupe-URI check, waghera)
+    // par bharosa karte the ki "is waqt hum zaroor /watch/ page par honge."
+    // Jis pal bhi yeh assumption kisi bhi wajah se galat nikalti (chahe
+    // kaunsi bhi race ho), overlay seedha jahan bhi WebView actually hai
+    // (jaise Home) wahin VISIBLE ho jaata — bilkul jaisa report hua.
+    //
+    // PERMANENT FIX: is fragile "sahi choreography maintain karo" approach
+    // ko poori tarah replace mat karo (upar wale saare fixes apni jagah
+    // zaroori hain, flags ko wrong hone se bachate hain) — balki ek AAKHRI,
+    // ground-truth GATE add karo seedha un DO jagah par jahan visibility
+    // asal mein VISIBLE set hoti hai: chahe kuch bhi ho jaaye upar, overlay
+    // KABHI VISIBLE nahi hoga jab tak WebView ka current URL genuinely
+    // "/watch/" se shuru na ho. Isse yeh poori class of bug — "overlay kisi
+    // bhi galat page par dikh jaana" — algorithmically hi impossible ho
+    // jaata hai, kisi bhi future/unseen race ki parwah kiye bina. Agar
+    // dikhana abhi safe nahi (WebView abhi tak sahi page par nahi pahunchi),
+    // to bas skip kar do — already-working retry mechanisms (upar
+    // `attemptPipReturnNavigate()` ki 13x retry + `onPageFinished()` ka
+    // safety-net) khud WebView ko sahi page par le aayenge, aur us naye
+    // "/watch/" mount se aane wala genuine `updateInlinePlayerRect()` call
+    // hi tab overlay ko sahi jagah/waqt par dikhayega.
+    private fun isCurrentlyOnWatchPage(): Boolean =
+        currentWebViewPathOrNull()?.startsWith("/watch/") == true
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -2402,6 +2509,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // PlayerActivity.handlePipGenuineClose()).
             if (pipGenuinelyClosed) {
                 pipSessionActive = false
+                pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
                 didNavigateBackForPip = false
                 pipReturnPath = null
                 awaitingRectAfterPipReturn = false
@@ -2489,6 +2597,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val pipTarget = pipReturnPath
             val needsPipReturnNavigate = pipTarget != null
             pipSessionActive = false
+            pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
             if (needsPipReturnNavigate) {
                 // BUG FIX (user report: "PiP expand karne par watch page ki
                 // jagah app ke Home tab par khul jaata hai"): pehle yahan
@@ -2688,6 +2797,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // naya MainActivity instance already dobara registered ho chuka hai
         // (jaise fast recreate), uska registration na chheeno.
         if (DownloadService.listener === this) DownloadService.listener = null
+        pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
         loadingLabelPulse?.cancel()
         saveInlineWatchProgress()
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
