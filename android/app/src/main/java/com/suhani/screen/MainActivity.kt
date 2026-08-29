@@ -274,7 +274,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineOverlay: FrameLayout? = null
     private var inlinePlayerView: PlayerView? = null
     private var inlineAmbientGlowView: AmbientGlowView? = null
-    private var subtitleManuallyDisabled = false
+    // FEATURE (user ask: "video mein subtitle hamesha off rahe by default, user chahe
+    // to on kare"): pehle yeh "manually disabled" tha (default false = auto-ON jaise
+    // hi koi text track milti), ab ulta hai — "manually enabled" (default false = OFF),
+    // user Subtitle menu se khud koi track chune tabhi true hota hai.
+    private var subtitleManuallyEnabled = false
     private var audioManuallyDisabled = false
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
@@ -574,18 +578,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
-    // purane player se hata kar naye player par dobara laga sakein.
+    // Naya text/subtitle track available hote hi user ne khud manually ON na kiya ho
+    // to kabhi khud-ba-khud select NAHI karta — subtitle hamesha OFF start hota hai,
+    // sirf user Subtitle menu se ek baar khud koi track chune to hi ON hota hai
+    // (dekho showInlineSubtitleDialog()). Yeh listener isi liye khaali/no-op hai —
+    // naam se lagta hai kuch karega, par jaan-bujh kar kuch nahi karta; naye video
+    // par bhi subtitleManuallyEnabled flag (jo naye mount/episode par reset hoti hai)
+    // is default-off ko yakeeni banati hai.
     private val inlineTracksListener = object : Player.Listener {
         override fun onTracksChanged(tracks: Tracks) {
-            if (subtitleManuallyDisabled) return
-            val alreadySelected = tracks.groups.any { g -> g.type == C.TRACK_TYPE_TEXT && g.isSelected }
-            if (alreadySelected) return
-            val firstTextGroup = tracks.groups.firstOrNull { g -> g.type == C.TRACK_TYPE_TEXT } ?: return
-            val p = inlinePlayer ?: return
-            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                .setOverrideForType(TrackSelectionOverride(firstTextGroup.mediaTrackGroup, 0))
-                .build()
+            // Intentionally no-op — subtitle track kabhi auto-select nahi hota.
         }
     }
 
@@ -1199,6 +1201,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
             // Pehle sirf ek silent on/off toggle tha — ab fullscreen jaisa hi ek
             // asli track-picker popup khulta hai (available subtitle tracks + Off).
+            // Subtitle ab default OFF start hoti hai, isliye icon bhi shuru mein
+            // dimmed (0.5 alpha) dikhta hai — user ON kare to hi full-opacity ho.
+            subtitleButton.alpha = 0.5f
             subtitleButton.setOnClickListener { showInlineSubtitleDialog(subtitleButton) }
 
             speedButton.setOnClickListener {
@@ -1445,9 +1450,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         val player = inlinePlayer ?: buildInlineExoPlayer().also {
             inlinePlayer = it
             inlinePlayerView?.player = it
-            // Fullscreen player jaisa hi behavior: koi bhi text/subtitle track available
-            // ho aur user ne khud-se OFF na kiya ho, to pehla milte hi khud-ba-khud select
-            // kar do — warna subtitle button "on" dikhta lekin kuch bhi nahi dikhta.
+            // FEATURE (user ask: subtitle default OFF): fresh player par explicitly
+            // text tracks disable karo, taaki container ke andar "default"-flagged
+            // koi bhi embedded (ESub) subtitle track khud-ba-khud select na ho jaaye.
+            // subtitleManuallyEnabled bhi false rehti hai (naya mount = naya session).
+            it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            subtitleManuallyEnabled = false
             it.addListener(inlineTracksListener)
             it.addListener(inlinePlayPauseListener)
             it.addListener(inlineErrorListener)
@@ -2295,18 +2305,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
         labels.add("Off")
 
-        val selectedIndex = if (subtitleManuallyDisabled) labels.size - 1
+        // Selected index: agar user ne khud koi track ON nahi ki (default state),
+        // dialog "Off" ko highlighted dikhaye — track "isSelected" honi (container
+        // ke andar) subtitle ON hone ka matlab nahi rakhti ab, kyunki hum text
+        // tracks default se hi disabled rakhte hain.
+        val selectedIndex = if (!subtitleManuallyEnabled) labels.size - 1
             else trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }.let { if (it < 0) 0 else it }
 
         showInlineChoiceSheet("Subtitles", labels, selectedIndex) { which ->
             if (which == labels.size - 1) {
-                subtitleManuallyDisabled = true
+                subtitleManuallyEnabled = false
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                     .build()
                 subtitleButton.alpha = 0.5f
             } else {
-                subtitleManuallyDisabled = false
+                subtitleManuallyEnabled = true
                 val (group, index) = trackRefs[which]
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
