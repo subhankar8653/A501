@@ -79,7 +79,7 @@ export function isVerified() {
 // useT() hook se padhte hain.
 // ---------------------------------------------------------------------
 const LANGUAGE_KEY = 'a501_language'
-export const DEFAULT_LANGUAGE = 'hinglish'
+export const DEFAULT_LANGUAGE = 'en'
 
 export function getLanguage() {
   return localStorage.getItem(LANGUAGE_KEY) || DEFAULT_LANGUAGE
