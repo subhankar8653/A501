@@ -61,7 +61,6 @@ import com.suhani.videoplayer.PlayerActivity
 import com.suhani.videoplayer.SharedPlayerHolder
 import com.suhani.videoplayer.HistoryStore
 import com.suhani.videoplayer.HistoryEntry
-import com.suhani.videoplayer.CorruptStore
 import com.suhani.videoplayer.GesturePrefs
 import com.suhani.videoplayer.TdlibClient
 import com.suhani.videoplayer.AmbientGlowView
@@ -109,14 +108,36 @@ class WebAppInterface(private val activity: MainActivity) {
         activity.runOnUiThread { if (!activity.isFinishing && !activity.isDestroyed) action() }
     }
 
+    // PERMANENT FIX (user report + screenshot: pehla hi fix "PiP → Home par
+    // player" wala regression laaya — "video khulte hi bilkul black screen,
+    // koi control nahi, sirf background mein audio chalta hai"): pichla fix
+    // (`isCurrentlyOnWatchPage()`) overlay dikhane se pehle NATIVE
+    // `webView.url` se current path confirm karta tha. Root cause of THIS
+    // naye regression: `webView.getUrl()` Chromium ke renderer<->browser
+    // process IPC ke through async update hota hai — jab bhi user pehli baar
+    // video par tap karta (Detail -> navigate('/watch/...') -> Player.jsx
+    // turant mount -> VideoPlayer ka effect turant `mount()` bridge call
+    // karta), yeh sab EK hi JS tick mein back-to-back hota hai. Us waqt
+    // native `webView.url` abhi tak purane path (jaha se navigate hua) par
+    // hi ho sakta hai — IPC ko catch-up karne ka waqt hi nahi mila. Result:
+    // `isCurrentlyOnWatchPage()` galti se false nikalta, overlay kabhi
+    // VISIBLE hi nahi hota (chahe player khud bilkul sahi chal/play ho raha
+    // ho — isiliye audio sunayi deta tha, sirf visual overlay stuck-hidden
+    // reh jaata).
+    // Fix: WebView ke apne (racy) `url` par bharosa karne ke bajaye, JS
+    // khud apna `window.location.pathname` — jo us EXACT waqt already
+    // sahi/updated hota hai (history.pushState turant, synchronously hota
+    // hai) — seedha isi bridge call ke saath bhej deta hai. Ab koi IPC-lag
+    // wali race hi nahi bachti; native side ko kabhi native `webView.url`
+    // par guess karne ki zaroorat nahi padti jab JS khud sach bata sakta hai.
     @JavascriptInterface
-    fun mount(uri: String, title: String, qualitiesJson: String) {
-        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson) }
+    fun mount(uri: String, title: String, qualitiesJson: String, currentPath: String) {
+        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson, currentPath) }
     }
 
     @JavascriptInterface
-    fun updateRect(left: Double, top: Double, width: Double, height: Double) {
-        runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height) }
+    fun updateRect(left: Double, top: Double, width: Double, height: Double, currentPath: String) {
+        runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height, currentPath) }
     }
 
     @JavascriptInterface
@@ -257,22 +278,6 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var audioManuallyDisabled = false
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
-
-    // BUG FIX (user report: "kafi baar video inline mein play nahi hota, fullscreen
-    // mein try karo to chal jaata hai, kaafi videos aise hi hote hain"): inlineErrorListener
-    // pehle sirf ek Toast dikha kar user ko khud fullscreen kholne ko bolta tha — poora
-    // decoder-escalation aur I/O-retry recovery (jo neeche buildInlineExoPlayer() /
-    // rebuildInlinePlayer() ke through pehle se hi possible tha) sirf PlayerActivity mein
-    // wire tha, chhote player mein kabhi call hi nahi hota tha. Isiliye HW decoder jis bhi
-    // track/codec ko handle nahi kar paata (jo fullscreen mein khud-ba-khud HW+ ya SW par
-    // switch ho jaata) — inline mein seedha error ban jaata, aur user ko fullscreen mein
-    // (jahan same video ab HW+/SW ki wajah se chal jaata) manually jaana padta. Fix: neeche
-    // wale fields + onPlayerError() rebuild ab fullscreen jaisa hi auto-recovery karte hain.
-    private var inlineIoRetryCount = 0
-    private val inlineMaxIoRetries = 2
-    private val inlineErrorRetryHandler = Handler(Looper.getMainLooper())
-    private var inlineDecoderButtonRef: TextView? = null
-
     private var inlineLongPressSpeedActive = false
     private var inlineSpeedBeforeLongPress = 1f
 
@@ -336,6 +341,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
     // browser history state par bharosa nahi.
     private var pipReturnPath: String? = null
+    // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): jab tak PiP-
+    // expand ka navigate() genuinely safal na ho jaaye, target path yahan
+    // yaad rakha jaata hai — taaki `onPageFinished()` bhi (agar is beech
+    // WebView reload ho jaaye) isi target par retry kar sake, is Handler-based
+    // retry loop se poori tarah independent ek dusra safety-net ban kar.
+    private var pendingPipReturnPath: String? = null
+    private val pipReturnRetryHandler = Handler(Looper.getMainLooper())
     // BUG FIX (user report + screenshot: "expand ke baad video Home page ke
     // upar hi atka reh jaata hai, apni jagah par nahi"): neeche wale
     // onActivityResult ka "normal return" branch pehle HAMESHA turant
@@ -376,6 +388,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // hamesha wahi khulta hai — koi navigate-back-and-forth ki zaroorat hi
     // nahi padti.
     private var pipSessionActive = false
+    // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment):
+    // `pipSessionActive` ab tak kabhi bhi khud-ba-khud reset nahi hoti thi —
+    // sirf `onActivityResult()` (REQUEST_FULLSCREEN_PLAYER) ise false karta
+    // tha. Is file mein pehle bhi bilkul yahi "flag hamesha ke liye stuck true
+    // reh sakta hai" pattern ek baar mil chuka hai (dekho
+    // `suppressNextInlineUnmount` ka comment) — agar PlayerActivity kabhi
+    // (rare OS-level kill/crash/edge-case) `onActivityResult` deliver kiye
+    // baghair hi khatam ho jaaye, yeh flag hamesha ke liye true reh jaata,
+    // aur hardware back-button hamesha ke liye `moveTaskToBack()` mein
+    // absorb hota rehta (kabhi normal WebView-back kaam na kare) — bilkul
+    // waisa hi ek "chhota" leftover symptom jaisa is file mein pehle dikh
+    // chuka hai. Fix: ek generous (10-minute) watchdog — real PiP session
+    // itni der floating rehna normal hai, isliye yeh kabhi legitimate use
+    // mein fire nahi hoga, sirf ek genuine stuck-flag ke liye safety-net hai.
+    private val pipSessionWatchdogHandler = Handler(Looper.getMainLooper())
+    private val pipSessionWatchdogReset = Runnable { pipSessionActive = false }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -427,6 +455,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // completely ignore kar deta hai (na pause, na hide) — genuine "page chhodo"
     // unmount (jahan yeh flag false hi hoga) pehle jaisa hi normal kaam karta hai.
     private var suppressNextInlineUnmount = false
+    // BUG FIX (user report: "PiP ki vajah se video player Home page par khula
+    // reh jaata hai"): `suppressNextInlineUnmount` pehle indefinitely true reh
+    // sakta tha agar expected spurious unmount() (quality-switch remount se)
+    // kisi wajah se kabhi na aaye — us case mein agli baar jab user GENUINELY
+    // page/video chhodta (jaise Home par navigate karta), wahi asli unmount()
+    // call is stale flag se silently nigal li jaati, aur overlay HAMESHA ke
+    // liye stuck/visible reh jaata (jahan bhi last dikha tha, jaise Home ke
+    // oopar). Fix: is flag ko ab ek chhoti time-window (600ms) ke baad khud hi
+    // auto-reset kar dete hain — asli spurious round-trip is se kahin pehle hi
+    // (usually next JS tick par) aa jaata hai, isliye normal quality-switch flow
+    // par koi asar nahi, lekin flag ab kabhi bhi permanently "stuck true" nahi
+    // reh sakta.
+    private val suppressNextInlineUnmountHandler = Handler(Looper.getMainLooper())
+    private val suppressNextInlineUnmountReset = Runnable { suppressNextInlineUnmount = false }
     private var inlineHasNextEpisode = false
     private var inlineHasPrevEpisode = false
     private var inlinePrevButtonRef: ImageButton? = null
@@ -459,11 +501,6 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // ek hi cheez dikhti hai, jhatka-free premium feel.
         override fun onPlaybackStateChanged(playbackState: Int) {
             setInlineBuffering(playbackState == Player.STATE_BUFFERING)
-            // I/O retry counter ko sirf ek baar sahi-me READY hone par reset karo,
-            // taaki dobara koi transient glitch aaye to fresh 2 retries milein.
-            if (playbackState == Player.STATE_READY) {
-                inlineIoRetryCount = 0
-            }
         }
     }
 
@@ -501,88 +538,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    // BUG FIX (see inlineIoRetryCount/inlineDecoderButtonRef comment upar): ab fullscreen
-    // PlayerActivity.playerListener.onPlayerError() jaisa hi asli recovery karte hain —
-    // sirf ek generic Toast dikha kar chhodne ke bajaye. Decoder-related errors par khud-
-    // ba-khud agla zyada-compatible decoder mode try karte hain (HW -> HW+ -> SW), usi
-    // position se resume karte hue (rebuildInlinePlayer() already yeh handle karta tha,
-    // bas kabhi trigger hi nahi hota tha). Container/manifest corrupt files ko fullscreen
-    // jaisa hi CorruptStore mein tag karte hain. Momentary I/O/network glitches ko 1-2 baar
-    // chup-chaap retry karte hain. Sirf teeno decoder mode fail ho jaane par, ya genuinely
-    // corrupt file par, user ko batate hain aur fullscreen (jahan poori chapter/subtitle-
-    // auto-search recovery hai) mein try karne ka sujhaav dete hain.
+    // Bug fix: chhote (inline) player mein pehle koi onPlayerError handling hi nahi
+    // thi — fullscreen (PlayerActivity) network/decoder/format errors par proper
+    // fallback + message deta hai, lekin yahan stream fail hone par player bas
+    // silently ruk jaata (black/frozen frame), user ko pata hi nahi chalta kyun.
+    // Poora fallback-logic (decoder switch, quality retry waghera) yahan dobara
+    // banana overkill hai — us robust handling ke liye already fullscreen hai —
+    // isliye yahan minimum zaroori cheez: user ko batao, aur poore-screen mein
+    // (jahan asli recovery/fallback hai) khud khulne ka option do.
     private val inlineErrorListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            val player = inlinePlayer ?: return
-            val resumePos = player.currentPosition
-
-            when (error.errorCode) {
-                androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES -> {
-                    if (decoderMode < 2) {
-                        decoderMode += 1
-                        inlineDecoderButtonRef?.text = when (decoderMode) {
-                            1 -> "HW+"
-                            else -> "SW"
-                        }
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "Is track ke liye HW decoder support nahi tha, software decoder try kiya jaa raha hai\u2026",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                        rebuildInlinePlayer()
-                    } else {
-                        CorruptStore.markCorrupt(this@MainActivity, inlineUri, error.errorCodeName)
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "Ye file is device par play nahi ho paa rahi: ${error.errorCodeName}",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-
-                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
-                    CorruptStore.markCorrupt(this@MainActivity, inlineUri, error.errorCodeName)
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Ye file corrupt/damaged lag rahi hai: ${error.errorCodeName}",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
-
-                androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-                androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> {
-                    if (inlineIoRetryCount < inlineMaxIoRetries) {
-                        inlineIoRetryCount += 1
-                        inlineErrorRetryHandler.postDelayed({
-                            val p = inlinePlayer ?: return@postDelayed
-                            p.prepare()
-                            p.seekTo(resumePos)
-                            p.playWhenReady = true
-                        }, 800L)
-                    } else {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "Video play nahi ho paya (network/I-O error) — fullscreen mein try karein",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-
-                else -> {
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Video play nahi ho paya — fullscreen mein try karein",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
+            android.widget.Toast.makeText(
+                this@MainActivity,
+                "Video play nahi ho paya — fullscreen mein try karein",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -820,6 +790,62 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
                 fadeOutLoadingView()
+                // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): agar
+                // ek PiP-expand restore abhi bhi pending hai (target set hai)
+                // JAB WebView genuinely ek naya page load poora karti hai (jaise
+                // background renderer-restart ke baad ka fresh reload), yahan
+                // se bhi ek turant fresh attempt kar do — is Handler-based retry
+                // loop ke upar/alawa ek dusra, independent safety-net, taaki
+                // "React abhi load hi ho raha tha" wali exact timing miss na ho.
+                pendingPipReturnPath?.let { attemptPipReturnNavigate(it, attemptsLeft = 13) }
+            }
+
+            // BUG FIX (user report: "app ke Home mein PiP ki wajah se video
+            // player home page par khula/open reh jaata hai"): ab tak inline
+            // overlay ko hide/unmount karne ka poora zimma sirf website (React
+            // side ke VideoPlayer.jsx unmount-cleanup effect, ya native-close
+            // bridge calls jaise __suhaniOnNativeClosed) par tha. Agar kisi
+            // race/edge-case mein woh JS-side unmount() call kabhi miss ho
+            // jaaye (jaise upar wale `suppressNextInlineUnmount` ke purane
+            // stuck-flag bug mein), overlay apni AAKHRI jagah (jahan wo watch
+            // page ka video-slot tha) par hi fixed reh jaata — aur WebView ke
+            // kisi bhi doosre route (jaise Home) par navigate karte hi, overlay
+            // wahi dikhta rehta, us naye page ke bilkul oopar chipka hua,
+            // bilkul jaisa report hua.
+            //
+            // Fix: yeh ek dusra, poori tarah independent safety-net hai — SPA
+            // (React Router pushState/replaceState) navigation yahin, native
+            // WebViewClient level par bhi track karo, aur jab bhi current path
+            // "/watch/" se shuru na ho, overlay ko definitively/forcefully hide
+            // kar do — chahe website side se koi unmount() call aaya ho ya
+            // nahi. Real PiP session (`pipSessionActive`) ke dauraan is check
+            // ko jaan-bujh kar skip karte hain, kyunki us waqt WebView khud
+            // isi watch page par jaan-bujh kar rakha jaata hai (real PiP
+            // window floating rehte waqt bhi) — dekho
+            // `openFullscreenFromInline()` ka comment.
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada
+                // comment): pehle `if (pipSessionActive) return` yahan poore
+                // is safety-net ko HI skip kar deta tha — is galat assumption
+                // par ki "real PiP session ke dauraan WebView hamesha isi
+                // watch page par rahegi." Lekin overlay ab (upar
+                // `mountInlinePlayer()`/`showInlineOverlayWithFade()` mein)
+                // khud apne current-path ka ground-truth check karta hai,
+                // isliye yeh purana skip ab sirf ek EXTRA cheez karta tha:
+                // agar overlay kabhi (kisi bhi wajah se) galat page par
+                // VISIBLE ho jaata, is definitive safety-net ko hi nishkriya
+                // kar deta — exact wahi jo use theek karna chahiye tha. Ab
+                // yeh hamesha chalta hai, PiP session ke dauraan bhi — agar
+                // overlay genuinely sahi (/watch/) page par hai (jo normal
+                // flow mein hamesha hona chahiye), `forceHideInlineOverlay()`
+                // khud kuch nahi karega (already-hidden ya sahi-page overlay
+                // par no-op hai, dekho uska comment) — koi regression nahi,
+                // sirf ek aur hamesha-active defense layer.
+                val path = try { url?.let { Uri.parse(it).path } } catch (_: Exception) { null }
+                if (path == null || !path.startsWith("/watch/")) {
+                    forceHideInlineOverlay()
+                }
             }
 
             // Naya overload (WebResourceRequest/WebResourceError) — yehi hai jo
@@ -1016,7 +1042,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
-    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String) {
+    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String, currentPath: String? = null, trustedNoCheck: Boolean = false) {
         // SPEED FIX (buffering still 10s+ dikh raha tha): TdlibClient.prewarm()
         // already exist karta tha, lekin sirf PlayerActivity (fullscreen open)
         // ise bulata tha — jabki user ka SABSE PEHLA tap (video card dabana)
@@ -1044,6 +1070,40 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         if (inlineOverlay != null && (uri == lastReactRequestedUri || uri == inlineUri)) {
             inlineQualitiesJson = qualitiesJson
             lastReactRequestedUri = uri
+            // PERMANENT FIX (user report: "PiP expand karne par video
+            // automatically cancel ho jaata hai"): pehle yahan sirf metadata
+            // update karke seedha return ho jaata tha — is ghalat assumption
+            // ke saath ki overlay ki visibility already sahi hogi. Lekin ek
+            // genuine PiP-cross-page-return ke baad, overlay jaan-bujh kar
+            // GONE kiya gaya hota hai (asli video us waqt PlayerActivity
+            // mein tha) — aur JS ka yeh EXACT `mount()` call (SAME URI ke
+            // saath, isiliye is dedupe-branch mein aana) hi wahi signal hai
+            // jo batata hai "PiP se genuinely wapas aa chuke hain, isi video
+            // ko dobara dikhao." Pehle yeh signal yahin silently discard ho
+            // jaata tha, aur overlay wapas dikhane ke liye SIRF ek alag,
+            // resize-observer-driven `updateInlinePlayerRect()` call par hi
+            // (poora) depend karte the — agar kisi bhi wajah se woh call
+            // miss/delay ho jaaye, overlay hamesha ke liye chhupa reh jaata,
+            // bilkul jaisa "video cancel ho gaya" report hua. Fix: yahan bhi,
+            // isi JS-supplied (accurate) `currentPath` ke saath, ek dusra
+            // independent trigger try karo.
+            val onWatchPageDedupe = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+            if (onWatchPageDedupe) {
+                inlineOverlay?.let { overlay ->
+                    if (overlay.visibility != View.VISIBLE) {
+                        overlay.animate().cancel()
+                        overlay.alpha = 0f
+                        overlay.scaleX = 0.96f
+                        overlay.scaleY = 0.96f
+                        overlay.visibility = View.VISIBLE
+                        overlay.animate()
+                            .alpha(1f).scaleX(1f).scaleY(1f)
+                            .setDuration(180)
+                            .setInterpolator(android.view.animation.DecelerateInterpolator())
+                            .start()
+                    }
+                }
+            }
             return
         }
         val previousUri = inlineUri
@@ -1085,7 +1145,6 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             inlineQualityButtonRef = qualityButton
             inlineBufferingIndicatorRef = bufferingIndicator
-            inlineDecoderButtonRef = decoderButton
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
@@ -1414,18 +1473,39 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // chhota scale+fade pop dete hain — same treatment jo fullscreen se wapas
         // aane par onActivityResult mein already istemal hoti hai, taaki dono
         // jagah ka feel consistent rahe.
-        inlineOverlay?.let { overlay ->
-            if (overlay.visibility != View.VISIBLE) {
-                overlay.animate().cancel()
-                overlay.alpha = 0f
-                overlay.scaleX = 0.92f
-                overlay.scaleY = 0.92f
-                overlay.visibility = View.VISIBLE
-                overlay.animate()
-                    .alpha(1f).scaleX(1f).scaleY(1f)
-                    .setDuration(200)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .start()
+        // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment
+        // upar `currentWebViewPathOrNull()` ke neeche): pehle yahan sirf
+        // `overlay.visibility != View.VISIBLE` check hota tha — matlab agar
+        // React kisi bhi wajah se `window.AndroidPlayer.mount()` call kar de
+        // (naya src, kisi race mein duplicate-guard bypass, waghera) us waqt
+        // jab WebView asal mein "/watch/" page par hai hi nahi (jaise ek real
+        // PiP session floating rehte waqt background mein Home par navigate
+        // ho chuka ho), overlay seedha WAHIN (Home ke oopar) VISIBLE ho
+        // jaata — bilkul jaisa report hua. Ab yahan bhi WebView ke ACTUAL
+        // current URL se ground-truth confirm karte hain pehle.
+        // PERMANENT FIX (dekho `WebAppInterface.mount()` ka bada comment
+        // upar — "video khulte hi black screen" regression): pehle sirf
+        // native `webView.url` (racy, IPC-lag-prone) par bharosa karte the.
+        // Ab JS khud ka (us waqt already-accurate) `currentPath` bhejta hai —
+        // usi ko priority do. `currentPath` sirf tabhi null hota hai jab yeh
+        // call kisi purane Kotlin-internal caller se aayi ho (JS bridge se
+        // nahi) — sirf us case mein purana native-url-based check fallback
+        // ke roop mein istemal karo.
+        val onWatchPage = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+        if (onWatchPage) {
+            inlineOverlay?.let { overlay ->
+                if (overlay.visibility != View.VISIBLE) {
+                    overlay.animate().cancel()
+                    overlay.alpha = 0f
+                    overlay.scaleX = 0.92f
+                    overlay.scaleY = 0.92f
+                    overlay.visibility = View.VISIBLE
+                    overlay.animate()
+                        .alpha(1f).scaleX(1f).scaleY(1f)
+                        .setDuration(200)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
             }
         }
 
@@ -1696,6 +1776,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // unmount()+mount() round-trip bhejega — usse pehle flag laga do
         // (dekho `suppressNextInlineUnmount` ka comment).
         suppressNextInlineUnmount = true
+        suppressNextInlineUnmountHandler.removeCallbacks(suppressNextInlineUnmountReset)
+        suppressNextInlineUnmountHandler.postDelayed(suppressNextInlineUnmountReset, 600L)
         val escapedUrl = JSONObject.quote(newUrl)
         webView.evaluateJavascript(
             "if (window.__suhaniOnNativeQualityChange) window.__suhaniOnNativeQualityChange($escapedUrl);",
@@ -1917,7 +1999,26 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // fade-in animation ko ek helper mein nikaal diya hai taaki normal-return
     // path AUR updateInlinePlayerRect() (real-PiP-return path) dono ise
     // istemal kar sakein.
-    private fun showInlineOverlayWithFade() {
+    private fun showInlineOverlayWithFade(currentPath: String? = null, trustedNoCheck: Boolean = false) {
+        // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment
+        // upar): yeh sabse aakhri "gate" hai. Chahe caller (onActivityResult
+        // ka PiP-return path, updateInlinePlayerRect() ka
+        // awaitingRectAfterPipReturn resolve, ya koi bhi future caller) kitna
+        // bhi sochta ho ki WebView abhi /watch/ page par hai — yahan dobara,
+        // definitively confirm karo. JS-supplied `currentPath` (jab
+        // available ho — accurate, IPC-lag-free) ko priority do; sirf jab
+        // yeh purane, purely-native-triggered call-site se aaya ho (JS
+        // pairing ke bina — jaise onActivityResult ka safety-net timeout),
+        // native `webView.url`-based check par fallback karo. Agar nahi, to
+        // bilkul show hi mat karo — overlay VISIBLE karke use kisi galat
+        // page (jaise Home) ke oopar dikhne dena is poore bug-class ka asli
+        // symptom hai. Retry-mechanisms (attemptPipReturnNavigate() ki 13x
+        // retry, onPageFinished() ka safety-net) khud hi WebView ko sahi
+        // page par le aayenge — us fresh "/watch/" mount se aane wala
+        // genuine updateInlinePlayerRect() call hi tab is function ko
+        // dobara, successfully call karega.
+        val onWatchPage = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+        if (!onWatchPage) return
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
             overlay.alpha = 0f
@@ -1934,7 +2035,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
-    fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double) {
+    fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double, currentPath: String? = null) {
         val overlay = inlineOverlay ?: return
         val density = resources.displayMetrics.density
         val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
@@ -1952,8 +2053,40 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             awaitingRectAfterPipReturn = false
             awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
             awaitingRectTimeoutRunnable = null
-            showInlineOverlayWithFade()
+            // PERMANENT FIX (dekho `WebAppInterface.mount()` ka bada comment
+            // — "black screen" regression): yahan bhi JS-supplied
+            // `currentPath` ko priority do (agar bridge caller ne bheja ho),
+            // native racy `webView.url` fallback sirf tab jab JS side se
+            // path na aaya ho.
+            showInlineOverlayWithFade(currentPath)
         }
+    }
+
+    /** `unmountInlinePlayer()` jaisa hi hard-hide (pause + fade-out), lekin
+     *  `suppressNextInlineUnmount` flag ko jaan-bujh kar BYPASS karta hai — sirf
+     *  `doUpdateVisitedHistory()` wale safety-net se bulaya jaata hai jab
+     *  WebView genuinely watch page se hat chuki ho. Isse koi bhi stale/stuck
+     *  suppress-flag is definitive cleanup ko kabhi rok nahi paata — dekho
+     *  `suppressNextInlineUnmount` field aur `doUpdateVisitedHistory()` ke
+     *  comments. Already-hidden overlay par no-op hai (bewajah re-animate
+     *  nahi karta). */
+    private fun forceHideInlineOverlay() {
+        val overlay = inlineOverlay ?: return
+        if (overlay.visibility != View.VISIBLE) return
+        inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
+        saveInlineWatchProgress()
+        inlinePlayer?.pause()
+        overlay.animate().cancel()
+        overlay.animate()
+            .alpha(0f).scaleX(0.92f).scaleY(0.92f)
+            .setDuration(150)
+            .withEndAction {
+                overlay.visibility = View.GONE
+                overlay.alpha = 1f
+                overlay.scaleX = 1f
+                overlay.scaleY = 1f
+            }
+            .start()
     }
 
     fun unmountInlinePlayer() {
@@ -1965,6 +2098,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // no-op ho jaayega (same URI guard).
         if (suppressNextInlineUnmount) {
             suppressNextInlineUnmount = false
+            suppressNextInlineUnmountHandler.removeCallbacks(suppressNextInlineUnmountReset)
             return
         }
         inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
@@ -2272,7 +2406,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
         // is watch page ko badalne se bachaayega jab tak PlayerActivity se
         // result wapas na aa jaaye (dekho `pipSessionActive` field comment).
-        if (enterPipImmediately) pipSessionActive = true
+        if (enterPipImmediately) {
+            pipSessionActive = true
+            pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
+            pipSessionWatchdogHandler.postDelayed(pipSessionWatchdogReset, 10 * 60 * 1000L)
+        }
         // Dekho `awaitingRectAfterPipReturn` field ka comment upar — sirf
         // isi (genuinely-navigated-away) case mein overlay ka turant show
         // hona rokna hai.
@@ -2322,6 +2460,35 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
+    /** BUG FIX (user report + screenshot: "PiP expand karne par watch page ki
+     *  jagah app ke Home tab par khul jaata hai"): dekho onActivityResult() ke
+     *  restore-path wale comment mein poori wajah. Yeh helper
+     *  `window.__suhaniPipReturnTo(path)` ko call karta hai aur JS se
+     *  confirm leta hai ki bridge function genuinely mila/chala ya nahi
+     *  (function-not-yet-registered hone par JS `false` return karta hai).
+     *  Agar abhi safal nahi hua (React abhi WebView reload/restart ke baad
+     *  poora mount nahi hua), 150ms baad khud ko dobara call karta hai — kul
+     *  ~13 attempts (~2 second) tak, jab tak safal na ho jaaye ya `unmount`/
+     *  naya PiP session shuru na ho jaaye (dekho `pendingPipReturnPath` check
+     *  — agar target beech mein badal/clear ho jaaye to purana retry chup-
+     *  chaap ruk jaata hai). */
+    private fun attemptPipReturnNavigate(path: String, attemptsLeft: Int) {
+        if (pendingPipReturnPath != path) return // koi naya session/target aa chuka, yeh stale retry hai
+        webView.evaluateJavascript(
+            "(function(){ if (window.__suhaniPipReturnTo) { window.__suhaniPipReturnTo(${JSONObject.quote(path)}); return true; } return false; })()",
+        ) { result ->
+            val succeeded = result == "true"
+            if (succeeded || attemptsLeft <= 0) {
+                if (pendingPipReturnPath == path) pendingPipReturnPath = null
+            } else {
+                pipReturnRetryHandler.postDelayed(
+                    { attemptPipReturnNavigate(path, attemptsLeft - 1) },
+                    150L
+                )
+            }
+        }
+    }
+
     // Bug fix (dekho `pipReturnPath` field ka comment): WebView ke current
     // loaded URL (jo SPA route ke saath hamesha in-sync rehta hai — React
     // Router BrowserRouter asli address bar URL hi use karta hai) se sirf
@@ -2338,6 +2505,51 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             null
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PERMANENT ROOT-CAUSE FIX (user report + screenshots: "PiP expand karte
+    // waqt video player Home page ke oopar chipka reh jaata hai, asli watch
+    // page par nahi").
+    //
+    // Poori is class mein ab tak jitne bhi PiP-related bug fixes the (upar
+    // `pipReturnPath`, `pipSessionActive`, `awaitingRectAfterPipReturn`,
+    // `attemptPipReturnNavigate()` waghera), sab isi ek tareeke se kaam karte
+    // the: "sahi choreography/timing/flags maintain karo taaki overlay sirf
+    // TABHI VISIBLE ho jab WebView genuinely /watch/ page par ho." Yeh saare
+    // fixes zaroori aur sahi the, lekin fundamentally FRAGILE approach hai —
+    // koi bhi naya race (WebView renderer restart, activity-result miss,
+    // memory-pressure, ek naya future PiP-trigger jo kisi flag ko update
+    // karna bhool jaaye) isi symptom ko wapas la sakta hai — jaisa ki is file
+    // ke comments mein dikh raha hai, yeh EXACT bug baar-baar alag-alag
+    // choreography-race ki wajah se dobara report hua hai.
+    //
+    // ROOT CAUSE jo ab tak kabhi guard nahi hui thi: overlay ko VISIBLE
+    // banane wali dono jagah — `mountInlinePlayer()` (naya mount) aur
+    // `showInlineOverlayWithFade()` (PiP-return/resume) — kabhi bhi WebView
+    // ka CURRENT path check nahi karti thi. Woh dono sirf apne internal
+    // flags/state (`awaitingRectAfterPipReturn`, dedupe-URI check, waghera)
+    // par bharosa karte the ki "is waqt hum zaroor /watch/ page par honge."
+    // Jis pal bhi yeh assumption kisi bhi wajah se galat nikalti (chahe
+    // kaunsi bhi race ho), overlay seedha jahan bhi WebView actually hai
+    // (jaise Home) wahin VISIBLE ho jaata — bilkul jaisa report hua.
+    //
+    // PERMANENT FIX: is fragile "sahi choreography maintain karo" approach
+    // ko poori tarah replace mat karo (upar wale saare fixes apni jagah
+    // zaroori hain, flags ko wrong hone se bachate hain) — balki ek AAKHRI,
+    // ground-truth GATE add karo seedha un DO jagah par jahan visibility
+    // asal mein VISIBLE set hoti hai: chahe kuch bhi ho jaaye upar, overlay
+    // KABHI VISIBLE nahi hoga jab tak WebView ka current URL genuinely
+    // "/watch/" se shuru na ho. Isse yeh poori class of bug — "overlay kisi
+    // bhi galat page par dikh jaana" — algorithmically hi impossible ho
+    // jaata hai, kisi bhi future/unseen race ki parwah kiye bina. Agar
+    // dikhana abhi safe nahi (WebView abhi tak sahi page par nahi pahunchi),
+    // to bas skip kar do — already-working retry mechanisms (upar
+    // `attemptPipReturnNavigate()` ki 13x retry + `onPageFinished()` ka
+    // safety-net) khud WebView ko sahi page par le aayenge, aur us naye
+    // "/watch/" mount se aane wala genuine `updateInlinePlayerRect()` call
+    // hi tab overlay ko sahi jagah/waqt par dikhayega.
+    private fun isCurrentlyOnWatchPage(): Boolean =
+        currentWebViewPathOrNull()?.startsWith("/watch/") == true
 
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -2372,6 +2584,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // PlayerActivity.handlePipGenuineClose()).
             if (pipGenuinelyClosed) {
                 pipSessionActive = false
+                pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
                 didNavigateBackForPip = false
                 pipReturnPath = null
                 awaitingRectAfterPipReturn = false
@@ -2459,11 +2672,39 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val pipTarget = pipReturnPath
             val needsPipReturnNavigate = pipTarget != null
             pipSessionActive = false
+            pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
             if (needsPipReturnNavigate) {
-                webView.evaluateJavascript(
-                    "if (window.__suhaniPipReturnTo) window.__suhaniPipReturnTo(${JSONObject.quote(pipTarget!!)});",
-                    null
-                )
+                // BUG FIX (user report: "PiP expand karne par watch page ki
+                // jagah app ke Home tab par khul jaata hai"): pehle yahan
+                // sirf ek EK-SHOT evaluateJavascript() call hoti thi, bina
+                // yeh confirm kiye ki `window.__suhaniPipReturnTo` us waqt
+                // genuinely maujood/ready hai ya nahi. Real PiP floating
+                // rehte waqt MainActivity poora paused rehta hai — kai
+                // devices par is lambe background period mein Android
+                // WebView ka SEPARATE renderer process (jahan poora React
+                // app chalta hai) memory-pressure mein reclaim/restart kar
+                // deta hai, jabki yeh Activity khud zinda rehti hai (dekho
+                // upar `onRenderProcessGone()` ka comment — bilkul isi tarah
+                // ka ek pehle se documented case). Us case mein WebView
+                // reload hoke seedha default/Home route par khulta hai, aur
+                // React ko is bridge function ko dobara register karne mein
+                // thoda waqt lagta hai — agar hamara evaluateJavascript() us
+                // chhoti window mein hi fire ho jaaye, `window.__suhaniPipReturnTo`
+                // abhi undefined hota hai, poora call silently no-op ho
+                // jaata hai, aur user Home page par hi phasa reh jaata hai —
+                // bilkul jaisa report hua.
+                //
+                // Fix: injected JS ab batata hai ki call genuinely hua ya
+                // nahi (return true/false), aur agar nahi hua to hum khud
+                // thodi der baad (150ms) dobara try karte hain — kai baar
+                // tak (2 second tak), jab tak ya to safal ho jaaye ya time-out
+                // ho jaaye. `onPageFinished()` mein bhi ek matching retry hai
+                // (dekho wahan ka comment) — agar is beech WebView genuinely
+                // reload ho jaaye, wahi fresh page-load ke turant baad ek
+                // aur koshish karta hai, is Handler-based retry loop ke
+                // upar/alawa ek dusra independent safety-net.
+                pendingPipReturnPath = pipTarget
+                attemptPipReturnNavigate(pipTarget!!, attemptsLeft = 13)
             } else if (didNavigateBackForPip && webView.canGoForward()) {
                 // Fallback: agar kisi wajah se watch-page path capture nahi ho
                 // paya (bahut purana WebView state, ya url null) lekin humne
@@ -2509,7 +2750,23 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 // genuinely visible/foreground surface ke saath chal raha hai.
                 inlinePlayer?.setForegroundMode(false)
             } else if (inlineUri.isNotEmpty()) {
-                mountInlinePlayer(inlineUri, inlineTitle, inlineQualitiesJson)
+                // PERMANENT FIX (user report: "fullscreen se wapas chhote
+                // player mein aane par poori screen black ho jaati hai"):
+                // pehle yahan bhi (koi currentPath diye baghair) native
+                // `webView.url`-based `isCurrentlyOnWatchPage()` fallback
+                // chalta tha. Yeh call sirf tabhi is "else" (SharedPlayerHolder
+                // reuse nahi hua) branch mein aati hai jab `awaitingRectAfterPipReturn`
+                // abhi tak `false` hai — matlab yeh ek AISA return hai jisme
+                // koi cross-page navigate hi nahi chahiye tha (plain, non-PiP
+                // fullscreen->back, ya PiP jiska pipTarget capture hi nahi ho
+                // paya). In dono cases mein, structurally/by-construction,
+                // MainActivity ki WebView is poore fullscreen-session ke
+                // dauraan kabhi bhi apni jagah se hili hi nahi thi — koi
+                // ambiguity hai hi nahi jise resolve karne ke liye kisi bhi
+                // (racy ho sakne wale) `webView.url` read ki zaroorat pade.
+                // Fix: yahan `trustedNoCheck = true` — ground-truth check
+                // poori tarah skip karo, hamesha dikhao.
+                mountInlinePlayer(inlineUri, inlineTitle, inlineQualitiesJson, trustedNoCheck = !awaitingRectAfterPipReturn)
                 inlinePlayer?.seekTo(pos)
             }
             inlinePlayer?.playWhenReady = wasPlaying
@@ -2528,6 +2785,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // rect ke saath dikhayega. Ek safety-net timeout bhi laga do — agar
             // kisi wajah se woh call kabhi na aaye, video hamesha ke liye chhupa
             // na reh jaaye.
+            // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment — "PiP
+            // expand karne par Home khul jaata hai"): yeh timeout pehle 1500ms
+            // tha, jabki naya retry-with-confirmation mechanism khud hi poore
+            // ~2000ms (13 attempts * 150ms) tak try karta rehta hai jab tak
+            // WebView/React reload ke baad ready na ho. Agar yeh timeout usse
+            // PEHLE hi fire ho jaata, overlay Home page ke oopar hi (rect update
+            // aane se pehle) dikha diya jaata — bilkul wahi symptom jo report
+            // hua. Fix: is timeout ko retry-window se aaraam se zyada (2600ms)
+            // kar diya, taaki genuine retry ko poora waqt mile safal hone ka.
             awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
             if (awaitingRectAfterPipReturn) {
                 val timeoutRunnable = Runnable {
@@ -2537,9 +2803,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     }
                 }
                 awaitingRectTimeoutRunnable = timeoutRunnable
-                awaitingRectHandler.postDelayed(timeoutRunnable, 1500L)
+                awaitingRectHandler.postDelayed(timeoutRunnable, 2600L)
             } else {
-                showInlineOverlayWithFade()
+                // PERMANENT FIX (dekho upar `mountInlinePlayer(...trustedNoCheck)`
+                // ka comment — same reasoning): yahan pahunchna hi iska matlab
+                // hai ki `awaitingRectAfterPipReturn` false hai, i.e. koi
+                // cross-page navigate zaroori nahi tha — structurally-safe
+                // case, ground-truth check ki zaroorat nahi.
+                showInlineOverlayWithFade(trustedNoCheck = true)
             }
         }
     }
@@ -2622,6 +2893,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // naya MainActivity instance already dobara registered ho chuka hai
         // (jaise fast recreate), uska registration na chheeno.
         if (DownloadService.listener === this) DownloadService.listener = null
+        pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
         loadingLabelPulse?.cancel()
         saveInlineWatchProgress()
         if (SharedPlayerHolder.player === inlinePlayer) SharedPlayerHolder.clear()
