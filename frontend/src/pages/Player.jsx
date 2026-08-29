@@ -4,10 +4,11 @@ import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, sav
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import CommentsSheet from '../components/CommentsSheet'
+import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import Rail from '../components/Rail'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
-import { useDownloadEntry, startDownload, downloadId } from '../lib/downloadsStore'
+import { useDownloadEntry, downloadId } from '../lib/downloadsStore'
 import { formatDisplayTitle } from '../lib/formatTitle'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -436,29 +437,24 @@ export default function Player() {
   const thisDownloadId = activeQualityObj ? downloadId(type, id, activeQualityObj.label) : null
   const downloadEntry = useDownloadEntry(thisDownloadId)
 
-  // Kicks off an in-app managed download (progress tracked globally, file
-  // saved into IndexedDB) instead of pushing straight to the device's
-  // Downloads folder — this is what makes it show up, and stay playable
-  // offline, inside the app's own Downloads tab.
-  function downloadFile() {
-    if (!active?.url || downloadEntry?.status === 'downloading' || downloadEntry?.status === 'done') return
-    startDownload(active.url, {
-      type,
-      titleId: id,
-      // Season/episode-level grouping metadata (Downloads tab ke season-cover
-      // view ke liye zaroori) — sirf series ke liye set hota hai, movies ke
-      // liye null rehta hai.
-      showId: imdbId,
-      showName: titleInfo.name,
-      showPoster: titleInfo.poster,
-      season: isSeries ? currentSeason : null,
-      episode: isSeries ? currentEpisode : null,
-      episodeTitle: isSeries ? (allEpisodes.find((e) => e.id === id)?.title || '') : '',
+  // FEATURE (user ask: player page ke Download button mein bhi quality
+  // choose karne ka option chahiye — pehle yeh seedha currently-active
+  // stream download kar deta tha, ab Detail.jsx wala hi DownloadQualitySheet
+  // reuse karke ek chhota picker (360p/480p/720p/...) khulta hai.
+  const [downloadSheetOpen, setDownloadSheetOpen] = useState(false)
+  const downloadEpisode = useMemo(
+    () => ({
+      id,
+      title: isSeries ? (allEpisodes.find((e) => e.id === id)?.title || displayTitle) : titleInfo.name,
       filename: meta.filename,
-      poster: titleInfo.poster,
-      qualityLabel: activeQualityObj?.label || '',
-    })
-    showToast(t('player_download_started'))
+      season: isSeries ? currentSeason : undefined,
+      episode: isSeries ? currentEpisode : undefined,
+    }),
+    [id, isSeries, allEpisodes, displayTitle, titleInfo.name, meta.filename, currentSeason, currentEpisode]
+  )
+
+  function downloadFile() {
+    setDownloadSheetOpen(true)
   }
 
   function shareIt() {
@@ -631,8 +627,7 @@ export default function Player() {
             </button>
             <button
               onClick={downloadFile}
-              disabled={downloadEntry?.status === 'downloading'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition disabled:opacity-70"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
               title={t('download')}
               aria-label={t('download')}
             >
@@ -689,6 +684,16 @@ export default function Player() {
           <CommentsSheet open={commentsOpen} onClose={() => setCommentsOpen(false)} title={`${t('comments_title')}${commentCount != null ? ` · ${commentCount}` : ''}`}>
             <Comments type={type} id={id} onCountChange={setCommentCount} />
           </CommentsSheet>
+
+          <DownloadQualitySheet
+            open={downloadSheetOpen}
+            onClose={() => setDownloadSheetOpen(false)}
+            type={type}
+            imdbId={imdbId}
+            showName={titleInfo.name}
+            showPoster={titleInfo.poster}
+            episodes={[downloadEpisode]}
+          />
 
           {/* Up next — rest of this season, or the next season once you hit its last episode */}
           {isSeries && upNext.episodes.length > 0 ? (

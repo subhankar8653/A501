@@ -6,6 +6,7 @@ import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VerifyGate from '../components/VerifyGate'
 import Rail from '../components/Rail'
 import { useLanguage } from '../i18n/LanguageContext'
+import { useIsSaved, toggleSaved } from '../lib/savedStore'
 
 export default function Detail() {
   const { type, id } = useParams()
@@ -22,6 +23,25 @@ export default function Detail() {
   const [descExpanded, setDescExpanded] = useState(false)
   const verified = isVerified()
   const { t } = useLanguage()
+  // Episode ⋮ menu ka "Save" — jaisa Player.jsx mein, saved poore title
+  // (show/movie) ke against hota hai, episode ke against nahi, taaki kisi
+  // bhi episode se save karo, Saved tab mein show ek hi baar dikhe.
+  const saved = useIsSaved(type, id)
+  const [menuToast, setMenuToast] = useState('')
+  function shareEpisode(ep) {
+    const url = `${window.location.origin}/watch/${type}/${encodeURIComponent(ep.id)}`
+    if (navigator.share) {
+      navigator.share({ title: ep.title || meta?.name, url }).catch(() => {})
+    } else {
+      navigator.clipboard
+        ?.writeText(url)
+        .then(() => {
+          setMenuToast(t('player_link_copied'))
+          setTimeout(() => setMenuToast(''), 1800)
+        })
+        .catch(() => {})
+    }
+  }
   // FEATURE (user ask: "Related/Recommended videos"): current title ka
   // pehla genre milte hi fetch karo — koi naya backend endpoint nahi laga,
   // existing catalog genre-filter reuse kiya hai (dekho api.js
@@ -296,16 +316,44 @@ export default function Detail() {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                     </button>
                     {epMenuOpen === ep.id ? (
-                      <div className="absolute top-full right-0 mt-1 min-w-[150px] rounded-xl overflow-hidden bg-reel-bg/97 backdrop-blur-md ring-1 ring-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.65)] z-10">
+                      <div className="absolute top-full right-0 mt-1.5 min-w-[172px] rounded-2xl overflow-hidden bg-reel-bg/97 backdrop-blur-md ring-1 ring-reel-gold/20 shadow-[0_10px_32px_rgba(0,0,0,0.7)] z-10">
                         <button
                           onClick={() => {
                             setEpMenuOpen(null)
                             setDownloadTarget([ep])
                           }}
-                          className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-ink hover:bg-white/5"
+                          className="w-full flex items-center gap-2.5 px-3.5 py-3 text-xs font-medium text-reel-ink hover:bg-reel-gold/10 active:bg-reel-gold/15 transition"
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          <span className="w-6 h-6 rounded-full bg-reel-gold/15 text-reel-gold flex items-center justify-center shrink-0">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          </span>
                           {t('download')}
+                        </button>
+                        <div className="h-px bg-white/5 mx-3" />
+                        <button
+                          onClick={() => {
+                            setEpMenuOpen(null)
+                            toggleSaved(type, id, { name: meta.name, poster: meta.poster, releaseInfo: meta.releaseInfo, imdbRating: meta.imdbRating })
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-3 text-xs font-medium text-reel-ink hover:bg-reel-gold/10 active:bg-reel-gold/15 transition"
+                        >
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${saved ? 'bg-reel-gold text-reel-bg' : 'bg-reel-gold/15 text-reel-gold'}`}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                          </span>
+                          {saved ? t('saved') : t('save')}
+                        </button>
+                        <div className="h-px bg-white/5 mx-3" />
+                        <button
+                          onClick={() => {
+                            setEpMenuOpen(null)
+                            shareEpisode(ep)
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3.5 py-3 text-xs font-medium text-reel-ink hover:bg-reel-gold/10 active:bg-reel-gold/15 transition"
+                        >
+                          <span className="w-6 h-6 rounded-full bg-reel-gold/15 text-reel-gold flex items-center justify-center shrink-0">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                          </span>
+                          {t('share')}
                         </button>
                       </div>
                     ) : null}
@@ -345,6 +393,12 @@ export default function Detail() {
               ))}
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {menuToast ? (
+        <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[95] whitespace-nowrap text-[11px] bg-reel-ink text-reel-bg font-semibold px-3 py-1.5 rounded-full shadow-lg">
+          {menuToast}
         </div>
       ) : null}
 
