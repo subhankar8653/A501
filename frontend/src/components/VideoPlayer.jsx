@@ -30,8 +30,8 @@ function fmt(t) {
 // (gestures, equalizer, subtitles, cast, PiP, quality-switch) khulta hai —
 // aur wahan se wapas aane par chhota player wahi position se resume ho jaata hai.
 //
-// window.AndroidPlayer.mount(uri, title, qualitiesJson) — naya video load/start
-// window.AndroidPlayer.updateRect(left, top, width, height) — CSS px, is div ka
+// window.AndroidPlayer.mount(uri, title, qualitiesJson, currentPath) — naya video load/start
+// window.AndroidPlayer.updateRect(left, top, width, height, currentPath) — CSS px, is div ka
 //   rect jab bhi badle (resize/scroll), chhote player ko wahi jagah chipkaye rakhta hai
 // window.AndroidPlayer.unmount() — naya video/page chhodne par hata do
 //
@@ -210,7 +210,20 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
 
   useEffect(() => {
     if (!isNative || !src) return
-    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload())
+    // PERMANENT FIX (native side: window.AndroidPlayer.mount() ab ek 4th
+    // param — currentPath — bhi leta hai): Android WebView ka apna `.url`
+    // getter Chromium ke renderer<->browser IPC ke through async update hota
+    // hai, isliye pehli baar video par tap karne jaisa "navigate() + turant
+    // isi tick mein mount()" wale fast case mein native side ko kabhi-kabhi
+    // abhi bhi PURANA path dikhta tha (race) — result: native player play to
+    // hota tha (audio sunayi deta), lekin visual overlay kabhi VISIBLE nahi
+    // hota (root-caused ek pichle PiP/Home-bleed fix se, jo overlay dikhane
+    // se pehle "kya hum genuinely /watch/ page par hain" confirm karta hai).
+    // Fix: yahan JS khud apna already-accurate `window.location.pathname`
+    // (history.pushState turant/synchronously update karta hai, koi IPC-lag
+    // nahi) bhi bhej deta hai — native ab is par bharosa karta hai, apne
+    // racy `webView.url` ke bajaye.
+    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload(), window.location.pathname)
     return () => {
       window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
     }
@@ -233,7 +246,12 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     let rafId = null
     function sendRect() {
       const r = el.getBoundingClientRect()
-      window.AndroidPlayer.updateRect(r.left, r.top, r.width, r.height)
+      // PERMANENT FIX: dekho upar wale mount() effect ka comment — yahan bhi
+      // wahi accurate window.location.pathname bhejte hain, taaki
+      // updateInlinePlayerRect() (jo PiP-return ke baad overlay dobara
+      // dikhane ka asli trigger hai) native racy webView.url par bharosa na
+      // kare.
+      window.AndroidPlayer.updateRect(r.left, r.top, r.width, r.height, window.location.pathname)
     }
     function scheduleSendRect() {
       if (rafId != null) return
