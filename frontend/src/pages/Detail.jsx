@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getMeta, isVerified, getRelatedTitles } from '../api'
 import BackButton from '../components/BackButton'
@@ -27,6 +27,23 @@ export default function Detail() {
   // existing catalog genre-filter reuse kiya hai (dekho api.js
   // getRelatedTitles).
   const [related, setRelated] = useState(null)
+
+  // UX FIX ("clean/fast" pass): pehle episode ka ⋮ menu sirf usi button ko
+  // dobara dabane ya "Download" choose karne se band hota tha — kahin bhi
+  // aur (episode list, screen ka khaali hissa) tap karne par khula hi reh
+  // jaata tha, jaise ek "stuck" overlay. Ab standard mobile-menu behavior:
+  // menu ke bahar kahin bhi tap karo, apne aap band ho jaata hai.
+  const epMenuRef = useRef(null)
+  useEffect(() => {
+    if (!epMenuOpen) return
+    function onOutside(e) {
+      if (epMenuRef.current && !epMenuRef.current.contains(e.target)) {
+        setEpMenuOpen(null)
+      }
+    }
+    document.addEventListener('pointerdown', onOutside)
+    return () => document.removeEventListener('pointerdown', onOutside)
+  }, [epMenuOpen])
 
   useEffect(() => {
     if (!verified) return
@@ -270,7 +287,7 @@ export default function Detail() {
                     </div>
                   </button>
 
-                  <div className="relative shrink-0">
+                  <div className="relative shrink-0" ref={epMenuOpen === ep.id ? epMenuRef : null}>
                     <button
                       onClick={() => setEpMenuOpen((cur) => (cur === ep.id ? null : ep.id))}
                       aria-label="Episode options"
