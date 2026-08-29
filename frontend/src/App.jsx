@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
@@ -75,6 +75,31 @@ function ChromeForRoute({ children }) {
 
 export default function App() {
   const navigate = useNavigate()
+  // PERMANENT FIX (user ask: "PIP ka expand bhi bilkul usi (reliable) logic
+  // se karo jaisa fullscreen-back-button case mein hota hai — kahin bhi
+  // chale jaayein, expand karne par wapas chhote player par aa jaana
+  // chahiye"): asli root cause jo ab tak miss ho raha tha — `ChromeForRoute`
+  // (upar) apni wrapper div ko `key={pathname}` deta hai, taaki route badalne
+  // par woh remount ho aur fade-in animation replay ho. Iska matlab: agar
+  // `window.__suhaniPipReturnTo(path)` us EXACT `path` ko navigate() kare
+  // jahan WebView (chahe kabhi gayi hi na ho, ya ghoom-phir kar wapas) PEHLE
+  // SE HI hai, `pathname` string bilkul nahi badalta — React isi key ko dekh
+  // kar Player.jsx ko REMOUNT hi nahi karta. Result: VideoPlayer.jsx ka
+  // `mount()` effect kabhi dobara chalta hi nahi, `window.AndroidPlayer.mount()`
+  // JS call kabhi native ko nahi jaata, aur poora PiP-return handshake
+  // (jisme native side accurate `currentPath` isi call ke zariye paata hai)
+  // silently no-op ho jaata — exactly wahi flaky "PiP expand → cancel/stuck"
+  // symptom jo baar-baar report hua, kyunki yeh SIRF us case mein hota tha
+  // jab user PiP ke dauraan WebView mein kahin gaya hi nahi tha (sabse aam
+  // real-world case!).
+  //
+  // Fix: back-button case mein reliability isliye milti hai kyunki Player.jsx
+  // kabhi unmount hi nahi hoti (WebView apni jagah se hilti hi nahi) — ussi
+  // guarantee ko yahan bhi laane ke liye, PiP-return par Player ko ek alag,
+  // dedicated nonce-based `key` do jo HAR baar badle — chahe target path
+  // bilkul same ho ya alag — taaki React hamesha ek FRESH Player instance
+  // banaye, aur VideoPlayer.jsx ka mount() effect guaranteed dobara chale.
+  const [pipReturnNonce, setPipReturnNonce] = useState(0)
 
   useEffect(() => {
     cleanupStaleDownloads()
@@ -104,7 +129,13 @@ export default function App() {
   // chahe beech mein user ne WebView mein kuch bhi dekha/navigate kiya ho.
   useEffect(() => {
     window.__suhaniPipReturnTo = (path) => {
-      if (typeof path === 'string' && path) navigate(path)
+      if (typeof path === 'string' && path) {
+        // Dekho upar `pipReturnNonce` ka comment — pehle bump karo (taaki
+        // Player ka naya `key` navigate() se PEHLE hi ready ho), phir
+        // navigate() karo.
+        setPipReturnNonce((n) => n + 1)
+        navigate(path)
+      }
     }
     return () => {
       delete window.__suhaniPipReturnTo
@@ -130,7 +161,7 @@ export default function App() {
                 <Route path="/downloads" element={<Downloads />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/title/:type/:id" element={<Detail />} />
-                <Route path="/watch/:type/:id" element={<Player />} />
+                <Route path="/watch/:type/:id" element={<Player key={`watch-${pipReturnNonce}`} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </ChromeForRoute>
