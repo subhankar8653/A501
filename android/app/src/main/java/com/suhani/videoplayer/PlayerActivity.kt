@@ -1758,6 +1758,20 @@ class PlayerActivity : AppCompatActivity() {
 
         if (previousTrackSelectionParameters != null) {
             player.trackSelectionParameters = previousTrackSelectionParameters
+        } else {
+            // FEATURE (user ask: "video mein subtitle off default kar do"): bina iske,
+            // ExoPlayer ka default track-selector container ke andar "default"-flagged
+            // embedded (ESub) subtitle track ko khud-ba-khud select kar leta tha — video
+            // shuru hote hi subtitle apne aap ON dikhta tha. Yeh sirf ek FRESH player
+            // (koi previous selection nahi, matlab is video-session ka pehla load) ke
+            // liye text tracks disable karta hai — subtitle ab hamesha OFF se start
+            // hoga, user khud Subtitle menu (subtitleButton) se ON kar sakta hai. Decoder
+            // switch jaisi rebuild (jahan previousTrackSelectionParameters set hoti hai)
+            // is else-branch mein nahi aati, isliye beech session mein user ki khud ki
+            // subtitle selection (ON ho ya OFF) hamesha respect hoti rehti hai.
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
         }
 
         // Fast/approximate seek (double-tap ±10s) taaki seek bar/gesture turant respond kare,
