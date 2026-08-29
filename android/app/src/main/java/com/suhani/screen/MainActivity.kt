@@ -2656,7 +2656,41 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlinePlayerView?.player = null
                 inlinePlayer?.release()
                 inlinePlayer = null
-                inlineOverlay?.visibility = View.GONE
+                // ROOT CAUSE FIX (user report: "PiP ka X dabao, video wapas usi
+                // jagah aa jaata hai lekin play nahi hoti"): upar `inlinePlayer`
+                // ko release/null to kar diya jaata tha, LEKIN `inlineOverlay`
+                // (aur `inlineUri`/`lastReactRequestedUri`) kabhi null nahi hote
+                // the — sirf visibility GONE hoti thi, view khud zinda rehti thi.
+                // Neeche wala `webView.evaluateJavascript(...)` JS side ko
+                // `mount()` dobara call karne ke liye trigger karta hai (VideoPlayer.jsx
+                // ka `nativeCloseTick` effect) — lekin `mountInlinePlayer()` ke
+                // andar sabse pehla check hi hai `if (inlineOverlay != null &&
+                // (uri == lastReactRequestedUri || uri == inlineUri))` — chunki
+                // yeh SAME episode/URI hi dobara mount ho raha hai aur
+                // `inlineOverlay`/`inlineUri` abhi bhi purane (stale) the, yeh
+                // check galti se TRUE nikalta — code fresh player banane wale
+                // `if (inlineOverlay == null)` block mein kabhi jaata hi nahi
+                // tha, sirf purani (ab player-less) overlay ko dobara VISIBLE
+                // kar deta — result: video apni jagah par dikhti to thi (overlay
+                // visible ho gayi) lekin uske andar koi player attached hi nahi
+                // hota (abhi-abhi release/null kiya gaya tha), isliye play tap
+                // karne par kuch hota hi nahi.
+                // Fix: overlay ko view-hierarchy se poori tarah nikaal do aur
+                // sab related state null/clear kar do, taaki agla `mount()` call
+                // guaranteed fresh rebuild kare (naya ExoPlayer + naya PlayerView
+                // attach) — bilkul jaisa pehli baar video khulne par hota hai.
+                inlineOverlay?.let { overlay ->
+                    (overlay.parent as? ViewGroup)?.removeView(overlay)
+                }
+                inlineOverlay = null
+                inlinePlayerView = null
+                inlineAmbientGlowView = null
+                inlineQualityButtonRef = null
+                inlineBufferingIndicatorRef = null
+                inlineUri = ""
+                inlineTitle = ""
+                inlineQualitiesJson = "[]"
+                lastReactRequestedUri = ""
                 // BUG FIX (asli gap jo aapne pakda — "website side to add hi
                 // nahi kiya"): ab tak yahan sirf NATIVE side (Kotlin) poora cut
                 // kar raha tha — inlinePlayer release, SharedPlayerHolder clear.
