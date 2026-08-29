@@ -153,11 +153,17 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
   }
 
   return (
+    // ROOT CAUSE FIX (user report: "download button niche navigation bar ke
+    // neeche chala ja raha hai"): panel ka bottom padding pehle fixed `pb-6`
+    // tha, device ke on-screen nav bar (safe-area) ke liye extra jagah nahi
+    // chhodta tha, isliye "Download · <quality>" CTA button us bar se overlap
+    // ho jaata. Baaki app mein (BottomNav, DownloadToast) hamesha
+    // env(safe-area-inset-bottom) add kiya jaata hai — yahan bhi wahi.
     <div className="fixed inset-0 z-[95] flex items-end justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-6 px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
+        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
       >
         <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
 

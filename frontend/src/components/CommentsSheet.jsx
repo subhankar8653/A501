@@ -71,7 +71,7 @@ export default function CommentsSheet({ open, onClose, title, children }) {
           </button>
         </div>
 
-        <div className="overflow-y-auto px-4 py-4" style={{ maxHeight: '70vh' }}>
+        <div className="overflow-y-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ maxHeight: '70vh' }}>
           {children}
         </div>
       </div>
