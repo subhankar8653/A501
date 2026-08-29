@@ -341,6 +341,24 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
     // browser history state par bharosa nahi.
     private var pipReturnPath: String? = null
+    // PERMANENT FIX (user ask: "PiP kaunse episode/video ki hai yeh yaad
+    // rakhne wala ek pakka system chahiye, taaki expand karte waqt seedha
+    // wahi episode khule"): `pipReturnPath` (upar) ab tak `currentWebViewPathOrNull()`
+    // — ek LIVE, us hi waqt kiya gaya native `webView.url` read — se bharosa
+    // karta tha. Poori is file mein hum baar-baar dekh chuke hain ki yeh
+    // getter Chromium ke IPC ki wajah se kabhi-kabhi thoda "lag" kar sakta
+    // hai (dekho `WebAppInterface.mount()` ka bada comment). Agar PiP shuru
+    // hote hi (pipChevron tap karte hi) yeh galat/purana path capture ho
+    // jaaye, poora "expand par wapas jaana" mechanism shuru se hi ek galat
+    // target par based ho jaata — result: expand par kahin bhi nahi (ya
+    // seedha default Home) khulta, bilkul jaisa report hua.
+    // Fix: ab isi bharose ki zaroorat hi nahi — JS khud har `mount()` aur
+    // `updateRect()` call mein apna already-accurate `window.location.pathname`
+    // bhejta hai (dekho VideoPlayer.jsx). Yahan bas sabse aakhri baar JS ne
+    // jo bhi genuine "/watch/" path report kiya tha, use yaad rakh lo — yeh
+    // hamesha 100% JS-confirmed hota hai, kabhi kisi native IPC-lag ka
+    // shikar nahi hota. PiP shuru hote hi isi ko priority do.
+    private var lastKnownWatchPath: String? = null
     // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): jab tak PiP-
     // expand ka navigate() genuinely safal na ho jaaye, target path yahan
     // yaad rakha jaata hai — taaki `onPageFinished()` bhi (agar is beech
@@ -1043,6 +1061,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
     fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String, currentPath: String? = null, trustedNoCheck: Boolean = false) {
+        // PERMANENT FIX (dekho `lastKnownWatchPath` field ka comment): JS ne
+        // agar ek accurate "/watch/" path bheja hai, use turant yaad rakh lo
+        // — yeh future kisi bhi PiP session ke liye "sahi jagah wapas jaane"
+        // ka sabse bharosemand source banega.
+        if (currentPath?.startsWith("/watch/") == true) lastKnownWatchPath = currentPath
         // SPEED FIX (buffering still 10s+ dikh raha tha): TdlibClient.prewarm()
         // already exist karta tha, lekin sirf PlayerActivity (fullscreen open)
         // ise bulata tha — jabki user ka SABSE PEHLA tap (video card dabana)
@@ -2036,6 +2059,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     /** JS se aayi CSS px (viewport-relative) rect ko real device px mein convert karke
      *  chhote player ko us video-container ki exact jagah par rakhta/resize karta hai. */
     fun updateInlinePlayerRect(left: Double, top: Double, width: Double, height: Double, currentPath: String? = null) {
+        // PERMANENT FIX (dekho `lastKnownWatchPath` field ka comment): yeh
+        // call bhi (ResizeObserver/scroll-driven, isliye sabse zyada baar
+        // fire hone wala) accurate JS-supplied path deta hai — isko bhi
+        // yaad rakhne mein use karo.
+        if (currentPath?.startsWith("/watch/") == true) lastKnownWatchPath = currentPath
         val overlay = inlineOverlay ?: return
         val density = resources.displayMetrics.density
         val params = (overlay.layoutParams as? FrameLayout.LayoutParams)
@@ -2103,6 +2131,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
         inlineSeekSessionHandler.removeCallbacks(inlineSeekSessionResetRunnable)
         saveInlineWatchProgress()
+        // Hygiene: video genuinely band ho rahi hai — koi bhi PURANI "yaad
+        // rakhi hui" watch-page yahan se aage kisi galat/stale PiP-return
+        // target ke roop mein istemal na ho.
+        lastKnownWatchPath = null
         inlinePlayer?.pause()
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
@@ -2401,7 +2433,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // le, expand par wapas isi watch page par le aane ke liye (neeche
         // wale onActivityResult ka existing safety-net), lekin ab khud se
         // kabhi goBack() nahi karte.
-        pipReturnPath = if (enterPipImmediately) currentWebViewPathOrNull() else null
+        pipReturnPath = if (enterPipImmediately) (lastKnownWatchPath ?: currentWebViewPathOrNull()) else null
         didNavigateBackForPip = false
         // Real PiP session yahin se shuru maani jaati hai — onKeyDown() ab
         // is watch page ko badalne se bachaayega jab tak PlayerActivity se
@@ -2587,6 +2619,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 pipSessionWatchdogHandler.removeCallbacks(pipSessionWatchdogReset)
                 didNavigateBackForPip = false
                 pipReturnPath = null
+                lastKnownWatchPath = null
                 awaitingRectAfterPipReturn = false
                 awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
                 awaitingRectTimeoutRunnable = null
