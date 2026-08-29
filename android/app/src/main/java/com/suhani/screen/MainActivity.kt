@@ -729,6 +729,19 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         //    Home pe wapas aane par ya tabs switch karne par).
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+        // UX FIX ("clean/fast" audit): agar user ne apne phone ki system font
+        // size accessibility setting badhaayi/ghataayi hui hai, WebView
+        // default mein us hi scale ko poore web content ke text par bhi laagu
+        // kar deta hai (Android ka "textZoom" via system font scale). Is
+        // app ka poora UI fixed, carefully-tuned CSS sizing/spacing par bana
+        // hai (jaise MediaCard ke poster grid, chhote pill buttons) — is
+        // scaling ki wajah se un devices par text overflow, overlapping
+        // labels, ya tuti hui grid layout dikh sakti thi, bina kisi bug ke
+        // bhi. Native Android UI (status bar, settings, waghera) apni jagah
+        // sahi scale hoti rahegi — sirf is WebView ka apna content isse
+        // affected nahi hona chahiye, exactly jaise ek normal native app
+        // (jo apna text size khud control karta hai) mein hota.
+        webView.settings.textZoom = 100
         // User report: red-marked vertical bar on screen's right edge — this is
         // the WebView's own native fading scroll indicator (an Android View
         // property), not a browser/CSS scrollbar, so index.css alone can't
