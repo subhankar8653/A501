@@ -584,7 +584,25 @@ object TdlibClient {
                     put("file_id", fileId)
                     put("offset", start)
                     put("limit", windowLength)
-                    put("priority", 32)
+                    // ROOT CAUSE FIX (user report: "streaming ke saath download
+                    // shuru karta hun to download baar-baar ruk jaata hai"):
+                    // yeh (streaming ka range-fetch) aur downloadFullAttempt()
+                    // (poore-episode ka download) dono TDLib ka `downloadFile`
+                    // pehle EK hi max priority (32) par bulate the. TDLib
+                    // isi Telegram account/connection ke andar chal rahe saare
+                    // active downloads ke beech bandwidth priority KE HISAAB SE
+                    // baantta hai — jab dono 32 par barabar hote, TDLib unhe
+                    // roughly barabar treat karta, isliye ek poore, steady
+                    // download ki progress streaming ke chhote/bursty range-
+                    // requests (seek, buffering-ahead) se baar-baar cut/slow ho
+                    // jaati.
+                    // Fix: streaming ki priority yahan jaan-bujh kar KAM (16)
+                    // rakhi hai — download hamesha zyada priority (32, dekho
+                    // downloadFullAttempt()) par chalega jab dono ek saath
+                    // active hon, taaki download jaldi/steady poora ho, aur
+                    // streaming (jo chal to rahi hai, bas kam priority par)
+                    // thoda zyada dheere buffer ho.
+                    put("priority", 16)
                     put("synchronous", false)
                 },
             )
@@ -658,6 +676,12 @@ object TdlibClient {
                 put("file_id", fileId)
                 put("offset", 0)
                 put("limit", 0) // 0 = no limit — download the whole file
+                // FEATURE (user ask: "download ko zyada power milna chahiye,
+                // streaming ko kam jab download ho"): max priority (32) —
+                // yeh ensureRangeDownloadedAttempt() (streaming, ab priority
+                // 16) se hamesha zyada hai, isliye jab dono ek saath TDLib se
+                // active hon, download ko bandwidth mein preference milti
+                // hai aur woh jaldi/steady poora hota hai.
                 put("priority", 32)
                 put("synchronous", false)
             },
