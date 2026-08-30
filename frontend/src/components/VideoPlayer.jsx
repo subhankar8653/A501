@@ -58,7 +58,7 @@ function detectNativeBridge() {
 function isBlobSrc(src) {
   return typeof src === 'string' && src.startsWith('blob:')
 }
-export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError }) {
+export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError, onPlayStateChange }) {
   const { t } = useLanguage()
   const isNative = useRef(detectNativeBridge() && !isBlobSrc(src)).current
   const videoRef = useRef(null)
@@ -140,9 +140,15 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     }
     const onWait = () => setBuffering(true)
     const onPlaying = () => setBuffering(false)
-    const onPlay = () => { setPlaying(true); scheduleHide() }
-    const onPause = () => { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current) }
-    const onEnd = () => { setPlaying(false); setShowControls(true); onEnded && onEnded() }
+    // FEATURE (user ask: "stream hote waqt download queue mein chala jaega,
+    // watch band karte hi apne aap shuru ho jaega"): plain-browser (no
+    // native bridge) fallback ke liye watching-state signal yahin se jaata
+    // hai — native/inline player ke liye yahi kaam MainActivity.kt ka
+    // `notifyWatchingChanged` karta hai (dekho downloadsStore.js ke
+    // `window.__nativeWatchingChanged`).
+    const onPlay = () => { setPlaying(true); scheduleHide(); onPlayStateChange && onPlayStateChange(true) }
+    const onPause = () => { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); onPlayStateChange && onPlayStateChange(false) }
+    const onEnd = () => { setPlaying(false); setShowControls(true); onPlayStateChange && onPlayStateChange(false); onEnded && onEnded() }
     // Drive-sourced streams can fail to extract server-side (unofficial method,
     // Google can restrict it per-file). The backend then answers the /dl/ request
     // with an error status instead of a redirect to the real video bytes, which
@@ -174,8 +180,11 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
       v.removeEventListener('pause', onPause)
       v.removeEventListener('ended', onEnd)
       v.removeEventListener('error', onErr)
+      // Player page chhod diya / video source badla beech playback mein hi —
+      // ab watching definitely band, download resume ho sakta hai.
+      onPlayStateChange && onPlayStateChange(false)
     }
-  }, [isNative, scheduleHide, onEnded, onFatalError])
+  }, [isNative, scheduleHide, onEnded, onFatalError, onPlayStateChange])
 
   // Native player ko qualities bhejne ke liye {url, label} tak trim kar do —
   // baaki stream metadata (title/size/etc.) native side ko nahi chahiye.
