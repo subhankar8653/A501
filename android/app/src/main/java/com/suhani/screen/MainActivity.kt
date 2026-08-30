@@ -511,11 +511,17 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineBufferingIndicatorRef: View? = null
     private var inlineIsBuffering = false
-    // FEATURE (user ask: "jab koi video shuru karein tab 'Processing...'
-    // dikhna chahiye jab tak load na ho jaaye, phir normal chalega"): sirf
-    // is video ke PEHLI baar STATE_READY hone tak true — mid-playback
-    // rebuffering (seek, network blip) is label ko dobara nahi dikhati.
-    private var inlineIsInitialLoadForCurrentItem = true
+    // BUG FIX (user report: "pehle video par 'Processing' dikha, doosre
+    // video par nahin dikha"): pehle ek manually-reset Boolean flag
+    // (`inlineIsInitialLoadForCurrentItem`) istemal hoti thi jo sirf ek
+    // specific mount() code-path par reset hoti thi — agar koi bhi doosra
+    // rasta (retry, reattach, alag mount-branch) usi flag ko update kiye
+    // bina video badalta, agla video ka STATE_BUFFERING purani (false)
+    // value hi padh leta aur label kabhi nahi dikhta. Ab isके bajaye seedha
+    // "is URI ko hum pehle kabhi READY dekh chuke hain?" — jo hamesha,
+    // kisi bhi code-path se, khud player se hi live check hota hai, koi
+    // manual reset-placement par depend nahi karta.
+    private var inlineLastReadyUri: String? = null
     private var inlineProcessingLabelRef: View? = null
     // FEATURE (user ask: "video load nahi hota, fail ho jata hai — fail
     // hone ke baad sara cache clear karo aur wapas try karo"): chhote
@@ -556,10 +562,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             setInlineBuffering(playbackState == Player.STATE_BUFFERING)
             if (playbackState == Player.STATE_READY) {
-                // Pehli baar READY ban gaya — ab yeh "initial load" nahi
-                // raha, aage koi bhi buffering sirf normal mid-playback
-                // rebuffer hai (koi "Processing…" label nahi).
-                inlineIsInitialLoadForCurrentItem = false
+                // Pehli baar READY ban gaya — is URI ke liye ab "initial
+                // load" khatam. Aage koi bhi buffering isi URI par sirf
+                // normal mid-playback rebuffer hai (koi "Processing…" label
+                // nahi) — dekho inlineLastReadyUri ka field comment.
+                inlineLastReadyUri = inlinePlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
                 inlineIoRetryCount = 0
             }
         }
@@ -571,25 +578,47 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         val spinner = inlineBufferingIndicatorRef ?: return
         val playPause = inlinePlayPauseButtonRef
         val processingLabel = inlineProcessingLabelRef
-        val showProcessingLabel = buffering && inlineIsInitialLoadForCurrentItem
+        val currentUri = inlinePlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val showProcessingLabel = buffering && currentUri != null && currentUri != inlineLastReadyUri
         if (buffering) {
-            spinner.visibility = View.VISIBLE
-            spinner.animate().cancel()
-            spinner.animate()
-                .alpha(1f).scaleX(1f).scaleY(1f)
-                .setDuration(180)
-                .setInterpolator(android.view.animation.DecelerateInterpolator())
-                .start()
+            // BUG FIX (user report: "processing ke saath jo circle dikhaya
+            // hai vo circle hata do"): initial-load ("Processing…") state
+            // mein ab sirf TEXT dikhta hai — spinner circle nahi. Baaki
+            // (mid-playback) rebuffering mein pehle jaisa sirf spinner hai,
+            // koi text nahi — dono kabhi ek saath nahi dikhte.
+            if (showProcessingLabel) {
+                spinner.animate().cancel()
+                spinner.alpha = 0f
+                spinner.visibility = View.GONE
+                if (processingLabel != null) {
+                    processingLabel.visibility = View.VISIBLE
+                    processingLabel.animate().cancel()
+                    processingLabel.alpha = 0f
+                    processingLabel.scaleX = 0.92f
+                    processingLabel.scaleY = 0.92f
+                    processingLabel.animate()
+                        .alpha(1f).scaleX(1f).scaleY(1f)
+                        .setDuration(180)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
+            } else {
+                processingLabel?.animate()?.cancel()
+                processingLabel?.alpha = 0f
+                processingLabel?.visibility = View.GONE
+                spinner.visibility = View.VISIBLE
+                spinner.animate().cancel()
+                spinner.animate()
+                    .alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(180)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
             playPause?.animate()?.cancel()
             playPause?.animate()
                 ?.alpha(0f)?.scaleX(0.7f)?.scaleY(0.7f)
                 ?.setDuration(140)
                 ?.start()
-            if (showProcessingLabel && processingLabel != null) {
-                processingLabel.visibility = View.VISIBLE
-                processingLabel.animate().cancel()
-                processingLabel.animate().alpha(1f).setDuration(180).start()
-            }
         } else {
             spinner.animate().cancel()
             spinner.animate()
@@ -597,16 +626,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 .setDuration(140)
                 .withEndAction { spinner.visibility = View.GONE }
                 .start()
+            processingLabel?.animate()?.cancel()
+            processingLabel?.animate()
+                ?.alpha(0f)?.setDuration(140)
+                ?.withEndAction { processingLabel.visibility = View.GONE }
+                ?.start()
             playPause?.animate()?.cancel()
             playPause?.animate()
                 ?.alpha(1f)?.scaleX(1f)?.scaleY(1f)
                 ?.setDuration(200)
                 ?.setInterpolator(android.view.animation.OvershootInterpolator(2f))
-                ?.start()
-            processingLabel?.animate()?.cancel()
-            processingLabel?.animate()
-                ?.alpha(0f)?.setDuration(140)
-                ?.withEndAction { processingLabel.visibility = View.GONE }
                 ?.start()
         }
     }
@@ -1593,13 +1622,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         )
         player.prepare()
         // FEATURE (user ask: "jab koi video shuru karen tab 'Processing...'
-        // dikhna chahiye jab tak load na ho jaaye"): naya video mount ho raha
-        // hai — is baar ka STATE_BUFFERING "pehli baar load ho raha hai" hai,
-        // mid-playback rebuffering nahi, isliye setInlineBuffering() ab
-        // "Processing…" label bhi saath mein dikhayega jab tak yeh pehli
-        // baar STATE_READY na ban jaaye. Wahi jagah IO-retry counter bhi
-        // reset karo — naye video ka apna fresh retry budget milna chahiye.
-        inlineIsInitialLoadForCurrentItem = true
+        // dikhna chahiye jab tak load na ho jaaye"): "Processing…" label ab
+        // seedha inlineLastReadyUri se driven hai (dekho uska field
+        // comment) — yahan sirf is naye mount ka apna fresh IO-retry budget
+        // set karna kaafi hai.
         inlineIoRetryCount = 0
         // Bug fix: chhota player pehle kabhi resume position check hi nahi karta tha
         // — na apni (kyunki khud kabhi save hi nahi karta tha, neeche dekho) na
