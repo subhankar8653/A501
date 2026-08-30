@@ -40,8 +40,10 @@ object TdlibDownloadHelper {
     fun attemptDirectDownload(
         streamUrl: String,
         outFile: File,
+        shouldPause: () -> Boolean = { false },
         onProgress: (progressPct: Int, sizeBytes: Long) -> Unit,
         onDone: (file: File) -> Unit,
+        onPaused: () -> Unit = {},
         onError: (message: String) -> Unit,
     ): Boolean {
         if (!TdlibConfig.ENABLED) {
@@ -82,9 +84,22 @@ object TdlibDownloadHelper {
                 msgId = resolution.msgId,
                 outFile = outFile,
                 timeoutMs = TdlibConfig.DOWNLOAD_TIMEOUT_MS,
+                shouldPause = shouldPause,
                 onProgress = onProgress,
             )
             onDone(outFile)
+            true
+        } catch (e: TdlibClient.TdlibDownloadPausedException) {
+            // FEATURE (user ask: "watch shuru hote hi download pause ho
+            // jaega, watch band hote hi wahi se aage shuru ho jaega"): yeh
+            // ek genuine failure nahi hai — TDLib ne apna already-fetched
+            // prefix apni khud ki local cache mein rakha hua hai, isliye
+            // agli baar isi chatId/msgId ke liye downloadFull() call karte
+            // hi wahin se aage continue ho jaayega. onError() (jo caller ko
+            // permanent-fail treat karwa deta) ki jagah onPaused() call
+            // karo, taaki caller ise resumable maane.
+            TdlibDebugState.lastStatus = "TDLib: download paused (watching started)"
+            onPaused()
             true
         } catch (e: Exception) {
             // TdlibClient.downloadFull already retried once internally

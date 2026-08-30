@@ -43,6 +43,23 @@ object TdlibClient {
 
     class TdlibException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
+    /**
+     * FEATURE (user ask: "stream hote waqt download queue mein chala jaega,
+     * watch band karte hi download apne aap shuru ho jaega — single download
+     * ya watch hoga, dono ek saath nahi, taaki jo bhi chal raha ho use full
+     * power mile"): pehle streaming aur download dono ek saath TDLib se chal
+     * sakte the, bas alag-alag priority (32 vs 16) ke saath bandwidth baant
+     * lete the — ab jab watching shuru ho, download ko poori tarah RUKNA
+     * hai (koi bhi network activity nahi), taaki streaming ko poora bandwidth
+     * mile, aur watching rukte hi download turant fir se shuru ho jaaye.
+     * Is exception se downloadFullAttempt() apne poll-loop ko cleanly, bina
+     * error maane, beech mein rok deta hai — [TdlibDownloadHelper] ise pakad
+     * kar `onPaused()` call karta hai (`onError()` nahi), taaki caller
+     * (NativeDownloadManager) ise ek resumable pause maane, permanent
+     * failure nahi.
+     */
+    class TdlibDownloadPausedException(message: String) : Exception(message)
+
     data class ResolvedFile(val fileId: Int, val totalSize: Long)
 
     @Volatile private var clientId: Int = -1
@@ -648,8 +665,23 @@ object TdlibClient {
 
     /** Full-file variant used by [TdlibDownloadHelper]: downloads the
      *  entire file into TDLib's own storage (reporting progress along the
-     *  way), then copies the finished file to [outFile]. */
-    fun downloadFull(chatId: Long, msgId: Long, outFile: File, timeoutMs: Long, onProgress: (progressPct: Int, sizeBytes: Long) -> Unit) {
+     *  way), then copies the finished file to [outFile].
+     *
+     *  [shouldPause] is polled between waits — when it flips true, TDLib's
+     *  in-flight download is cancelled (`cancelDownloadFile`, freeing the
+     *  bandwidth immediately for streaming) and this throws
+     *  [TdlibDownloadPausedException] instead of retrying/erroring. TDLib
+     *  keeps whatever bytes it already fetched in its own local cache, so a
+     *  later call resumes from there — no separate byte-tracking needed on
+     *  our side. */
+    fun downloadFull(
+        chatId: Long,
+        msgId: Long,
+        outFile: File,
+        timeoutMs: Long,
+        shouldPause: () -> Boolean = { false },
+        onProgress: (progressPct: Int, sizeBytes: Long) -> Unit,
+    ) {
         val resolved = resolveFile(chatId, msgId)
         ensureReady()
         // CLEAN-RETRY FIX (see [resetFileForRetry] doc comment, and user
@@ -660,16 +692,48 @@ object TdlibClient {
         // download hota — Telegram bandwidth ki jagah Railway ki. Ab
         // failure ke baad ek clean retry yahin ho jaata hai; Railway ka
         // koi role nahi bacha.
+        //
+        // A pause request is NOT a failure — never clear-cache-and-retry
+        // for it, and never swallow it silently; it must propagate up so
+        // the caller knows to stop treating this as an active download.
         try {
-            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, onProgress)
+            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, shouldPause, onProgress)
+        } catch (e: TdlibDownloadPausedException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "downloadFull failed for file_id=${resolved.fileId}, clearing cache and retrying once: ${e.message}")
             resetFileForRetry(resolved.fileId)
-            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, onProgress)
+            downloadFullAttempt(resolved.fileId, resolved.totalSize, outFile, timeoutMs, shouldPause, onProgress)
         }
     }
 
-    private fun downloadFullAttempt(fileId: Int, total: Long, outFile: File, timeoutMs: Long, onProgress: (progressPct: Int, sizeBytes: Long) -> Unit) {
+    /** Best-effort — asks TDLib to stop actively fetching bytes for this
+     *  file right now (frees up bandwidth for streaming immediately).
+     *  TDLib keeps whatever prefix it already downloaded, so a future
+     *  `downloadFile` on the same file_id picks up from there. */
+    private fun cancelDownloadFileQuiet(fileId: Int) {
+        try {
+            send(
+                JSONObject().apply {
+                    put("@type", "cancelDownloadFile")
+                    put("file_id", fileId)
+                    put("only_if_pending", false)
+                },
+                waitForResponse = false,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "cancelDownloadFile failed for file_id=$fileId (continuing anyway): ${e.message}")
+        }
+    }
+
+    private fun downloadFullAttempt(
+        fileId: Int,
+        total: Long,
+        outFile: File,
+        timeoutMs: Long,
+        shouldPause: () -> Boolean,
+        onProgress: (progressPct: Int, sizeBytes: Long) -> Unit,
+    ) {
         send(
             JSONObject().apply {
                 put("@type", "downloadFile")
@@ -682,6 +746,15 @@ object TdlibClient {
                 // 16) se hamesha zyada hai, isliye jab dono ek saath TDLib se
                 // active hon, download ko bandwidth mein preference milti
                 // hai aur woh jaldi/steady poora hota hai.
+                //
+                // FEATURE (user ask: "single download ya watch, dono ek
+                // saath kabhi nahi"): ab dono kabhi ek saath TDLib se active
+                // hi nahi hote — jab watching shuru hoti hai, download ka
+                // shouldPause() true ho jaata hai aur yeh cancelDownloadFile
+                // bhej kar poori tarah ruk jaata hai (priority ab irrelevant,
+                // koi contention hi nahi bachta). Priority yahan sirf us
+                // chhoti window ke liye maayne rakhti hai jab dono ka state
+                // transition abhi-abhi hua ho.
                 put("priority", 32)
                 put("synchronous", false)
             },
@@ -689,6 +762,10 @@ object TdlibClient {
 
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
+            if (shouldPause()) {
+                cancelDownloadFileQuiet(fileId)
+                throw TdlibDownloadPausedException("download paused (watching started) for file_id=$fileId")
+            }
             val local = latestFileState[fileId]?.optJSONObject("local")
             if (local != null) {
                 val prefix = local.optLong("downloaded_prefix_size", 0L)
