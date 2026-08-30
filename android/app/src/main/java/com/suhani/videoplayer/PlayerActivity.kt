@@ -1938,6 +1938,19 @@ class PlayerActivity : AppCompatActivity() {
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> {
                     if (ioRetryCount < maxIoRetries) {
                         ioRetryCount += 1
+                        // FEATURE (user ask: "video load nahi hota, fail ho
+                        // jata hai to fail hone ke baad sara cache clear
+                        // karo aur wapas try karo"): pehle sirf player.prepare()
+                        // dobara call hota tha — agar asli wajah TDLib ki apni
+                        // local cache mein hi corrupt/atka hua partial data
+                        // tha, wahi dobara offset par dobara mila to yeh retry
+                        // usi tarah fail hota rehta ("kaafi baar fail ho jaata
+                        // hai"). Ab retry se pehle us stream ke liye TDLib ki
+                        // local cache bhi clear karte hain (best-effort, non-
+                        // Telegram URLs par no-op) — taaki retry genuinely
+                        // fresh data maange, wahi corrupt hissa nahi.
+                        val streamUrl = player.currentMediaItem?.localConfiguration?.uri?.toString()
+                        if (streamUrl != null) TdlibClient.resetCacheForStreamUrl(streamUrl)
                         controlsHandler.postDelayed({
                             if (::player.isInitialized) {
                                 player.prepare()

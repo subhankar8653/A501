@@ -195,6 +195,26 @@ object TdlibClient {
         }
     }
 
+    /** FEATURE (user ask: "video load nahi hota, fail ho jata hai — fail
+     *  hone ke baad sara cache clear karo aur wapas try karo"): [resetFileForRetry]
+     *  ko `fileId` chahiye, lekin player error-handlers (PlayerActivity/
+     *  MainActivity) ke paas sirf original stream URL hota hai — yeh
+     *  convenience wrapper wahi resolve-then-reset kar deta hai ek hi call
+     *  mein. Best-effort/silent-fail: agar URL Telegram link hi nahi hai ya
+     *  resolve timeout ho jaaye, seedha no-op — caller ka apna retry
+     *  (dobara DataSource.open()) beech mein jo bhi asli problem hai woh
+     *  khud surface kar dega. */
+    fun resetCacheForStreamUrl(streamUrl: String) {
+        try {
+            val resolveUrl = TdlibResolveClient.deriveResolveUrl(streamUrl) ?: return
+            val resolution = TdlibResolveClient.resolve(resolveUrl)
+            val resolved = resolveFile(resolution.chatId, resolution.msgId)
+            resetFileForRetry(resolved.fileId)
+        } catch (e: Exception) {
+            Log.w(TAG, "resetCacheForStreamUrl: best-effort cache clear failed for $streamUrl (continuing anyway): ${e.message}")
+        }
+    }
+
     @Volatile private var authReadyLatch = CountDownLatch(1)
     @Volatile private var authFailure: String? = null
 
