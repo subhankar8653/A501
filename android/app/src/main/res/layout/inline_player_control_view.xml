@@ -213,7 +213,22 @@
 
     <!-- Bottom strip: time text + expand icon, then a flush full-width
          progress line right at the very edge. Lock button hata diya gaya hai
-         (YouTube reference jaisa clean look ke liye user ne khud maanga). -->
+         (YouTube reference jaisa clean look ke liye user ne khud maanga).
+
+         BUG FIX (user report + screenshots: "jo time bar hai woh YouTube mein
+         video ke ekdam edge/niche laga hota hai, mera thoda andar se shuru
+         hota hai"): neeche wala DefaultTimeBar pehle info-row (time/quality/
+         fullscreen) ke saath EK hi LinearLayout ke andar tha, jispar
+         marginStart=10dp/marginEnd=6dp tha — woh margin sirf info-row ke
+         text/icons ke liye chahiye tha (taaki edge se na chipke), lekin
+         LinearLayout ka child hone ki wajah se DefaultTimeBar ko bhi wahi
+         side-margin mil jaata tha, isliye woh bhi thoda andar se shuru/khatam
+         hota tha — YouTube ki tarah screen ke bilkul left-right edge tak
+         nahi jaata tha. Fix: DefaultTimeBar ko is margined LinearLayout se
+         NIKAAL kar seedha bahar wale FrameLayout ka apna child bana diya —
+         match_parent width, ZERO margin, bottom-aligned — ab woh video ke
+         bilkul left/right/bottom edge ko chhoot ta hai, info-row ke bilkul
+         neeche, YouTube reference jaisa hi. -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -224,6 +239,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="6dp"
+            android:layout_marginBottom="14dp"
             android:orientation="vertical">
 
             <LinearLayout
@@ -299,23 +315,26 @@
 
             </LinearLayout>
 
-            <!-- Flush, edge-to-edge, no pill/padding — reference ki thin red line jaisa -->
-            <androidx.media3.ui.DefaultTimeBar
-                android:id="@id/exo_progress"
-                android:layout_width="match_parent"
-                android:layout_height="14dp"
-                app:played_color="#FFD700"
-                app:scrubber_color="#FFD700"
-                app:unplayed_color="#4DFFFFFF"
-                app:buffered_color="#80FFFFFF"
-                app:bar_height="2.5dp"
-                app:touch_target_height="14dp"
-                app:scrubber_drawable="@drawable/scrubber_handle_premium"
-                app:scrubber_enabled_size="12dp"
-                app:scrubber_disabled_size="0dp"
-                app:scrubber_dragged_size="18dp" />
-
         </LinearLayout>
+
+        <!-- Flush, edge-to-edge, zero margin, pinned to the very bottom of
+             the video frame — bilkul YouTube reference ki thin line jaisa
+             (dekho upar wala bug-fix comment). -->
+        <androidx.media3.ui.DefaultTimeBar
+            android:id="@id/exo_progress"
+            android:layout_width="match_parent"
+            android:layout_height="14dp"
+            android:layout_gravity="bottom"
+            app:played_color="#FFD700"
+            app:scrubber_color="#FFD700"
+            app:unplayed_color="#4DFFFFFF"
+            app:buffered_color="#80FFFFFF"
+            app:bar_height="2.5dp"
+            app:touch_target_height="14dp"
+            app:scrubber_drawable="@drawable/scrubber_handle_premium"
+            app:scrubber_enabled_size="12dp"
+            app:scrubber_disabled_size="0dp"
+            app:scrubber_dragged_size="18dp" />
 
         <!-- Hidden — settings-gear menu se performClick() hote hain, logic wahi purana -->
         <ImageView

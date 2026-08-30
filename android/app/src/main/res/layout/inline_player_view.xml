@@ -72,6 +72,31 @@
             android:indeterminateTint="#FFD700" />
     </FrameLayout>
 
+    <!-- FEATURE (user ask: "jab koi video shuru karein tab 'Processing...'
+         dikhna chahiye jab tak load na ho jaaye, phir acche se chalega"):
+         sirf pehli baar ka load hi is text ko dikhata hai (Kotlin side:
+         inlineIsInitialLoadForCurrentItem) — mid-playback rebuffering mein
+         sirf upar wala spinner dikhta hai, yeh nahi. 64dp upar rakha hai
+         taaki upar wale spinner-chip se overlap na ho. -->
+    <TextView
+        android:id="@+id/inlineProcessingLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="64dp"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="6dp"
+        android:background="@drawable/bg_buffering_chip"
+        android:text="Processing…"
+        android:textColor="#FFF8E7"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        android:alpha="0"
+        android:elevation="4dp"
+        android:clickable="false"
+        android:focusable="false" />
+
     <!-- BUG FIX (user report): pehle yeh ek single pill tha jismein text
          color #0B0B12 (near-black) tha, jo dark background ke upar
          practically invisible tha. Ab fullscreen player (activity_player.xml
