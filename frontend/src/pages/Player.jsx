@@ -8,7 +8,7 @@ import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import Rail from '../components/Rail'
 import { useLocalReactions } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
-import { useDownloadEntry, downloadId } from '../lib/downloadsStore'
+import { useDownloadEntry, downloadId, setWatching, isWatchingNow } from '../lib/downloadsStore'
 import { formatDisplayTitle } from '../lib/formatTitle'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -583,6 +583,7 @@ export default function Player() {
                   }}
                   onEnded={handleEnded}
                   onFatalError={handleVideoFatalError}
+                  onPlayStateChange={setWatching}
                 />
               )}
             </div>
@@ -626,7 +627,7 @@ export default function Player() {
               {reactions.dislikes}
             </button>
             <button
-              onClick={downloadFile}
+              onClick={downloadEntry?.status === 'queued' ? () => showToast(isWatchingNow() ? t('dl_queued_watching') : t('dl_queued')) : downloadFile}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
               title={t('download')}
               aria-label={t('download')}
@@ -641,6 +642,11 @@ export default function Player() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                   {t('downloaded')}
                 </>
+              ) : downloadEntry?.status === 'queued' ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                  {t('dl_queued')}
+                </>
               ) : (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -648,6 +654,22 @@ export default function Player() {
                 </>
               )}
             </button>
+            {downloadEntry?.status === 'queued' ? (
+              // FEATURE (user ask: "download button ke udhar quota wala
+              // button dikhega, click karne par notification aayega ki
+              // watch karte-karte download nahi kar sakte"): watching band
+              // hote hi yeh badge apne aap gayab ho jaata hai (status
+              // 'downloading' ban jaata hai) — koi extra state track nahi
+              // karni padi, downloadEntry khud hi reflect kar deta hai.
+              <button
+                onClick={() => showToast(isWatchingNow() ? t('dl_queued_watching') : t('dl_queued'))}
+                aria-label={t('dl_queued')}
+                title={t('dl_queued')}
+                className="p-2 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22c4.97 0 9-4.03 9-9s-4.03-9-9-9-9 4.03-9 9 4.03 9 9 9z"/><path d="M12 8v5l3 2"/></svg>
+              </button>
+            ) : null}
             <div className="relative shrink-0">
               <button onClick={shareIt} aria-label="Share" className="p-2 rounded-full text-xs bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition" title={t('share')}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
