@@ -31,6 +31,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 object NativeDownloadManager {
 
     private val active = ConcurrentHashMap<String, AtomicBoolean>() // id -> "keep going?" flag
+
+    // FEATURE (user ask: "stream hote waqt download queue mein chala jaega,
+    // watch band karte hi apne aap shuru ho jaega — single download ya
+    // watch hoga, dono ek saath kabhi nahi, jo bhi chal raha ho use full
+    // power mile"): a PAUSE is different from a CANCEL — cancel wipes
+    // everything (used when the user deletes/discards a download); pause
+    // just stops the network activity right now and keeps whatever's on
+    // disk so the exact same download can pick up again later (Range-resume
+    // for the plain-HTTP path below; TDLib resumes on its own, see
+    // TdlibDownloadHelper/TdlibClient). id -> "please pause" flag.
+    private val pauseRequested = ConcurrentHashMap<String, AtomicBoolean>()
     private const val AUTHORITY_SUFFIX = ".downloads.fileprovider"
 
     private fun downloadsDir(context: Context): File {
@@ -61,6 +72,17 @@ object NativeDownloadManager {
     fun cancel(id: String) {
         active[id]?.set(false)
         active.remove(id)
+        pauseRequested.remove(id)
+    }
+
+    /** Stops the in-flight network activity for [id] RIGHT NOW but leaves
+     *  any partial bytes on disk (the `.part` file / TDLib's own local
+     *  cache) so a later [start] call for the same id continues instead of
+     *  re-downloading from scratch. No-op if [id] isn't currently active —
+     *  the flag it sets is read by that download's own loop, so if nothing
+     *  is running there's nothing to pause. */
+    fun pause(id: String) {
+        pauseRequested.getOrPut(id) { AtomicBoolean(false) }.set(true)
     }
 
     /**
@@ -74,12 +96,19 @@ object NativeDownloadManager {
         url: String,
         onProgress: (progressPct: Int, sizeBytes: Long) -> Unit,
         onDone: (contentUri: String) -> Unit,
+        onPaused: () -> Unit = {},
         onError: (message: String) -> Unit,
     ) {
         // Same id ka pehle se chal raha download ho to usse pehle rok do (retry case).
+        // NOTE: yeh sirf in-memory "keep going" flags reset karta hai — disk
+        // par pehle se maujood `.part` file ko HAATH NAHI lagata, isliye ek
+        // paused download ko yahi se resume karna safe hai.
         cancel(id)
         val keepGoing = AtomicBoolean(true)
         active[id] = keepGoing
+        val pauseFlag = AtomicBoolean(false)
+        pauseRequested[id] = pauseFlag
+        fun isPauseRequested() = pauseFlag.get()
 
         // ROOT CAUSE FIX (download's TDLib attempt was throwing
         // "resolve failed: null" every time — that's the signature of
@@ -120,14 +149,25 @@ object NativeDownloadManager {
             val handledByTdlib = com.suhani.videoplayer.TdlibDownloadHelper.attemptDirectDownload(
                 streamUrl = url,
                 outFile = outFile,
+                shouldPause = ::isPauseRequested,
                 onProgress = debugWrappedOnProgress,
                 onDone = { f ->
                     active.remove(id)
+                    pauseRequested.remove(id)
                     val uri = contentUriFor(context, id)
                     if (uri != null) onDone(uri) else onError("file save failed")
                 },
+                onPaused = {
+                    // Network activity already stopped (TdlibClient sent
+                    // cancelDownloadFile) — just stop tracking this as
+                    // "active" so a fresh start(id, ...) call later is free
+                    // to run; TDLib's own local cache keeps the bytes.
+                    active.remove(id)
+                    onPaused()
+                },
                 onError = { msg ->
                     active.remove(id)
+                    pauseRequested.remove(id)
                     onError(msg)
                 },
             )
@@ -152,6 +192,13 @@ object NativeDownloadManager {
 
             var conn: HttpURLConnection? = null
             val tmpFile = File(outFile.parentFile, outFile.name + ".part")
+            // FEATURE (user ask: "download pause ho kar watch band hote hi
+            // wahin se aage shuru ho jaega, poora se dobara nahi"): agar
+            // pichhli baar pause hote waqt kuch bytes .part file mein already
+            // save the, unhe fek kar poore se shuru karne ki jagah HTTP
+            // Range header se sirf bacha hua hissa maango aur usi file mein
+            // aage jodte jao.
+            val alreadyOnDisk = if (tmpFile.exists()) tmpFile.length() else 0L
             try {
                 var currentUrl = url
                 var redirects = 0
@@ -162,6 +209,7 @@ object NativeDownloadManager {
                         readTimeout = 20_000
                         instanceFollowRedirects = false
                         setRequestProperty("User-Agent", "A501-Player/1.0 (Android)")
+                        if (alreadyOnDisk > 0) setRequestProperty("Range", "bytes=$alreadyOnDisk-")
                     }
                     connection.connect()
                     val code = connection.responseCode
@@ -179,17 +227,28 @@ object NativeDownloadManager {
                     break
                 }
                 conn = connection
+                // Range maanga tha lekin server ne 206 (Partial Content) ki
+                // jagah 200 diya — matlab woh Range support hi nahi karta,
+                // aur ab poori file processwar naye sirse aa rahi hai. Isse
+                // purani .part file ke aage seedha jodna corrupt file banata
+                // — poore se hi shuru karo.
+                val serverHonoredRange = alreadyOnDisk > 0 && conn.responseCode == HttpURLConnection.HTTP_PARTIAL
+                val startOffset = if (serverHonoredRange) alreadyOnDisk else 0L
+                if (alreadyOnDisk > 0 && !serverHonoredRange) {
+                    runCatching { tmpFile.delete() }
+                }
                 if (conn.responseCode !in 200..299) {
                     onError("HTTP ${conn.responseCode}")
                     return@Thread
                 }
-                val total = conn.contentLengthLong
-                var received = 0L
+                val remaining = conn.contentLengthLong
+                val total = if (remaining > 0) startOffset + remaining else -1L
+                var received = startOffset
                 conn.inputStream.use { input ->
-                    FileOutputStream(tmpFile).use { output ->
+                    FileOutputStream(tmpFile, serverHonoredRange).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var lastEmit = 0L
-                        while (keepGoing.get()) {
+                        while (keepGoing.get() && !pauseFlag.get()) {
                             val read = input.read(buffer)
                             if (read == -1) break
                             output.write(buffer, 0, read)
@@ -203,6 +262,15 @@ object NativeDownloadManager {
                         }
                         output.flush()
                     }
+                }
+                if (pauseFlag.get()) {
+                    // FEATURE: watching shuru ho gayi — abhi ke liye ruko,
+                    // .part file jaisi hai waisi hi rehne do (delete NAHI
+                    // karna), taaki agla start(id, ...) call Range header se
+                    // yahin se aage badhe.
+                    active.remove(id)
+                    onPaused()
+                    return@Thread
                 }
                 if (!keepGoing.get()) {
                     // cancel hua tha — adhoora file hata do
@@ -233,11 +301,21 @@ object NativeDownloadManager {
                     runCatching { tmpFile.delete() }
                 }
                 active.remove(id)
+                pauseRequested.remove(id)
                 val uri = contentUriFor(context, id)
                 if (uri != null) onDone(uri) else onError("file save failed")
             } catch (e: Exception) {
+                if (pauseFlag.get()) {
+                    // Pause request ke beech hi connection wagera cut hui —
+                    // ab bhi ek genuine pause hai, error nahi; .part file
+                    // rehne do.
+                    active.remove(id)
+                    onPaused()
+                    return@Thread
+                }
                 runCatching { tmpFile.delete() }
                 active.remove(id)
+                pauseRequested.remove(id)
                 if (keepGoing.get()) onError(e.message ?: "download failed")
             } finally {
                 conn?.disconnect()

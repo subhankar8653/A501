@@ -61,6 +61,7 @@ class DownloadService : Service() {
     interface ProgressListener {
         fun onDownloadProgress(id: String, pct: Int, bytes: Long)
         fun onDownloadDone(id: String, contentUri: String)
+        fun onDownloadPaused(id: String)
         fun onDownloadError(id: String, message: String)
     }
 
@@ -69,6 +70,12 @@ class DownloadService : Service() {
         const val NOTIF_ID = 5931
         const val ACTION_START = "com.suhani.screen.action.START_DOWNLOAD"
         const val ACTION_CANCEL = "com.suhani.screen.action.CANCEL_DOWNLOAD"
+        // FEATURE (user ask: "watch shuru hote hi download queue/pause ho
+        // jaega, watch band hote hi apne aap resume ho jaega"): PAUSE cancel
+        // jaisa hi intent (rok do abhi ke liye) hai lekin state discard nahi
+        // karta — resume seedha ACTION_START dobara bhej kar hota hai (id ka
+        // partial state — .part file ya TDLib cache — as-is milta hai).
+        const val ACTION_PAUSE = "com.suhani.screen.action.PAUSE_DOWNLOAD"
         const val EXTRA_ID = "extra_id"
         const val EXTRA_URL = "extra_url"
         const val EXTRA_TITLE = "extra_title"
@@ -95,6 +102,13 @@ class DownloadService : Service() {
                 .putExtra(EXTRA_ID, id)
             context.startService(intent)
         }
+
+        fun pause(context: Context, id: String) {
+            val intent = Intent(context, DownloadService::class.java)
+                .setAction(ACTION_PAUSE)
+                .putExtra(EXTRA_ID, id)
+            context.startService(intent)
+        }
     }
 
     private class Progress(val title: String, var pct: Int)
@@ -117,6 +131,18 @@ class DownloadService : Service() {
             NativeDownloadManager.cancel(id)
             activeDownloads.remove(id)
             refreshNotificationOrStop()
+            return START_NOT_STICKY
+        }
+
+        if (intent.action == ACTION_PAUSE) {
+            // Actual stop happens inside NativeDownloadManager's own
+            // loop/TDLib callback — this just asks for it. That loop calls
+            // back onPaused (wired below, in onStartCommand's ACTION_START
+            // branch) once it's genuinely stopped, which is what actually
+            // clears activeDownloads/notification — not this line, since the
+            // pause is asynchronous (in-flight read/TDLib round-trip needs a
+            // moment to unwind).
+            NativeDownloadManager.pause(id)
             return START_NOT_STICKY
         }
 
@@ -149,6 +175,13 @@ class DownloadService : Service() {
                 mainHandler.post {
                     refreshNotificationOrStop()
                     listener?.onDownloadDone(id, contentUri)
+                }
+            },
+            onPaused = {
+                activeDownloads.remove(id)
+                mainHandler.post {
+                    refreshNotificationOrStop()
+                    listener?.onDownloadPaused(id)
                 }
             },
             onError = { message ->

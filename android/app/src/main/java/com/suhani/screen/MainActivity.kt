@@ -197,6 +197,18 @@ class WebDownloadInterface(private val activity: MainActivity) {
         DownloadService.cancel(activity, id)
     }
 
+    /** FEATURE (user ask: "watch shuru hote hi chal raha download ruk
+     *  jaega, watch band hote hi apne aap wahin se aage badhega"): JS side
+     *  (downloadsStore.js) isko tab bulata hai jab watching shuru hoti hai
+     *  aur koi download abhi active tha — network activity turant ruk
+     *  jaati hai (bandwidth streaming ko poora milta hai), lekin jitna ho
+     *  chuka woh disk/TDLib cache par bana rehta hai. Resume seedha
+     *  startDownload() dobara call karke hota hai (same id/url). */
+    @JavascriptInterface
+    fun pauseDownload(id: String) {
+        DownloadService.pause(activity, id)
+    }
+
     @JavascriptInterface
     fun deleteDownload(id: String) {
         // Agar yeh abhi download ho hi raha ho, pehle DownloadService ko cancel
@@ -510,6 +522,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlinePlayPauseButtonRef?.setImageResource(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow
             )
+            // FEATURE (user ask: "single download ya watch, dono ek saath
+            // kabhi nahi — jo bhi chal raha ho use full power mile"): yahi
+            // ek listener [SharedPlayerHolder]'s ExoPlayer par lagा rehta
+            // hai chahe abhi MainActivity ka inline overlay dikh raha ho ya
+            // fullscreen PlayerActivity (dono same player instance reuse
+            // karte hain) — isliye dono cases yahin se cover ho jaate hain.
+            notifyWatchingChanged(isPlaying)
         }
 
         // BUG FIX (user report: "skip/seek karte hi video pause aur buffering
@@ -1663,6 +1682,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // saved state already IndexedDB/localStorage se rakhta hai).
     override fun onDownloadProgress(id: String, pct: Int, bytes: Long) = notifyDownloadProgress(id, pct, bytes)
     override fun onDownloadDone(id: String, contentUri: String) = notifyDownloadDone(id, contentUri)
+    override fun onDownloadPaused(id: String) = notifyDownloadPaused(id)
     override fun onDownloadError(id: String, message: String) = notifyDownloadError(id, message)
 
     fun notifyDownloadProgress(id: String, progressPct: Int, sizeBytes: Long) {
@@ -1682,12 +1702,42 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         )
     }
 
+    /** FEATURE (user ask: "watch shuru hote hi download queue/pause ho
+     *  jaega"): native side (NativeDownloadManager) ne is id ka download
+     *  genuinely rok diya hai (watching shuru hone ki wajah se) — JS ko
+     *  batao taaki woh ismein 'queued' status dikhaye aur watching band
+     *  hote hi apne aap resume kare (dekho downloadsStore.js ka
+     *  `window.__nativeDownloadPaused`). */
+    fun notifyDownloadPaused(id: String) {
+        if (isFinishing || isDestroyed) return
+        val idLit = JSONObject.quote(id)
+        webView.evaluateJavascript(
+            "window.__nativeDownloadPaused?.($idLit)", null
+        )
+    }
+
     fun notifyDownloadError(id: String, message: String) {
         if (isFinishing || isDestroyed) return
         val idLit = JSONObject.quote(id)
         val msgLit = JSONObject.quote(message)
         webView.evaluateJavascript(
             "window.__nativeDownloadError?.($idLit, $msgLit)", null
+        )
+    }
+
+    /** FEATURE (user ask: "stream hote waqt download queue mein chala
+     *  jaega, watch band karte hi apne aap shuru ho jaega — single download
+     *  ya watch hoga, dono ek saath kabhi nahi"): native rich player
+     *  (inline overlay YA fullscreen PlayerActivity — dono [SharedPlayerHolder]
+     *  ka wahi ek ExoPlayer instance use karte hain, is listener ke through
+     *  hi wired hai, isliye yeh dono cases cover karta hai bina PlayerActivity
+     *  chhue) jab bhi actually play/pause hota hai, JS ko batao — downloadsStore.js
+     *  isi se decide karta hai ki koi active download turant pause/resume
+     *  karna hai ya nahi. */
+    fun notifyWatchingChanged(isPlaying: Boolean) {
+        if (isFinishing || isDestroyed) return
+        webView.evaluateJavascript(
+            "window.__nativeWatchingChanged?.($isPlaying)", null
         )
     }
 
