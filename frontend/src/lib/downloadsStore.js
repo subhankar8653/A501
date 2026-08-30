@@ -159,9 +159,53 @@ if (typeof window !== 'undefined') {
     upsert({ id, status: 'error', progress: 0 })
     processQueue()
   }
+
+  // FEATURE (user ask: "stream hote waqt download queue mein chala jaega,
+  // watch band karte hi apne aap shuru ho jaega — single download ya watch
+  // hoga, dono ek saath kabhi nahi, jo bhi chal raha ho use full power
+  // mile"): native side (NativeDownloadManager) ne is id ka download
+  // genuinely rok diya hai kyunki watching shuru ho gayi thi. Isse ek error
+  // ki tarah treat NAHI karna — wapas 'queued' bana kar QUEUE ke sabse
+  // AAGE rakho (taaki watching band hote hi sabse pehle yahi resume ho,
+  // naye downloads se pehle), progress/partial-bytes jitne ho chuke the
+  // wahi rehne do (Range-resume/TDLib cache se aage jaari rahega).
+  window.__nativeDownloadPaused = (id) => {
+    const entry = getDownloadEntry(id)
+    if (!entry) return
+    upsert({ id, status: 'queued' })
+    const queue = readQueue()
+    const idx = queue.findIndex((q) => q.id === id)
+    const item = idx >= 0 ? queue.splice(idx, 1)[0] : { id, url: entry.url, meta: entry }
+    queue.unshift(item)
+    writeQueue(queue)
+  }
+
+  // FEATURE: native rich player (inline overlay ya fullscreen — dono same
+  // ExoPlayer instance share karte hain, dekho MainActivity.kt) se aata hai
+  // jab bhi actually play/pause hota hai. Web (browser-fallback) side se
+  // yahi kaam VideoPlayer.jsx ke `onPlayStateChange` prop se hota hai —
+  // dono ek hi `setWatching()` ko feed karte hain.
+  window.__nativeWatchingChanged = (isPlaying) => setWatching(isPlaying)
 }
 
 const activeControllers = new Map() // id -> AbortController
+
+// FEATURE (user ask: "download pause ho kar watch band hote hi wahin se
+// aage badhega, poore se dobara nahi"): plain-browser (no native bridge)
+// fallback ke liye — pause par abhi tak fetch kiye gaye chunks yahin
+// in-memory rakhte hain (page reload se yeh kho jaata hai, tab restart se
+// download hoga — acceptable edge case). id -> { chunks, received }.
+const pausedJsDownloads = new Map()
+// AbortError do wajah se aa sakta hai: genuine cancel (cancelDownload — us
+// case mein meta entry already hata di gayi hai, kuch bhi resume nahi karna)
+// ya watching-pause (is set mein id maujood hoga) — isi se differentiate
+// karte hain.
+const pauseJsRequested = new Set()
+
+function pauseJsDownload(id) {
+  pauseJsRequested.add(id)
+  activeControllers.get(id)?.abort()
+}
 
 // ROOT CAUSE FIX (user report: "ek saath bahut sare download deta hun to sab
 // ek saath shuru ho jaate hain, load badh jaata hai — ek-ek karke hona
@@ -197,10 +241,78 @@ function isAnyDownloadActive() {
   return readMeta().some((d) => d.status === 'downloading')
 }
 
+// FEATURE (user ask: "stream hote waqt download queue mein chala jaega,
+// watch band karte hi apne aap shuru ho jaega — single download ya watch
+// hoga, dono ek saath kabhi nahi, jo bhi chal raha ho use full power
+// mile"): jab tak koi video actively chal (play ho) raha hai, koi bhi
+// download shuru/resume nahi hoga — chahe queue mein kitna hi wait kyun na
+// kar raha ho. `watching` ke false hone ka signal thoda debounce kiya jaata
+// hai (short pause/buffering blips par download baar-baar start/stop na
+// ho — sirf genuine "band kar diya" par hi resume ho).
+let watching = false
+let watchStopTimer = null
+const WATCH_STOP_DEBOUNCE_MS = 1500
+
+export function isWatchingNow() {
+  return watching
+}
+
+export function setWatching(isPlaying) {
+  if (isPlaying) {
+    if (watchStopTimer) {
+      clearTimeout(watchStopTimer)
+      watchStopTimer = null
+    }
+    if (watching) return
+    watching = true
+    pauseActiveDownloadForWatch()
+    return
+  }
+  // Already waiting to flip to "not watching" — let that timer run, don't
+  // reset it (avoids indefinitely postponing resume on rapid pause/resume).
+  if (watchStopTimer || !watching) return
+  watchStopTimer = setTimeout(() => {
+    watchStopTimer = null
+    watching = false
+    processQueue()
+  }, WATCH_STOP_DEBOUNCE_MS)
+}
+
+// Whatever download is currently 'downloading' gets stopped RIGHT NOW
+// (native bridge pause, or in-memory pause for the plain-browser JS-fetch
+// fallback) and put back at the FRONT of the queue — so it's the very next
+// thing that resumes once watching stops, ahead of anything freshly queued
+// meanwhile.
+function pauseActiveDownloadForWatch() {
+  const list = readMeta()
+  const activeEntry = list.find((d) => d.status === 'downloading')
+  if (!activeEntry) return
+
+  if (hasNativeDownloader() && typeof window.AndroidDownloader.pauseDownload === 'function') {
+    // Native side reports back via window.__nativeDownloadPaused once it's
+    // genuinely stopped — that's what actually re-queues the entry (keeps
+    // a single source of truth for "is this id really stopped yet").
+    window.AndroidDownloader.pauseDownload(activeEntry.id)
+    return
+  }
+
+  pauseJsDownload(activeEntry.id)
+  upsert({ id: activeEntry.id, status: 'queued' })
+  const queue = readQueue()
+  const idx = queue.findIndex((q) => q.id === activeEntry.id)
+  const item = idx >= 0 ? queue.splice(idx, 1)[0] : { id: activeEntry.id, url: activeEntry.url, meta: activeEntry }
+  queue.unshift(item)
+  writeQueue(queue)
+}
+
 // Jab bhi ek download khatam (done/error/cancelled) hota hai, yeh queue mein
 // se agla item nikaal kar shuru karta hai — agar koi aur pehle se active na ho.
 function processQueue() {
   if (isAnyDownloadActive()) return
+  // FEATURE: watching chal rahi ho to koi naya/queued download shuru mat
+  // karo — watching band hote hi (setWatching(false) ke debounce ke baad)
+  // yeh khud phir se call hoga.
+  if (watching) return
   const queue = readQueue()
   const next = queue.shift()
   if (!next) return
@@ -237,13 +349,31 @@ async function runDownload(id, url, meta) {
   const controller = new AbortController()
   activeControllers.set(id, controller)
 
+  // Agar ismein pehle kabhi pause hui thi (watching ki wajah se), wahi
+  // bache hue chunks/received-bytes se aage jodo — Range header se sirf
+  // bacha hua hissa maango.
+  const resumeState = pausedJsDownloads.get(id)
+  pausedJsDownloads.delete(id)
+  const priorReceived = resumeState?.received || 0
+  let chunks = resumeState?.chunks || []
+  let received = priorReceived
+
   try {
-    const res = await fetch(url, { signal: controller.signal })
+    const fetchOpts = { signal: controller.signal }
+    if (priorReceived > 0) fetchOpts.headers = { Range: `bytes=${priorReceived}-` }
+    const res = await fetch(url, fetchOpts)
     if (!res.ok || !res.body) throw new Error('bad response')
-    const total = Number(res.headers.get('content-length')) || 0
+    // Range maanga tha lekin server ne 206 ki jagah 200 diya — Range support
+    // nahi karta, ab poori file naye sirse aa rahi hai — purane chunks se
+    // jodna corrupt file banayega, poore se hi shuru karo.
+    const serverHonoredRange = priorReceived > 0 && res.status === 206
+    if (priorReceived > 0 && !serverHonoredRange) {
+      chunks = []
+      received = 0
+    }
+    const remaining = Number(res.headers.get('content-length')) || 0
+    const total = remaining > 0 ? received + remaining : 0
     const reader = res.body.getReader()
-    const chunks = []
-    let received = 0
     let lastWrite = 0
     while (true) {
       const { done, value } = await reader.read()
@@ -271,8 +401,16 @@ async function runDownload(id, url, meta) {
     upsert({ id, status: 'done', progress: 100, sizeBytes: blob.size })
   } catch (err) {
     if (err?.name === 'AbortError') {
-      // user-cancelled — entry already removed by cancelDownload()
+      if (pauseJsRequested.has(id)) {
+        // Watching ki wajah se pause hui — chunks/received bacha kar rakho,
+        // agla runDownload() (watching band hote hi processQueue() se)
+        // yahin se aage badhega.
+        pauseJsRequested.delete(id)
+        pausedJsDownloads.set(id, { chunks, received })
+      }
+      // warna genuine user-cancelled — entry already removed by cancelDownload()
     } else {
+      pausedJsDownloads.delete(id)
       upsert({ id, status: 'error', progress: 0 })
     }
   } finally {
@@ -290,7 +428,7 @@ export async function startDownload(url, meta) {
     return id
   }
 
-  const shouldQueue = isAnyDownloadActive()
+  const shouldQueue = isAnyDownloadActive() || watching
 
   upsert({
     id,
@@ -307,6 +445,9 @@ export async function startDownload(url, meta) {
     filename: meta.filename || 'download',
     poster: meta.poster || null,
     qualityLabel: meta.qualityLabel || '',
+    // FEATURE: pause/resume (native ya JS fallback) ke liye baad mein isi
+    // url ki zaroorat padti hai, isliye ab meta ke saath persist karte hain.
+    url,
     status: shouldQueue ? 'queued' : 'downloading',
     progress: 0,
     sizeBytes: 0,
@@ -331,6 +472,8 @@ export function cancelDownload(id) {
     queue.splice(queueIdx, 1)
     writeQueue(queue)
   }
+  pauseJsRequested.delete(id)
+  pausedJsDownloads.delete(id)
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
   if (hasNativeDownloader()) window.AndroidDownloader.cancelDownload(id)
@@ -347,6 +490,8 @@ export async function deleteDownload(id) {
     queue.splice(queueIdx, 1)
     writeQueue(queue)
   }
+  pauseJsRequested.delete(id)
+  pausedJsDownloads.delete(id)
   activeControllers.get(id)?.abort()
   activeControllers.delete(id)
   if (hasNativeDownloader()) window.AndroidDownloader.deleteDownload(id)
