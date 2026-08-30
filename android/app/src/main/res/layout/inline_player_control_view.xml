@@ -224,14 +224,27 @@
          LinearLayout ka child hone ki wajah se DefaultTimeBar ko bhi wahi
          side-margin mil jaata tha, isliye woh bhi thoda andar se shuru/khatam
          hota tha — YouTube ki tarah screen ke bilkul left-right edge tak
-         nahi jaata tha. Fix: DefaultTimeBar ko is margined LinearLayout se
-         NIKAAL kar seedha bahar wale FrameLayout ka apna child bana diya —
-         match_parent width, ZERO margin, bottom-aligned — ab woh video ke
-         bilkul left/right/bottom edge ko chhoot ta hai, info-row ke bilkul
-         neeche, YouTube reference jaisa hi. -->
-    <FrameLayout
+         nahi jaata tha.
+
+         BUG FIX ROUND 2 (user report: "2-3 video play kiya to time bar
+         hang/upar chala gaya"; "auto-hide hote waqt time bar sabse pehle
+         hide hota hai, phir baaki icons — sab ek saath hide hona chahiye"):
+         pehli try mein DefaultTimeBar ko is LinearLayout se nikaal kar ek
+         ALAG FrameLayout child (layout_gravity="bottom", apna khud ka
+         absolute-positioned overlay) bana diya tha — usi se yeh dono naye
+         bug aaye. Fix: DefaultTimeBar wapas EK hi (single, flat)
+         LinearLayout ke andar rakho — bas ab apni khud ki, poori width wali,
+         zero-margin row ke taur par (info-row wale margined inner-LinearLayout
+         se BAHAR, lekin dono ab bhi isi ek hi seedhe vertical stack ke
+         children hain, alag FrameLayout/gravity mechanism nahi) — isse edge-
+         to-edge bhi milta hai AUR yeh us single, ek-saath-fade-hone-wale
+         controller hierarchy ka hi hissa rehta hai (jaisa upar wala "top
+         bar" comment describe karta hai), koi alag absolute-position layer
+         nahi banti jo galat height-measurement/hang ka risk banaye. -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:background="@drawable/bg_bottom_gradient">
 
         <LinearLayout
@@ -239,92 +252,83 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="6dp"
-            android:layout_marginBottom="14dp"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="6dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@id/exo_position"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingBottom="2dp">
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4" />
 
-                <TextView
-                    android:id="@id/exo_position"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="#FFFFFF"
-                    android:textSize="12sp"
-                    android:shadowColor="#CC000000"
-                    android:shadowDx="0"
-                    android:shadowDy="1"
-                    android:shadowRadius="4" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" / "
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=" / "
-                    android:textColor="#FFFFFF"
-                    android:textSize="12sp" />
+            <TextView
+                android:id="@id/exo_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4" />
 
-                <TextView
-                    android:id="@id/exo_duration"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="#FFFFFF"
-                    android:textSize="12sp"
-                    android:shadowColor="#CC000000"
-                    android:shadowDx="0"
-                    android:shadowDy="1"
-                    android:shadowRadius="4" />
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
+            <!-- Current quality (jaise "1080p") — tap karke list se badal sakte hain.
+                 Bug fix: chip-background hataya, ab plain bold text hai — time text
+                 jaisa hi treatment, YouTube reference mein bhi koi box/chip nahi hota. -->
+            <TextView
+                android:id="@+id/inlineQualityButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="14dp"
+                android:padding="4dp"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:text="Auto"
+                android:textColor="#FFD700"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4" />
 
-                <!-- Current quality (jaise "1080p") — tap karke list se badal sakte hain.
-                     Bug fix: chip-background hataya, ab plain bold text hai — time text
-                     jaisa hi treatment, YouTube reference mein bhi koi box/chip nahi hota. -->
-                <TextView
-                    android:id="@+id/inlineQualityButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="14dp"
-                    android:padding="4dp"
-                    android:foreground="?attr/selectableItemBackgroundBorderless"
-                    android:text="Auto"
-                    android:textColor="#FFD700"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:shadowColor="#CC000000"
-                    android:shadowDx="0"
-                    android:shadowDy="1"
-                    android:shadowRadius="4" />
-
-                <ImageView
-                    android:id="@+id/inlineFullscreenButton"
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:padding="5dp"
-                    android:src="@drawable/ic_fullscreen_expand"
-                    android:tint="#FFF8E7"
-                    android:background="@drawable/bg_icon_soft_glow"
-                    android:foreground="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="fullscreen" />
-
-            </LinearLayout>
+            <ImageView
+                android:id="@+id/inlineFullscreenButton"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:padding="5dp"
+                android:src="@drawable/ic_fullscreen_expand"
+                android:tint="#FFF8E7"
+                android:background="@drawable/bg_icon_soft_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="fullscreen" />
 
         </LinearLayout>
 
-        <!-- Flush, edge-to-edge, zero margin, pinned to the very bottom of
-             the video frame — bilkul YouTube reference ki thin line jaisa
-             (dekho upar wala bug-fix comment). -->
+        <!-- Flush, edge-to-edge, zero margin — bilkul YouTube reference ki
+             thin line jaisa. Info-row ka sibling hai (isi ek LinearLayout ke
+             andar), FrameLayout/gravity wala alag overlay nahi. -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
             android:layout_height="14dp"
-            android:layout_gravity="bottom"
             app:played_color="#FFD700"
             app:scrubber_color="#FFD700"
             app:unplayed_color="#4DFFFFFF"
@@ -353,6 +357,6 @@
             android:src="@drawable/ic_aspect_ratio"
             android:contentDescription="resize" />
 
-    </FrameLayout>
+    </LinearLayout>
 
 </LinearLayout>
