@@ -511,6 +511,19 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineBufferingIndicatorRef: View? = null
     private var inlineIsBuffering = false
+    // FEATURE (user ask: "jab koi video shuru karein tab 'Processing...'
+    // dikhna chahiye jab tak load na ho jaaye, phir normal chalega"): sirf
+    // is video ke PEHLI baar STATE_READY hone tak true — mid-playback
+    // rebuffering (seek, network blip) is label ko dobara nahi dikhati.
+    private var inlineIsInitialLoadForCurrentItem = true
+    private var inlineProcessingLabelRef: View? = null
+    // FEATURE (user ask: "video load nahi hota, fail ho jata hai — fail
+    // hone ke baad sara cache clear karo aur wapas try karo"): chhote
+    // (inline) player mein pehle koi retry hi nahi thi (dekho neeche
+    // inlineErrorListener). Ab fullscreen (PlayerActivity) jaisa hi bounded
+    // retry, saath mein TDLib cache clear bhi.
+    private var inlineIoRetryCount = 0
+    private val maxInlineIoRetries = 2
 
     // Named (not anonymous) taaki decoder-switch rebuild ke time isi listener ko
     // purane player se hata kar naye player par dobara laga sakein. Bug fix: pehle
@@ -542,6 +555,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // ek hi cheez dikhti hai, jhatka-free premium feel.
         override fun onPlaybackStateChanged(playbackState: Int) {
             setInlineBuffering(playbackState == Player.STATE_BUFFERING)
+            if (playbackState == Player.STATE_READY) {
+                // Pehli baar READY ban gaya — ab yeh "initial load" nahi
+                // raha, aage koi bhi buffering sirf normal mid-playback
+                // rebuffer hai (koi "Processing…" label nahi).
+                inlineIsInitialLoadForCurrentItem = false
+                inlineIoRetryCount = 0
+            }
         }
     }
 
@@ -550,6 +570,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         inlineIsBuffering = buffering
         val spinner = inlineBufferingIndicatorRef ?: return
         val playPause = inlinePlayPauseButtonRef
+        val processingLabel = inlineProcessingLabelRef
+        val showProcessingLabel = buffering && inlineIsInitialLoadForCurrentItem
         if (buffering) {
             spinner.visibility = View.VISIBLE
             spinner.animate().cancel()
@@ -563,6 +585,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 ?.alpha(0f)?.scaleX(0.7f)?.scaleY(0.7f)
                 ?.setDuration(140)
                 ?.start()
+            if (showProcessingLabel && processingLabel != null) {
+                processingLabel.visibility = View.VISIBLE
+                processingLabel.animate().cancel()
+                processingLabel.animate().alpha(1f).setDuration(180).start()
+            }
         } else {
             spinner.animate().cancel()
             spinner.animate()
@@ -576,6 +603,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 ?.setDuration(200)
                 ?.setInterpolator(android.view.animation.OvershootInterpolator(2f))
                 ?.start()
+            processingLabel?.animate()?.cancel()
+            processingLabel?.animate()
+                ?.alpha(0f)?.setDuration(140)
+                ?.withEndAction { processingLabel.visibility = View.GONE }
+                ?.start()
         }
     }
 
@@ -584,11 +616,49 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // fallback + message deta hai, lekin yahan stream fail hone par player bas
     // silently ruk jaata (black/frozen frame), user ko pata hi nahi chalta kyun.
     // Poora fallback-logic (decoder switch, quality retry waghera) yahan dobara
-    // banana overkill hai — us robust handling ke liye already fullscreen hai —
-    // isliye yahan minimum zaroori cheez: user ko batao, aur poore-screen mein
-    // (jahan asli recovery/fallback hai) khud khulne ka option do.
+    // banana overkill hai — us robust handling ke liye already fullscreen hai.
+    //
+    // FEATURE (user ask: "video load nahi hota, kaafi baar fail ho jaata
+    // hai — fail hone ke baad sara cache clear karo aur wapas try karo"):
+    // ab pehle seedha "fullscreen mein try karein" toast se pehle, IO-type
+    // errors par khud yahin bounded retry karta hai (fullscreen jaisa hi
+    // pattern) — is stream ka TDLib cache clear karke, phir dobara prepare.
+    // Sirf tab toast dikhata hai jab retries khatam ho jaayein.
     private val inlineErrorListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            val isIoError = when (error.errorCode) {
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> true
+                else -> false
+            }
+            if (isIoError && inlineIoRetryCount < maxInlineIoRetries) {
+                inlineIoRetryCount += 1
+                val player = inlinePlayer ?: return
+                val resumePos = player.currentPosition
+                val streamUrl = player.currentMediaItem?.localConfiguration?.uri?.toString()
+                if (streamUrl != null) {
+                    // Blocking TDLib round-trip — background thread, UI thread
+                    // par nahi (isi tarah NativeDownloadManager bhi apna TDLib
+                    // kaam background Thread par karta hai).
+                    Thread {
+                        com.suhani.videoplayer.TdlibClient.resetCacheForStreamUrl(streamUrl)
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                player.prepare()
+                                player.seekTo(resumePos)
+                                player.playWhenReady = true
+                            }
+                        }
+                    }.apply { isDaemon = true }.start()
+                } else {
+                    player.prepare()
+                    player.seekTo(resumePos)
+                    player.playWhenReady = true
+                }
+                return
+            }
             android.widget.Toast.makeText(
                 this@MainActivity,
                 "Video play nahi ho paya — fullscreen mein try karein",
@@ -1200,8 +1270,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
+            val processingLabel = root.findViewById<View>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineBufferingIndicatorRef = bufferingIndicator
+            inlineProcessingLabelRef = processingLabel
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
@@ -1520,6 +1592,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 .build()
         )
         player.prepare()
+        // FEATURE (user ask: "jab koi video shuru karen tab 'Processing...'
+        // dikhna chahiye jab tak load na ho jaaye"): naya video mount ho raha
+        // hai — is baar ka STATE_BUFFERING "pehli baar load ho raha hai" hai,
+        // mid-playback rebuffering nahi, isliye setInlineBuffering() ab
+        // "Processing…" label bhi saath mein dikhayega jab tak yeh pehli
+        // baar STATE_READY na ban jaaye. Wahi jagah IO-retry counter bhi
+        // reset karo — naye video ka apna fresh retry budget milna chahiye.
+        inlineIsInitialLoadForCurrentItem = true
+        inlineIoRetryCount = 0
         // Bug fix: chhota player pehle kabhi resume position check hi nahi karta tha
         // — na apni (kyunki khud kabhi save hi nahi karta tha, neeche dekho) na
         // fullscreen wali. Matlab agar fullscreen mein aadhi dekhi video ko dubara
@@ -2737,6 +2818,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineAmbientGlowView = null
                 inlineQualityButtonRef = null
                 inlineBufferingIndicatorRef = null
+                inlineProcessingLabelRef = null
                 inlineUri = ""
                 inlineTitle = ""
                 inlineQualitiesJson = "[]"
