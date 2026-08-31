@@ -1,4 +1,4 @@
-# Suhani Screen — frontend
+
 
 A browsing + playback UI on top of your existing **Telegram-Stremio** FastAPI
 backend. It does not talk to any piracy embed API (VidSrc, Embed.su, etc.) —
