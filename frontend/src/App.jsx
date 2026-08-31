@@ -12,6 +12,7 @@ import Player from './pages/Player'
 import Saved from './pages/Saved'
 import Downloads from './pages/Downloads'
 import { LanguageProvider } from './i18n/LanguageContext'
+import { ThemeModeProvider } from './theme/ThemeContext'
 import Profile from './pages/Profile'
 
 // FEATURE (user ask: "app bina login/verify ke seedha khul jaaye — Saved
@@ -143,6 +144,7 @@ export default function App() {
   }, [navigate])
 
   return (
+    <ThemeModeProvider>
     <LanguageProvider>
       <ConnectionOverlay />
       <Routes>
@@ -169,5 +171,6 @@ export default function App() {
         />
       </Routes>
     </LanguageProvider>
+    </ThemeModeProvider>
   )
 }

@@ -4,6 +4,19 @@
 
 :root {
   color-scheme: dark;
+
+  /* Theme mode defaults — ORIGINAL app palette ("Classic Reel"), kept
+     exactly as-is so first paint (before ThemeContext's effect runs) and
+     any no-JS edge case still look identical to before. ThemeContext
+     (src/theme/ThemeContext.jsx) overwrites these on <html> at runtime
+     when the user picks a different mode from the new theme picker. */
+  --reel-bg: #0B0B12;
+  --reel-surface: #16151F;
+  --reel-surface2: #1E1D2A;
+  --reel-gold: #E8A33D;
+  --reel-rust: #C1443C;
+  --reel-ink: #F2EFE6;
+  --reel-muted: #8B8798;
 }
 
 html, body, #root {
