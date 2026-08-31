@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BUG FIX (user report: "Processing... ke around yellow circle ajeeb
+     lagta hai"): "Processing…" pehle `bg_buffering_chip.xml` reuse karta
+     tha, jo ek OVAL shape hai — 44dp ke square spinner-chip ke liye theek
+     tha (oval = circle), lekin wide "Processing…" text par lagne se ek
+     stretched yellow-outline oval ban jaata tha ghere jaisa. Ab isका apna
+     alag drawable hai: seedha rounded pill (rectangle + radius), koi gold
+     stroke nahi — sirf ek soft dark-glass background jispar text readable
+     rahe. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#B3131318" />
+    <corners android:radius="20dp" />
+</shape>
