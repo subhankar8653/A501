@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import SearchOverlay from './SearchOverlay'
+import ThemeSheet from './ThemeSheet'
 import logo from '../assets/logo.png'
 
 export default function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false)
+  const [themeOpen, setThemeOpen] = useState(false)
 
   return (
     <div className="sticky top-0 z-30">
@@ -38,6 +40,24 @@ export default function Navbar() {
 
           <div className="flex-1" />
 
+          {/* FEATURE (user ask: "search icon ke aage ek aur icon add karo
+              jo theme mode change karne ka") — same glossy-btn treatment
+              as the search button so it reads as an equal, first-class
+              header action rather than a bolted-on extra. Opens ThemeSheet,
+              which lists every mode from the admin/owner panel's theme
+              registry (see src/theme/themes.js). */}
+          <button
+            onClick={() => setThemeOpen(true)}
+            aria-label="Change theme"
+            className="glossy-btn group/theme shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
+            style={{ '--glossy-btn-base': '#211F2C', '--glossy-btn-glow': 'rgba(232,163,61,0.35)' }}
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/theme:text-reel-gold transition-colors duration-200">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 3a9 9 0 0 0 0 18 5 5 0 0 0 0-10 5 5 0 0 1 0-8Z" fill="currentColor" stroke="none" opacity="0.9" />
+            </svg>
+          </button>
+
           {/* Premium search button: gold gradient ring + glow (echoes the
               logo badge) instead of a flat grey circle, so it reads as a
               primary action rather than a generic icon button. */}
@@ -56,6 +76,7 @@ export default function Navbar() {
       </header>
 
       {searchOpen ? <SearchOverlay onClose={() => setSearchOpen(false)} /> : null}
+      {themeOpen ? <ThemeSheet open={themeOpen} onClose={() => setThemeOpen(false)} /> : null}
     </div>
   )
 }
