@@ -87,14 +87,15 @@ export default function HomeHero({ items, loading }) {
         <div className="flex items-center gap-2.5 mt-3">
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="flex items-center gap-1.5 bg-reel-gold text-reel-bg font-semibold text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform shadow-[0_10px_28px_-8px_rgba(232,163,61,0.65)]"
+            className="glossy-btn flex items-center gap-1.5 text-reel-bg font-semibold text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform"
+            style={{ '--glossy-btn-base': '#E8A33D', '--glossy-btn-glow': 'rgba(232,163,61,0.65)' }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-            Watch Now
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="relative z-10"><path d="M8 5v14l11-7z"/></svg>
+            <span className="relative z-10">Watch Now</span>
           </Link>
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="flex items-center gap-1.5 bg-white/10 backdrop-blur-sm ring-1 ring-white/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-white/[0.14]"
+            className="glossy-chip flex items-center gap-1.5 ring-1 ring-white/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-white/[0.06]"
           >
             Details
           </Link>

@@ -25,7 +25,7 @@ function MediaCard({ item, index = 0 }) {
       className="group shrink-0 w-[calc(33.333vw-19px)] sm:w-[180px] animate-card-in active:scale-95 transition-transform duration-200 will-change-transform hover:-translate-y-1"
       style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
     >
-      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-white/[0.06] group-hover:ring-reel-gold/70 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.5)] group-hover:shadow-[0_18px_36px_-14px_rgba(232,163,61,0.35)] transition-[box-shadow,ring] duration-300">
+      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-white/[0.06] group-hover:ring-reel-gold/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_2px_10px_-4px_rgba(0,0,0,0.5)] group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_18px_36px_-14px_rgba(232,163,61,0.35)] transition-[box-shadow,ring] duration-300">
         {item.poster ? (
           <img
             src={item.poster}
@@ -51,6 +51,10 @@ function MediaCard({ item, index = 0 }) {
             reads as a premium "hover reveal" edge even when nothing else
             sits on it. */}
         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+        {/* Top sheen: a thin light streak across the top edge so the poster
+            reads as a raised, lacquered card rather than a flat printed
+            image — same "glossy" language as the rest of the app. */}
+        <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-white/[0.12] to-transparent pointer-events-none" />
         {item.imdbRating ? (
           <span className="absolute top-1.5 right-1.5 bg-black/85 text-reel-gold text-[10px] font-semibold px-1.5 py-0.5 rounded">
             ★ {item.imdbRating}

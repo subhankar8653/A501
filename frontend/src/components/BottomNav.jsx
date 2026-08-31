@@ -76,10 +76,13 @@ export default function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-reel-surface border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="glossy-surface fixed bottom-0 inset-x-0 z-40 border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]"
+      style={{ '--glossy-base': '#16151F' }}
+    >
       {showOfflineHint ? (
         <div
-          className="absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full bg-reel-surface2 ring-1 ring-reel-gold/25 text-xs text-reel-ink whitespace-nowrap shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] page-fade-in"
+          className="glossy-chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full ring-1 ring-reel-gold/25 text-xs text-reel-ink whitespace-nowrap shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] page-fade-in"
         >
           {t('nav_home_locked_hint')}
         </div>
@@ -105,7 +108,7 @@ export default function BottomNav() {
                       : 'active:scale-95'
                   } ${
                     isActive && !locked
-                      ? 'bg-gradient-to-b from-[#F3C067]/15 to-reel-gold/10 text-reel-gold ring-1 ring-reel-gold/25'
+                      ? 'glossy-chip text-reel-gold ring-1 ring-reel-gold/25'
                       : !locked
                       ? 'text-reel-muted hover:text-reel-ink'
                       : ''
@@ -114,8 +117,11 @@ export default function BottomNav() {
                   {locked ? <LockIcon /> : tab.icon(isActive)}
                   {t(tab.labelKey)}
                   {tab.to === '/downloads' && activeCount > 0 ? (
-                    <span className="absolute top-0.5 right-[22%] w-4 h-4 rounded-full bg-reel-gold text-reel-bg text-[9px] font-bold flex items-center justify-center shadow-[0_2px_6px_-1px_rgba(232,163,61,0.7)]">
-                      {activeCount}
+                    <span
+                      className="glossy-btn absolute top-0.5 right-[22%] w-4 h-4 rounded-full text-reel-bg text-[9px] font-bold flex items-center justify-center"
+                      style={{ '--glossy-btn-base': '#E8A33D' }}
+                    >
+                      <span className="relative z-10">{activeCount}</span>
                     </span>
                   ) : null}
                 </span>

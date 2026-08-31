@@ -8,7 +8,10 @@ export default function Navbar() {
 
   return (
     <div className="sticky top-0 z-30">
-      <header className="relative bg-reel-surface border-b border-reel-gold/[0.14] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.9)]">
+      <header
+        className="glossy-surface relative border-b border-reel-gold/[0.14] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.9)]"
+        style={{ '--glossy-base': '#16151F' }}
+      >
         {/* Soft ambient glow behind the logo — gives the header some depth
             instead of a flat solid bar. Sits on the OPAQUE surface color
             (not on a blurred/see-through layer), so it never picks up
@@ -41,10 +44,10 @@ export default function Navbar() {
           <button
             onClick={() => setSearchOpen(true)}
             aria-label="Search"
-            className="group/search relative shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center bg-reel-surface2 ring-1 ring-reel-gold/30 shadow-[0_4px_16px_-4px_rgba(232,163,61,0.45)] active:scale-90 transition-all duration-200 hover:ring-reel-gold/60 hover:shadow-[0_4px_20px_-3px_rgba(232,163,61,0.7)]"
+            className="glossy-btn group/search shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
+            style={{ '--glossy-btn-base': '#211F2C', '--glossy-btn-glow': 'rgba(232,163,61,0.35)' }}
           >
-            <span className="absolute inset-0 rounded-full bg-gradient-to-br from-reel-gold/20 to-transparent pointer-events-none" />
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
               <circle cx="11" cy="11" r="7" />
               <path d="m21 21-4.3-4.3" />
             </svg>
