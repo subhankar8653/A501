@@ -76,17 +76,26 @@
          dikhna chahiye jab tak load na ho jaaye, phir acche se chalega"):
          sirf pehli baar ka load hi is text ko dikhata hai (Kotlin side:
          inlineIsInitialLoadForCurrentItem) — mid-playback rebuffering mein
-         sirf upar wala spinner dikhta hai, yeh nahi. 64dp upar rakha hai
-         taaki upar wale spinner-chip se overlap na ho. -->
+         sirf upar wala spinner dikhta hai, yeh nahi.
+         BUG FIX (user report: "footer/position pehle jaisa nahin, isse
+         beech mein lao, aur yellow circle hata do"): pehle 64dp neeche
+         rakha tha taaki upar wale 44dp spinner-chip se overlap na ho —
+         lekin itna zyada offset isse video ke visual center se kaafi neeche
+         dikha deta tha. Ab sirf utna hi gap (26dp — spinner ke bottom edge
+         ke turant baad) jitna zaroori hai taaki dono ek saath dikhein to
+         bhi ek tight, centered jodi jaisa lage, alag-thalag neeche latka
+         hua na lage. Background bhi ab bg_processing_chip hai (rounded
+         pill, no stroke) — bg_buffering_chip ka oval shape wide text par
+         stretched yellow-outline circle jaisa dikh raha tha. -->
     <TextView
         android:id="@+id/inlineProcessingLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:layout_marginTop="64dp"
+        android:layout_marginTop="26dp"
         android:paddingHorizontal="14dp"
         android:paddingVertical="6dp"
-        android:background="@drawable/bg_buffering_chip"
+        android:background="@drawable/bg_processing_chip"
         android:text="Processing…"
         android:textColor="#FFF8E7"
         android:textSize="13sp"
