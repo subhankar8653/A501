@@ -249,9 +249,10 @@ export default function Detail() {
         {!isSeries ? (
           <button
             onClick={() => navigate(`/watch/${type}/${encodeURIComponent(id)}`)}
-            className="mt-4 bg-reel-gold text-reel-bg font-semibold px-6 py-2.5 rounded-lg hover:brightness-110 active:scale-95 transition"
+            className="glossy-btn mt-4 text-reel-bg font-semibold px-6 py-2.5 rounded-lg active:scale-95 transition-transform"
+            style={{ '--glossy-btn-base': '#E8A33D', '--glossy-btn-glow': 'rgba(232,163,61,0.55)' }}
           >
-            ▶ {t('play')}
+            <span className="relative z-10">▶ {t('play')}</span>
           </button>
         ) : (
           <div className="mt-4">
