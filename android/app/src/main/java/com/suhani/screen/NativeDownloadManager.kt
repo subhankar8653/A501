@@ -135,13 +135,11 @@ object NativeDownloadManager {
             val debugWrappedOnProgress: (Int, Long) -> Unit = { pct, size ->
                 if (!tdlibConfirmed) {
                     tdlibConfirmed = true
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        android.widget.Toast.makeText(
-                            context.applicationContext,
-                            "Download: TDLib direct ✅ (Railway nahi use ho raha)",
-                            android.widget.Toast.LENGTH_SHORT,
-                        ).show()
-                    }
+                    // BUG FIX: yeh pehle har download ki shuruaat mein user ko ek
+                    // Toast dikhata tha ("TDLib direct ✅ ...") — internal routing
+                    // debug info, jiska user ke liye koi matlab nahi tha aur
+                    // random popup jaisa lagta tha. Ab sirf logcat mein jaata hai.
+                    android.util.Log.d("NativeDownloadManager", "Download via TDLib direct (not Railway)")
                 }
                 onProgress(pct, size)
             }
@@ -182,13 +180,13 @@ object NativeDownloadManager {
             // (success or a reported, already-retried error) and never
             // reaches this HTTP path anymore. Show the exact reason (set by
             // TdlibDownloadHelper just above) instead of a generic message.
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                android.widget.Toast.makeText(
-                    context.applicationContext,
-                    "Direct/local download ho raha hai — reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus}",
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
-            }
+            // BUG FIX: yeh bhi pehle har fallback (HTTP-direct) download par ek
+            // Toast dikhata tha internal reason ke saath — user ko sirf ek
+            // confusing popup dikhta tha, kuch actionable nahi. Ab log-only.
+            android.util.Log.d(
+                "NativeDownloadManager",
+                "Direct/local download (reason: ${com.suhani.videoplayer.TdlibDebugState.lastStatus})"
+            )
 
             var conn: HttpURLConnection? = null
             val tmpFile = File(outFile.parentFile, outFile.name + ".part")
