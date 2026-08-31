@@ -104,9 +104,16 @@ input, textarea {
    ============================================================ */
 
 /* Base panels: header, bottom nav, sheets. A soft top sheen fading into the
-   base color, plus an inset highlight/shadow pair for a raised edge. */
+   base color, plus an inset highlight/shadow pair for a raised edge.
+   BUG FIX (user report: "footer/bottom-nav apni jagah se gayab ho gaya"):
+   this used to also set `position: relative`, which (because this rule is
+   defined AFTER Tailwind's utilities in the cascade, so it wins on equal
+   specificity) was silently overriding BottomNav's own `fixed` positioning
+   class — the nav stopped being pinned to the bottom of the screen and
+   just scrolled away with the page content instead. This class doesn't
+   actually need to set `position` itself (nothing inside it is absolutely
+   positioned relative to it), so it's removed here. */
 .glossy-surface {
-  position: relative;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 18%, rgba(255,255,255,0) 48%),
     var(--glossy-base, #16151F);
