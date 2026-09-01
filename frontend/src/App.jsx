@@ -4,6 +4,7 @@ import { cleanupStaleDownloads } from './lib/downloadsStore'
 import Navbar from './components/Navbar'
 import BottomNav from './components/BottomNav'
 import DownloadToast from './components/DownloadToast'
+import ToastHost from './components/ToastHost'
 import ConnectionOverlay from './components/ConnectionOverlay'
 import Home from './pages/Home'
 import Search from './pages/Search'
@@ -147,6 +148,7 @@ export default function App() {
     <ThemeModeProvider>
     <LanguageProvider>
       <ConnectionOverlay />
+      <ToastHost />
       <Routes>
         {/* Direct-link fallback only — normal flow ab kabhi yahan force
             redirect nahi karta (upar comment dekho). "/setup" jaate hi seedha
