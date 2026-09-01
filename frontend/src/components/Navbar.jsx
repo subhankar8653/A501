@@ -22,7 +22,7 @@ export default function Navbar() {
           className="absolute top-0 left-0 w-48 h-full -z-10 pointer-events-none"
           style={{ background: 'radial-gradient(140px 70px at 12% 50%, rgba(232,163,61,0.14), transparent)' }}
         />
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-2 flex items-center justify-between gap-2.5">
           {/* Brand mark: the actual HukaTube logo (yellow badge, H + play
               glyph) supplied by the user — swapped in for the earlier
               generic SVG play-badge placeholder. */}
@@ -30,9 +30,9 @@ export default function Navbar() {
             <img
               src={logo}
               alt="HukaTube"
-              className="w-9 h-9 rounded-xl shadow-[0_4px_14px_-3px_rgba(232,163,61,0.6)] transition-transform duration-300 group-hover:scale-105"
+              className="w-7 h-7 rounded-lg shadow-[0_4px_14px_-3px_rgba(232,163,61,0.6)] transition-transform duration-300 group-hover:scale-105"
             />
-            <span className="font-display text-[1.4rem] sm:text-[1.55rem] font-bold tracking-tight leading-none">
+            <span className="font-display text-[1.15rem] sm:text-[1.3rem] font-bold tracking-tight leading-none">
               <span className="bg-gradient-to-b from-[#F6CE87] to-reel-gold bg-clip-text text-transparent">Huka</span><span className="text-reel-ink">Tube</span>
             </span>
           </Link>
@@ -48,10 +48,10 @@ export default function Navbar() {
           <button
             onClick={() => setThemeOpen(true)}
             aria-label="Change theme"
-            className="glossy-btn group/theme shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
+            className="glossy-btn group/theme shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
             style={{ '--glossy-btn-base': 'var(--reel-surface2)' }}
           >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/theme:text-reel-gold transition-colors duration-200">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/theme:text-reel-gold transition-colors duration-200">
               <circle cx="12" cy="12" r="9" />
               <path d="M12 3a9 9 0 0 0 0 18 5 5 0 0 0 0-10 5 5 0 0 1 0-8Z" fill="currentColor" stroke="none" opacity="0.9" />
             </svg>
@@ -63,10 +63,10 @@ export default function Navbar() {
           <button
             onClick={() => setSearchOpen(true)}
             aria-label="Search"
-            className="glossy-btn group/search shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
+            className="glossy-btn group/search shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
             style={{ '--glossy-btn-base': 'var(--reel-surface2)' }}
           >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
               <circle cx="11" cy="11" r="7" />
               <path d="m21 21-4.3-4.3" />
             </svg>

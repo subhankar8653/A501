@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useThemeMode } from '../theme/ThemeContext'
 
 // FEATURE (user ask: "search icon ke aage ek aur icon add karo jo theme
@@ -7,12 +8,28 @@ import { useThemeMode } from '../theme/ThemeContext'
 // gold ring se highlight — same visual language as LanguagePicker's grid
 // and DownloadQualitySheet's bottom-sheet chrome, so it feels native to
 // the rest of the app rather than a bolted-on settings screen.
+//
+// BUG FIX (user report: "theme wala sheet pura scroll nahi ho raha, neeche
+// wale theme click nahi ho pa rahe"): this sheet is opened from inside
+// Navbar, which wraps itself in `<div className="sticky top-0 z-30">`. A
+// positioned element with a z-index (like that sticky wrapper) creates its
+// own stacking context — everything inside it, including this sheet's
+// `position: fixed` + `z-[95]`, gets stacked WITHIN that z-30 context, not
+// against the page as a whole. BottomNav is a separate sibling at z-40, so
+// its entire (higher) stacking context painted on top of Navbar's — sheet
+// included — no matter how high the sheet's own z-index was set. The list
+// was visually cut off right where BottomNav sits, and taps there hit
+// BottomNav instead of the theme tiles underneath. Rendering via a portal
+// straight onto document.body sidesteps the whole ancestor-stacking-context
+// problem — its z-index is now compared at the true top level, safely above
+// BottomNav, and the full grid + its max-h-[80vh] scroll both work as
+// intended.
 export default function ThemeSheet({ open, onClose }) {
   const { themeId, themes, changeTheme } = useThemeMode()
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[95] flex items-end justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
       <div
@@ -74,6 +91,7 @@ export default function ThemeSheet({ open, onClose }) {
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

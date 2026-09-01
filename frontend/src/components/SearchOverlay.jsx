@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   getCatalog,
@@ -83,7 +84,13 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
     navigate(`/title/${item.type}/${encodeURIComponent(item.id)}`)
   }
 
-  return (
+  // BUG FIX (same root cause as ThemeSheet.jsx — read the comment there):
+  // this overlay is opened from inside Navbar's `sticky z-30` wrapper, which
+  // creates its own stacking context. BottomNav is a sibling at z-40 with a
+  // higher, separate stacking context, so it was painting on top of this
+  // overlay's bottom edge (touches there hit the nav instead of the last
+  // search suggestion). Portalling to document.body fixes it the same way.
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-reel-bg flex flex-col page-fade-in">
       {/* Header: back + big input, YouTube jaisa — no separate content above it */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-reel-ink/5 shrink-0">
@@ -249,6 +256,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
