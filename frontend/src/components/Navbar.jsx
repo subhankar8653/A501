@@ -2,11 +2,15 @@ import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import SearchOverlay from './SearchOverlay'
 import ThemeSheet from './ThemeSheet'
+import NotificationSheet from './NotificationSheet'
+import { useNotifications } from '../lib/notificationsStore'
 import logo from '../assets/logo.png'
 
 export default function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const { unreadCount } = useNotifications()
 
   return (
     <div className="sticky top-0 z-30">
@@ -57,6 +61,29 @@ export default function Navbar() {
             </svg>
           </button>
 
+          {/* FEATURE (user ask: "theme mode change bala icon hai uske pass
+              main notification option vi add karo") — sits right next to
+              the theme button, same glossy-btn treatment. Small gold dot
+              badge shows while there are unseen latest-upload notifications
+              (see notificationsStore.js); opening the sheet clears it. */}
+          <button
+            onClick={() => setNotificationsOpen(true)}
+            aria-label="Notifications"
+            className="glossy-btn group/notif relative shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
+            style={{ '--glossy-btn-base': 'var(--reel-surface2)' }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/notif:text-reel-gold transition-colors duration-200">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {unreadCount > 0 ? (
+              <span
+                className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-reel-gold ring-2 ring-reel-surface2 z-10"
+                aria-hidden="true"
+              />
+            ) : null}
+          </button>
+
           {/* Premium search button: gold gradient ring + glow (echoes the
               logo badge) instead of a flat grey circle, so it reads as a
               primary action rather than a generic icon button. */}
@@ -76,6 +103,9 @@ export default function Navbar() {
 
       {searchOpen ? <SearchOverlay onClose={() => setSearchOpen(false)} /> : null}
       {themeOpen ? <ThemeSheet open={themeOpen} onClose={() => setThemeOpen(false)} /> : null}
+      {notificationsOpen ? (
+        <NotificationSheet open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+      ) : null}
     </div>
   )
 }
