@@ -186,7 +186,7 @@ export default function Detail() {
     <div>
       <div
         className="w-full h-[30vh] sm:h-[38vh] bg-cover bg-center relative"
-        style={{ backgroundImage: `linear-gradient(to top, #0B0B12 5%, rgba(11,11,18,0.4)), url(${meta.background || meta.poster})` }}
+        style={{ backgroundImage: `linear-gradient(to top, var(--reel-bg) 5%, color-mix(in srgb, var(--reel-bg) 40%, transparent)), url(${meta.background || meta.poster})` }}
       >
         <BackButton className="absolute top-4 left-4 z-20" />
         <div className="absolute bottom-0 left-0 right-0 max-w-6xl mx-auto px-4 sm:px-6 pb-4 flex items-end gap-4">
@@ -194,7 +194,7 @@ export default function Detail() {
             <img
               src={meta.poster}
               alt={meta.name}
-              className="hidden sm:block w-24 rounded-lg ring-1 ring-white/10 shadow-xl shrink-0"
+              className="hidden sm:block w-24 rounded-lg ring-1 ring-reel-ink/10 shadow-xl shrink-0"
             />
           ) : null}
           <div>
@@ -227,7 +227,7 @@ export default function Detail() {
             <button
               onClick={openMainDownload}
               aria-label="Download"
-              className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/10 text-reel-ink active:scale-90 transition"
+              className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-reel-ink/10 text-reel-ink active:scale-90 transition"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
             </button>
@@ -250,7 +250,6 @@ export default function Detail() {
           <button
             onClick={() => navigate(`/watch/${type}/${encodeURIComponent(id)}`)}
             className="glossy-btn mt-4 text-reel-bg font-semibold px-6 py-2.5 rounded-lg active:scale-95 transition-transform"
-            style={{ '--glossy-btn-base': '#E8A33D', '--glossy-btn-glow': 'rgba(232,163,61,0.55)' }}
           >
             <span className="relative z-10">▶ {t('play')}</span>
           </button>
@@ -276,7 +275,7 @@ export default function Detail() {
               {episodes.map((ep) => (
                 <div
                   key={ep.id}
-                  className="relative w-full flex gap-3 bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-2 ring-1 ring-white/5"
+                  className="relative w-full flex gap-3 bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-2 ring-1 ring-reel-ink/5"
                 >
                   <button
                     onClick={() => navigate(`/watch/${type}/${encodeURIComponent(ep.id)}`)}
@@ -300,7 +299,7 @@ export default function Detail() {
                     <button
                       onClick={() => setEpMenuOpen((cur) => (cur === ep.id ? null : ep.id))}
                       aria-label="Episode options"
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-reel-muted hover:bg-white/10 active:scale-90 transition"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-reel-muted hover:bg-reel-ink/10 active:scale-90 transition"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                     </button>
@@ -323,9 +322,9 @@ export default function Detail() {
           <div className="absolute inset-0 bg-black/60" />
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
+            className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-reel-ink/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
           >
-            <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+            <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
             <p className="text-reel-ink font-semibold mb-1">{t('detail_choose_season')}</p>
             <p className="text-reel-muted text-xs mb-4">{t('detail_choose_season_sub')}</p>
             <div className="flex flex-wrap gap-2">
@@ -333,7 +332,7 @@ export default function Detail() {
                 <button
                   key={s}
                   onClick={() => pickSeasonForDownload(s)}
-                  className="px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition"
+                  className="px-4 py-2 rounded-full text-sm font-semibold bg-reel-ink/10 text-reel-ink active:scale-95 transition"
                 >
                   {s === 0 ? t('combined') : `${t('season')} ${s}`}
                 </button>
@@ -348,9 +347,9 @@ export default function Detail() {
           <div className="absolute inset-0 bg-black/60" />
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)]"
+            className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-reel-ink/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)]"
           >
-            <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+            <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
             <p className="text-reel-ink font-semibold mb-4 truncate">
               E{epMenuEpisode.episode} · {epMenuEpisode.title}
             </p>
@@ -368,7 +367,7 @@ export default function Detail() {
               </span>
               {t('download')}
             </button>
-            <div className="h-px bg-white/5" />
+            <div className="h-px bg-reel-ink/5" />
             <button
               onClick={() => {
                 closeEpMenu()
@@ -381,7 +380,7 @@ export default function Detail() {
               </span>
               {saved ? t('saved') : t('save')}
             </button>
-            <div className="h-px bg-white/5" />
+            <div className="h-px bg-reel-ink/5" />
             <button
               onClick={() => {
                 const ep = epMenuEpisode

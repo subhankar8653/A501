@@ -67,11 +67,11 @@ export default function Profile() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-8">
-        <div className="bg-reel-surface rounded-lg p-4 text-center ring-1 ring-white/5">
+        <div className="bg-reel-surface rounded-lg p-4 text-center ring-1 ring-reel-ink/5">
           <p className="font-display text-2xl text-reel-gold">{saved.length}</p>
           <p className="text-xs text-reel-muted mt-1">{t('profile_saved')}</p>
         </div>
-        <div className="bg-reel-surface rounded-lg p-4 text-center ring-1 ring-white/5">
+        <div className="bg-reel-surface rounded-lg p-4 text-center ring-1 ring-reel-ink/5">
           <p className="font-display text-2xl text-reel-gold">{doneDownloads}</p>
           <p className="text-xs text-reel-muted mt-1">{t('profile_downloads')}</p>
         </div>

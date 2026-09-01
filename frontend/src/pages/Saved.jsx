@@ -27,7 +27,7 @@ export default function Saved() {
         {list.map((item) => (
           <div key={`${item.type}:${item.id}`} className="relative group">
             <Link to={`/title/${item.type}/${encodeURIComponent(item.id)}`} className="block active:scale-95 transition-transform">
-              <div className="relative aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-white/5">
+              <div className="relative aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/5">
                 {item.poster ? (
                   <img src={item.poster} alt={item.name} loading="lazy" className="w-full h-full object-cover" />
                 ) : (

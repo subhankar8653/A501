@@ -150,7 +150,7 @@ function OfflinePlayer({ entry, onClose }) {
 function MovieRow({ d, onPlay }) {
   const { t } = useLanguage()
   return (
-    <div className="flex items-center gap-3 bg-reel-surface rounded-lg p-3 ring-1 ring-white/5">
+    <div className="flex items-center gap-3 bg-reel-surface rounded-lg p-3 ring-1 ring-reel-ink/5">
       <div className="w-16 aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 shrink-0">
         {d.poster ? <img src={d.poster} alt="" className="w-full h-full object-cover" /> : null}
       </div>
@@ -220,7 +220,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
 
   return (
     <div
-      className={`relative flex items-center gap-3 rounded-lg p-2.5 ring-1 ring-white/5 transition ${
+      className={`relative flex items-center gap-3 rounded-lg p-2.5 ring-1 ring-reel-ink/5 transition ${
         hasAny ? 'bg-reel-surface' : 'bg-reel-surface/40 opacity-50'
       }`}
     >
@@ -274,19 +274,19 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
           <button
             onClick={() => setMenuOpen((m) => !m)}
             aria-label="Episode options"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-reel-muted hover:bg-white/10 active:scale-90 transition"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-reel-muted hover:bg-reel-ink/10 active:scale-90 transition"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </button>
           {menuOpen ? (
-            <div className="absolute top-full right-0 mt-1 min-w-[150px] rounded-xl overflow-hidden bg-reel-bg/97 backdrop-blur-md ring-1 ring-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.65)] z-10">
+            <div className="absolute top-full right-0 mt-1 min-w-[150px] rounded-xl overflow-hidden bg-reel-bg/97 backdrop-blur-md ring-1 ring-reel-ink/10 shadow-[0_8px_28px_rgba(0,0,0,0.65)] z-10">
               {!isDownloaded && !isDownloading && !isQueued ? (
                 <button
                   onClick={() => {
                     setMenuOpen(false)
                     onDownloadOne(ep)
                   }}
-                  className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-ink hover:bg-white/5"
+                  className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-ink hover:bg-reel-ink/5"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   {t('download')}
@@ -297,7 +297,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
                     setMenuOpen(false)
                     deleteDownload(entry.id)
                   }}
-                  className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-rust hover:bg-white/5"
+                  className="w-full flex items-center gap-2 px-3.5 py-3 text-xs text-reel-rust hover:bg-reel-ink/5"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg>
                   {t('remove')}
@@ -370,7 +370,7 @@ function SeasonCard({ group, onPlay }) {
   }, [expanded, allEpisodes, isOnline, group.showId, group.season])
 
   return (
-    <div className="rounded-lg overflow-hidden bg-reel-surface ring-1 ring-white/5">
+    <div className="rounded-lg overflow-hidden bg-reel-surface ring-1 ring-reel-ink/5">
       <div className="w-full flex items-center gap-3 p-3">
         <button onClick={() => setExpanded((e) => !e)} className="flex items-center gap-3 text-left flex-1 min-w-0 active:scale-[0.99] transition">
           <div className="w-16 aspect-[2/3] rounded-md overflow-hidden bg-reel-surface2 shrink-0">
@@ -388,7 +388,7 @@ function SeasonCard({ group, onPlay }) {
         <button
           onClick={() => allEpisodes && setDownloadTarget(allEpisodes)}
           disabled={!allEpisodes}
-          className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold bg-white/10 text-reel-ink active:scale-95 transition disabled:opacity-40"
+          className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold bg-reel-ink/10 text-reel-ink active:scale-95 transition disabled:opacity-40"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
           {t('season')}
@@ -409,7 +409,7 @@ function SeasonCard({ group, onPlay }) {
       </div>
 
       {expanded ? (
-        <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-3">
+        <div className="px-3 pb-3 space-y-2 border-t border-reel-ink/5 pt-3">
           {allEpisodes === null ? (
             <div className="py-6 flex justify-center">
               <span className="w-6 h-6 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />

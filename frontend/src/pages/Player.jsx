@@ -695,7 +695,7 @@ export default function Player() {
               bottom-sheet mein khulti hai (dekho CommentsSheet.jsx) */}
           <button
             onClick={() => setCommentsOpen(true)}
-            className="mt-6 w-full flex items-center justify-between gap-3 bg-reel-surface rounded-lg px-4 py-3 ring-1 ring-white/5 active:scale-[0.99] transition text-left"
+            className="mt-6 w-full flex items-center justify-between gap-3 bg-reel-surface rounded-lg px-4 py-3 ring-1 ring-reel-ink/5 active:scale-[0.99] transition text-left"
           >
             <span className="text-sm font-display font-semibold text-reel-ink">
               💬 {t('comments_title')} {commentCount != null ? `· ${commentCount}` : ''}
@@ -719,7 +719,7 @@ export default function Player() {
 
           {/* Up next — rest of this season, or the next season once you hit its last episode */}
           {isSeries && upNext.episodes.length > 0 ? (
-            <div className="mt-8 pt-6 border-t border-white/5">
+            <div className="mt-8 pt-6 border-t border-reel-ink/5">
               <div className="flex items-center justify-between mb-3 gap-3">
                 <h2 className="font-display text-lg text-reel-ink">{t('player_up_next')} · {upNext.label}</h2>
                 <button
@@ -738,7 +738,7 @@ export default function Player() {
                   <button
                     key={ep.id}
                     onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
-                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-white/5"
+                    className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-reel-ink/5"
                   >
                     <img
                       src={ep.thumbnail}
@@ -759,7 +759,7 @@ export default function Player() {
           ) : null}
 
           {!isSeries && related && related.length > 0 ? (
-            <div className="mt-8 pt-6 border-t border-white/5">
+            <div className="mt-8 pt-6 border-t border-reel-ink/5">
               <Rail title={t('more_like_this')} items={related} />
             </div>
           ) : null}
