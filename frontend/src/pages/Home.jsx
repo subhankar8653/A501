@@ -4,6 +4,7 @@ import {
   getManifest,
   groupCatalogsByTab,
   loadTabByLanguage,
+  loadNewToYou,
   HOME_TABS,
   loadHomeCache,
   saveHomeCache,
@@ -120,13 +121,18 @@ function HomeContent({ t }) {
   //    silent background fetch replaces it once done (this is also what
   //    picks up brand-new content someone just added on the server,
   //    without the user having to do anything).
+  // "New to You" is sorted by upload recency instead of grouped by
+  // language, so it gets its own loader — everything else keeps working
+  // exactly as before.
+  const loadActiveTab = active === 'new' ? loadNewToYou : loadTabByLanguage
+
   useEffect(() => {
     if (!tabCatalogs) return
     const hasCache = !!groupsByTab[active]
 
     let cancelled = false
     if (hasCache) {
-      loadTabByLanguage(tabCatalogs[active])
+      loadActiveTab(tabCatalogs[active])
         .then((groups) => {
           if (!cancelled) setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
         })
@@ -136,7 +142,7 @@ function HomeContent({ t }) {
         })
     } else {
       setLoadingTab(true)
-      loadTabByLanguage(tabCatalogs[active])
+      loadActiveTab(tabCatalogs[active])
         .then((groups) => {
           if (cancelled) return
           setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
@@ -159,7 +165,7 @@ function HomeContent({ t }) {
       const manifest = await getManifest()
       const nextTabCatalogs = groupCatalogsByTab(manifest.catalogs)
       setTabCatalogs(nextTabCatalogs)
-      const groups = await loadTabByLanguage(nextTabCatalogs[active])
+      const groups = await loadActiveTab(nextTabCatalogs[active])
       setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
     } catch {
       // keep whatever was already on screen — a failed refresh shouldn't blank it
