@@ -3,8 +3,11 @@ package com.suhani.screen
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -46,6 +49,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import com.suhani.videoplayer.PlayerNetwork
 import androidx.core.app.ActivityCompat
@@ -154,6 +158,16 @@ class WebAppInterface(private val activity: MainActivity) {
     @JavascriptInterface
     fun setAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
         runOnUiThreadSafely { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
+    }
+
+    // See `inlineAccentColor` field comment above for the full "why" — this
+    // is the JS-side entry point ThemeContext.jsx calls whenever the color
+    // theme changes, so the native inline player's accent-colored controls
+    // (play button/ring, quality text, progress bar) stay in sync with
+    // whatever theme the web page is currently showing.
+    @JavascriptInterface
+    fun setThemeColor(hex: String) {
+        runOnUiThreadSafely { activity.setInlineThemeColor(hex) }
     }
 
 }
@@ -509,7 +523,28 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineNextButtonRef: ImageButton? = null
     private var inlinePlayPauseButtonRef: ImageButton? = null
     private var inlineQualityButtonRef: TextView? = null
+    private var inlineTimeBarRef: DefaultTimeBar? = null
     private var inlineBufferingIndicatorRef: View? = null
+    // FEATURE (user ask, with screenshot: "video player mein play button/
+    // ring, '480p' quality text, aur progress bar ka color hamesha yellow/
+    // gold hi rehta hai, jabki web side pe maine ek alag (jaise blue) theme
+    // select kar rakhi hai — in sabka bhi theme ke hisab se color badalna
+    // chahiye"): these controls are native Android views (ExoPlayer/Media3
+    // inline_player_control_view.xml), a COMPLETELY separate rendering layer
+    // from the WebView's CSS — so the web app's theme picker (ThemeContext.jsx)
+    // has no way to reach them on its own. `setThemeColor()` below is the
+    // new bridge: ThemeContext now calls `window.AndroidPlayer.setThemeColor(hex)`
+    // any time the color theme changes (see ThemeContext.jsx), passing the
+    // exact same accent hex every other themed element on the page already
+    // uses. Deliberately scoped to just the ACCENT elements (play button/
+    // ring, quality text, progress played-portion + scrubber dot) — prev/
+    // next/fullscreen icons stay a neutral off-white on purpose: they sit
+    // directly on top of arbitrary video frames (not app UI), so a fixed
+    // light neutral stays legible against any video content regardless of
+    // theme, the same way YouTube's own overlay icons never reflect app
+    // dark/light mode.
+    private var inlineAccentColor: Int = Color.parseColor("#FFD700")
+
     private var inlineIsBuffering = false
     // BUG FIX (user report: "pehle video par 'Processing' dikha, doosre
     // video par nahin dikha"): pehle ek manually-reset Boolean flag
@@ -1298,9 +1333,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
+            val timeBar = playerView.findViewById<DefaultTimeBar>(R.id.exo_progress)
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             val processingLabel = root.findViewById<View>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
+            inlineTimeBarRef = timeBar
             inlineBufferingIndicatorRef = bufferingIndicator
             inlineProcessingLabelRef = processingLabel
 
@@ -1354,6 +1391,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineNextButtonRef = nextButton
             inlinePlayPauseButtonRef = playPauseButton
             applyInlineAdjacentButtonState()
+            // Fresh views just got inflated from XML (hardcoded gold) — put
+            // back whatever accent color the web theme last told us about,
+            // so a re-mount (new episode, quality switch, etc.) doesn't
+            // silently reset the player back to gold. See inlineAccentColor
+            // field comment for the full picture.
+            applyInlineThemeColor()
 
             playPauseButton.setOnClickListener {
                 val p = inlinePlayer ?: return@setOnClickListener
@@ -1858,6 +1901,85 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             alpha = if (inlineHasPrevEpisode) 1f else 0.35f
         }
     }
+
+    /** Bridge entry point for `window.AndroidPlayer.setThemeColor(hex)` — stores
+     *  the color and re-paints the currently-mounted inline player (if any).
+     *  Safe to call before any player has mounted (just updates the stored
+     *  value for whenever mountInlinePlayer() next inflates fresh views). */
+    fun setInlineThemeColor(hex: String) {
+        val parsed = try {
+            Color.parseColor(hex)
+        } catch (_: IllegalArgumentException) {
+            return // malformed hex from JS — ignore, keep last-known-good color
+        }
+        if (parsed == inlineAccentColor) return
+        inlineAccentColor = parsed
+        applyInlineThemeColor()
+    }
+
+    /** Re-paints every accent-colored inline-player view with `inlineAccentColor`.
+     *  No-ops per-view if that view isn't currently inflated (refs are null
+     *  before first mount / after unmount) — safe to call any time. See the
+     *  `inlineAccentColor` field comment (above the field declaration) for why
+     *  only these specific views are touched and not prev/next/fullscreen. */
+    private fun applyInlineThemeColor() {
+        val color = inlineAccentColor
+
+        inlinePlayPauseButtonRef?.let { btn ->
+            btn.imageTintList = android.content.res.ColorStateList.valueOf(color)
+            // bg_inline_hero_button.xml's ring stroke can't be tinted via
+            // setTint (that only recolors fills, not strokes), so rebuild
+            // the same dark-glass-circle-with-hairline-ring shape in code
+            // with the new color at ~60% alpha, matching the original
+            // #99FFD700 stroke's opacity.
+            val ring = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#66000000"))
+                setStroke(dpToPx(1f), applyAlpha(color, 0x99))
+            }
+            btn.background = ring
+        }
+
+        inlineQualityButtonRef?.setTextColor(color)
+
+        inlineTimeBarRef?.let { bar ->
+            bar.setPlayedColor(color)
+            bar.setScrubberColor(color)
+            // scrubber_handle_premium.xml (outer 40%-alpha glow dot + solid
+            // inner dot) rebuilt the same way — layer-list drawables also
+            // can't be retinted with a single setTint() call.
+            val outer = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(applyAlpha(color, 0x40))
+                setSize(dpToPx(18f), dpToPx(18f))
+            }
+            val inner = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+            }
+            val innerSize = dpToPx(10f)
+            val layered = LayerDrawable(arrayOf(outer, inner)).apply {
+                setLayerSize(1, innerSize, innerSize)
+                setLayerGravity(1, android.view.Gravity.CENTER)
+            }
+            bar.setScrubberDrawable(layered)
+        }
+    }
+
+    private fun dpToPx(dp: Float): Int =
+        (dp * resources.displayMetrics.density).toInt()
+
+    /** "#RRGGBB" string for a color int — used to hand `inlineAccentColor`
+     *  to PlayerActivity as a plain intent extra (see openFullscreenFromInline). */
+    private fun colorToHex(color: Int): String =
+        String.format("#%06X", 0xFFFFFF and color)
+
+    /** Replaces just the alpha channel of an RGB color (0-255) — used for the
+     *  translucent ring/glow shapes above, which mirror the original XML's
+     *  fixed alpha (e.g. #99FFD700, #40FFD700) but now with the live theme's
+     *  RGB underneath it. */
+    private fun applyAlpha(color: Int, alpha: Int): Int =
+        (alpha shl 24) or (color and 0x00FFFFFF)
 
     /** inlineQualitiesJson (website jaisa hi '[{"url":...,"label":"1080p"},...]') ko
      *  ek simple label→url list mein parse karta hai. Kuch bhi galat/khali ho to
@@ -2638,6 +2760,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             putExtra("resume_position_ms", pos)
             putExtra("resume_playing", wasPlaying)
             putExtra("enter_pip_immediately", enterPipImmediately)
+            // Carries the inline player's CURRENT theme accent color forward
+            // so fullscreen opens already matching it instead of resetting
+            // to the old hardcoded gold — see PlayerActivity's
+            // `themeAccentColor` field comment for the full picture.
+            putExtra("theme_color", colorToHex(inlineAccentColor))
             // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka — asli wajah):
             // PlayerActivity ko yeh chhote inline player ka EXACT on-screen rect bhi
             // bhej do, taaki wahan real PiP mein jaate waqt system ka shrink animation
@@ -2843,6 +2970,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlinePlayerView = null
                 inlineAmbientGlowView = null
                 inlineQualityButtonRef = null
+                inlineTimeBarRef = null
                 inlineBufferingIndicatorRef = null
                 inlineProcessingLabelRef = null
                 inlineUri = ""
