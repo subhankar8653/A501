@@ -71,11 +71,11 @@ export default function HomeHero({ items, loading }) {
       <div className="absolute inset-0 z-[2] bg-gradient-to-r from-reel-bg/80 via-transparent to-transparent sm:from-reel-bg/85 sm:via-reel-bg/10" />
 
       <div key={item.id || index} className="relative z-[3] h-full flex flex-col justify-end px-4 sm:px-6 pb-4 sm:pb-6 max-w-6xl mx-auto page-fade-in">
-        <span className="inline-flex w-fit items-center gap-1.5 text-[9px] font-bold tracking-[0.15em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/30 backdrop-blur-sm px-2 py-0.5 rounded-full mb-2">
+        <span className="inline-flex w-fit items-center gap-1.5 text-[9px] font-bold tracking-[0.1em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/25 px-2 py-0.5 rounded-full mb-2">
           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z"/></svg>
           Featured
         </span>
-        <h1 className="font-display text-lg sm:text-3xl font-bold text-reel-ink drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] max-w-md sm:max-w-xl line-clamp-1">
+        <h1 className="font-display text-lg sm:text-3xl font-bold text-reel-ink drop-shadow-[0_2px_14px_rgba(0,0,0,0.7)] max-w-md sm:max-w-xl line-clamp-1">
           {item.name}
         </h1>
         <div className="flex items-center gap-3 mt-1.5 text-[11px] sm:text-sm text-reel-muted">
@@ -94,7 +94,8 @@ export default function HomeHero({ items, loading }) {
           </Link>
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="glossy-chip flex items-center gap-1.5 ring-1 ring-reel-ink/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-reel-ink/[0.06]"
+            className="chip flex items-center gap-1.5 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform"
+            style={{ background: 'color-mix(in srgb, var(--reel-bg) 35%, transparent)', borderColor: 'color-mix(in srgb, var(--reel-ink) 20%, transparent)' }}
           >
             Details
           </Link>

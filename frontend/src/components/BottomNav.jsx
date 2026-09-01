@@ -58,6 +58,14 @@ function LockIcon() {
   )
 }
 
+// REDESIGN (user ask: "header or footer ko aur achcha karo... professional
+// or modern stylish"): the active tab used to get a full glossy pill
+// background behind icon+label — busy against four tabs sitting this close
+// together. Swapped for a small indicator bar above the active icon (the
+// same language YouTube Music / Spotify's bottom nav use) plus a solid
+// icon+label color change — calmer, and the eye still finds the active
+// tab instantly. Surface treatment now shares .chrome-surface/.elevate-up
+// with the header so both bars read as the same material.
 export default function BottomNav() {
   const downloads = useDownloadsList()
   const isOnline = useOnlineStatus()
@@ -76,17 +84,13 @@ export default function BottomNav() {
   }
 
   return (
-    <nav
-      className="glossy-surface fixed bottom-0 inset-x-0 z-40 border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]"
-    >
+    <nav className="chrome-surface chrome-edge-t elevate-up fixed bottom-0 inset-x-0 z-40 pb-[env(safe-area-inset-bottom)]">
       {showOfflineHint ? (
-        <div
-          className="glossy-chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full ring-1 ring-reel-gold/25 text-xs text-reel-ink whitespace-nowrap shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)] page-fade-in"
-        >
+        <div className="chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full text-xs text-reel-ink whitespace-nowrap elevate page-fade-in">
           {t('nav_home_locked_hint')}
         </div>
       ) : null}
-      <div className="max-w-6xl mx-auto grid grid-cols-4 px-2 py-1">
+      <div className="max-w-6xl mx-auto grid grid-cols-4 px-2">
         {TABS.map((tab) => {
           const isHome = tab.to === '/'
           const locked = isHome && !isOnline
@@ -97,28 +101,25 @@ export default function BottomNav() {
               end={isHome}
               onClick={isHome ? handleHomeTap : undefined}
               aria-disabled={locked}
-              className="relative flex justify-center py-0.5"
+              className="relative flex justify-center"
             >
               {({ isActive }) => (
                 <span
-                  className={`relative flex flex-col items-center justify-center gap-0.5 w-full py-1 rounded-2xl text-[10px] font-semibold tracking-wide transition-all duration-200 ${
-                    locked
-                      ? 'text-reel-muted/50 active:scale-95'
-                      : 'active:scale-95'
-                  } ${
-                    isActive && !locked
-                      ? 'glossy-chip text-reel-gold ring-1 ring-reel-gold/25'
-                      : !locked
-                      ? 'text-reel-muted hover:text-reel-ink'
-                      : ''
+                  className={`relative flex flex-col items-center justify-center gap-1 w-full pt-2.5 pb-2 text-[10px] font-semibold tracking-wide transition-colors duration-200 active:scale-95 ${
+                    locked ? 'text-reel-muted/50' : isActive ? 'text-reel-gold' : 'text-reel-muted hover:text-reel-ink'
                   }`}
                 >
+                  {/* Active indicator bar — replaces the old full-pill fill. */}
+                  <span
+                    className={`absolute top-0 h-[3px] rounded-full bg-reel-gold transition-all duration-200 ${
+                      isActive && !locked ? 'w-6 opacity-100' : 'w-0 opacity-0'
+                    }`}
+                    aria-hidden="true"
+                  />
                   {locked ? <LockIcon /> : tab.icon(isActive)}
                   {t(tab.labelKey)}
                   {tab.to === '/downloads' && activeCount > 0 ? (
-                    <span
-                      className="glossy-btn absolute top-0.5 right-[22%] w-4 h-4 rounded-full text-reel-bg text-[9px] font-bold flex items-center justify-center"
-                    >
+                    <span className="glossy-btn absolute top-0.5 right-[22%] w-4 h-4 rounded-full text-reel-bg text-[9px] font-bold flex items-center justify-center">
                       <span className="relative z-10">{activeCount}</span>
                     </span>
                   ) : null}

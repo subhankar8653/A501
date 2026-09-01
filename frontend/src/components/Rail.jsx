@@ -9,7 +9,10 @@ function Rail({ title, items, loading }) {
 
   return (
     <section className="mb-8">
-      <h2 className="font-display text-xl font-semibold mb-3 px-4 sm:px-0">{title}</h2>
+      <h2 className="flex items-center gap-2 font-display text-xl font-semibold mb-3 px-4 sm:px-0">
+        <span className="w-1 h-4 rounded-full bg-reel-gold" />
+        {title}
+      </h2>
       <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 sm:px-0 pb-1">
         {loading
           ? Array.from({ length: 6 }).map((_, i) => (
