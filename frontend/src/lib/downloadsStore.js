@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { pushToast } from './toastStore'
 
 // In-app Download Manager.
 //
@@ -149,6 +150,7 @@ if (typeof window !== 'undefined') {
       return
     }
     upsert({ id, status: 'done', progress: 100, nativeUri: contentUri })
+    pushToast(`Download complete: ${getDownloadEntry(id)?.filename || 'file'}`)
     processQueue()
   }
   window.__nativeDownloadError = (id) => {
@@ -157,6 +159,7 @@ if (typeof window !== 'undefined') {
       return
     }
     upsert({ id, status: 'error', progress: 0 })
+    pushToast(`Download failed: ${getDownloadEntry(id)?.filename || 'file'}`, 'error')
     processQueue()
   }
 
@@ -399,6 +402,7 @@ async function runDownload(id, url, meta) {
     const blob = new Blob(chunks)
     await idbPut(id, blob)
     upsert({ id, status: 'done', progress: 100, sizeBytes: blob.size })
+    pushToast(`Download complete: ${getDownloadEntry(id)?.filename || 'file'}`)
   } catch (err) {
     if (err?.name === 'AbortError') {
       if (pauseJsRequested.has(id)) {
@@ -412,6 +416,7 @@ async function runDownload(id, url, meta) {
     } else {
       pausedJsDownloads.delete(id)
       upsert({ id, status: 'error', progress: 0 })
+      pushToast(`Download failed: ${getDownloadEntry(id)?.filename || 'file'}`, 'error')
     }
   } finally {
     activeControllers.delete(id)
@@ -458,9 +463,11 @@ export async function startDownload(url, meta) {
     const queue = readQueue()
     queue.push({ id, url, meta })
     writeQueue(queue)
+    pushToast(`Queued: ${meta.filename || 'download'}`)
     return id
   }
 
+  pushToast(`Download started: ${meta.filename || 'download'}`)
   return runDownload(id, url, meta)
 }
 

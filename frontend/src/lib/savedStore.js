@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { pushToast } from './toastStore'
 
 // Single source of truth for "Saved" titles — a flat list in localStorage
 // (not per-episode) so a show saved from any episode shows up once in the
@@ -40,10 +41,12 @@ export function toggleSaved(type, id, meta = {}) {
   if (idx >= 0) {
     list.splice(idx, 1)
     writeList(list)
+    pushToast(`Removed from Saved${meta.name ? `: ${meta.name}` : ''}`)
     return false
   }
   list.unshift({ type, id, addedAt: Date.now(), ...meta })
   writeList(list)
+  pushToast(`Saved${meta.name ? `: ${meta.name}` : ''}`)
   return true
 }
 
