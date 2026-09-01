@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -1333,7 +1332,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val aspectButton = playerView.findViewById<ImageView>(R.id.inlineAspectButton)
             val fullscreenButton = playerView.findViewById<ImageView>(R.id.inlineFullscreenButton)
             val qualityButton = playerView.findViewById<TextView>(R.id.inlineQualityButton)
-            val timeBar = playerView.findViewById<DefaultTimeBar>(R.id.exo_progress)
+            // FIX (build error: "Unresolved reference 'exo_progress'") — this
+            // id is defined by the media3-ui library's own R class, not this
+            // app's local R (same issue PlayerActivity.kt already worked
+            // around for exo_play/exo_pause — see its comment there).
+            val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             val processingLabel = root.findViewById<View>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
@@ -1944,25 +1947,18 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
         inlineTimeBarRef?.let { bar ->
             bar.setPlayedColor(color)
+            // FIX (build error: "Unresolved reference 'setScrubberDrawable'")
+            // — this project's self-built media3-ui.aar (see app/libs/
+            // media3-ui.aar) doesn't expose a public setScrubberDrawable()
+            // setter (confirmed by inspecting its compiled classes), so the
+            // custom layered-glow scrubber dot from XML could never be
+            // re-tinted here. Fix was two-part: (1) dropped
+            // app:scrubber_drawable from inline_player_control_view.xml so
+            // DefaultTimeBar falls back to its BUILT-IN scrubber dot, and
+            // (2) setScrubberColor(color) below now actually reaches that
+            // built-in dot (it had no visible effect while a custom
+            // drawable was set).
             bar.setScrubberColor(color)
-            // scrubber_handle_premium.xml (outer 40%-alpha glow dot + solid
-            // inner dot) rebuilt the same way — layer-list drawables also
-            // can't be retinted with a single setTint() call.
-            val outer = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(applyAlpha(color, 0x40))
-                setSize(dpToPx(18f), dpToPx(18f))
-            }
-            val inner = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color)
-            }
-            val innerSize = dpToPx(10f)
-            val layered = LayerDrawable(arrayOf(outer, inner)).apply {
-                setLayerSize(1, innerSize, innerSize)
-                setLayerGravity(1, android.view.Gravity.CENTER)
-            }
-            bar.setScrubberDrawable(layered)
         }
     }
 
