@@ -39,6 +39,7 @@ import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -52,6 +53,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ProgressBar
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -400,6 +402,20 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var scrubPreviewContainer: LinearLayout
     private lateinit var scrubPreviewImage: ImageView
     private lateinit var scrubPreviewTime: TextView
+
+    // FEATURE (same "video player ke saare accent-colored icon/controls theme
+    // ke color follow karne chahiye" report — this covers the FULLSCREEN
+    // player; the inline (embedded-in-page) player was already wired in
+    // MainActivity.kt via `setInlineThemeColor()`). PlayerActivity is a
+    // separate Activity/task from the WebView, so it can't reach the JS
+    // bridge directly — MainActivity.openFullscreenFromInline() passes the
+    // CURRENT accent color forward as a plain intent extra ("theme_color")
+    // when launching this screen, so fullscreen opens already matching
+    // whatever the inline player (and the web theme) was just showing.
+    // Falls back to the original #FFD700 gold for any other launch path
+    // that doesn't set this extra (e.g. resuming via notification), so
+    // nothing regresses for those cases.
+    private var themeAccentColor: Int = Color.parseColor("#FFD700")
     private var scrubPreviewRetriever: android.media.MediaMetadataRetriever? = null
     private var scrubPreviewRetrieverUri: String? = null
     private val scrubPreviewExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -848,6 +864,9 @@ class PlayerActivity : AppCompatActivity() {
 
         playerView = findViewById(R.id.playerView)
         playerContainer = findViewById(R.id.playerContainer)
+        themeAccentColor = intent.getStringExtra("theme_color")?.let {
+            try { Color.parseColor(it) } catch (_: IllegalArgumentException) { null }
+        } ?: Color.parseColor("#FFD700")
         setupTdlibDebugBadge()
         gestureIndicator = findViewById(R.id.gestureIndicator)
         gestureText = findViewById(R.id.gestureText)
@@ -898,6 +917,7 @@ class PlayerActivity : AppCompatActivity() {
         scrubPreviewContainer = findViewById(R.id.scrubPreviewContainer)
         scrubPreviewImage = findViewById(R.id.scrubPreviewImage)
         scrubPreviewTime = findViewById(R.id.scrubPreviewTime)
+        applyThemeAccentColor()
 
         secondarySubtitleText = findViewById(R.id.secondarySubtitleText)
         dualSubtitleController = DualSubtitleController(
@@ -1207,6 +1227,84 @@ class PlayerActivity : AppCompatActivity() {
     // karte hi halka "press down" scale animation dete hain (iOS/premium apps
     // jaisa tactile micro-interaction) — sirf static icon tap na lagkar
     // button responsive/alive feel deta hai.
+    /** Re-paints every accent-colored fullscreen-player view with `themeAccentColor`.
+     *  Companion to MainActivity's `applyInlineThemeColor()` — see the
+     *  `themeAccentColor` field comment for why this is a plain intent extra
+     *  here instead of a live JS bridge call. Safe to call multiple times
+     *  (views not yet inflated are simply skipped via `?.let`/`::isInitialized`
+     *  checks) — called once right after the early view-setup block, and
+     *  again once exo_play/exo_pause/bufferingIndicator exist a bit later. */
+    private fun applyThemeAccentColor() {
+        val color = themeAccentColor
+
+        // exo_play / exo_pause share the same "hero" radial-glow + hairline-
+        // ring background (bg_play_button_hero.xml) — can't be retinted with
+        // setTint() (radial gradient + stroke, not a flat fill), so it's
+        // rebuilt in code with the live color. GradientDrawable's 2-color
+        // constructor is used (not the newer setColors(IntArray) setter,
+        // which needs API 29+) to stay compatible with this app's minSdk 24.
+        val heroBg = {
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(applyAccentAlpha(color, 0x59), applyAccentAlpha(Color.BLACK, 0x59))
+            ).apply {
+                shape = GradientDrawable.RECTANGLE
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = dpToPx(34f)
+                cornerRadius = dpToPx(20f)
+                setStroke(dpToPxInt(1.4f).coerceAtLeast(1), color)
+            }
+        }
+        exoPlayButton?.background = heroBg()
+        exoPauseButton?.background = heroBg()
+
+        bufferingIndicator?.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#B3131318"))
+            setStroke(dpToPxInt(1f), applyAccentAlpha(color, 0x66))
+        }
+        (bufferingIndicator as? ViewGroup)?.let { group ->
+            for (i in 0 until group.childCount) {
+                (group.getChildAt(i) as? ProgressBar)?.indeterminateTintList =
+                    android.content.res.ColorStateList.valueOf(color)
+            }
+        }
+
+        speedButton.setTextColor(color)
+        scrubPreviewTime.setTextColor(color)
+        playerSnackbarIcon.imageTintList = android.content.res.ColorStateList.valueOf(color)
+
+        if (::playerView.isInitialized) {
+            playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
+                bar.setPlayedColor(color)
+                bar.setScrubberColor(color)
+                val outer = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(applyAccentAlpha(color, 0x40))
+                    setSize(dpToPxInt(18f), dpToPxInt(18f))
+                }
+                val inner = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color)
+                }
+                val innerSize = dpToPxInt(10f)
+                val layered = android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
+                    setLayerSize(1, innerSize, innerSize)
+                    setLayerGravity(1, Gravity.CENTER)
+                }
+                bar.setScrubberDrawable(layered)
+            }
+        }
+    }
+
+    private fun dpToPxInt(dp: Float): Int = dpToPx(dp).toInt()
+
+    /** Replaces just the alpha channel of an RGB color (0-255) — mirrors the
+     *  original XML drawables' fixed alpha values (e.g. #59FFD700, #66FFD700)
+     *  but with the live theme color's RGB underneath instead of a fixed gold. */
+    private fun applyAccentAlpha(color: Int, alpha: Int): Int =
+        (alpha shl 24) or (color and 0x00FFFFFF)
+
     private fun applyPressScale(view: View) {
         // Premium polish: pehle sirf scale-bounce tha, koi ripple nahi — flat
         // "custom" feel deta tha. Ab har button par ek halka golden Material
@@ -1246,6 +1344,12 @@ class PlayerActivity : AppCompatActivity() {
         exoPlayButton?.let { applyPressScale(it) }
         exoPauseButton?.let { applyPressScale(it) }
         bufferingIndicator = findViewById(R.id.bufferingIndicator)
+        // Re-applied here (already called once right after view-setup above) —
+        // exo_play/exo_pause/exo_progress/bufferingIndicator only exist from
+        // this point on (media3's controller layout + bufferingIndicator get
+        // bound later than the rest of the UI), so the earlier call couldn't
+        // reach them yet.
+        applyThemeAccentColor()
 
         exoPlayButton?.setOnClickListener {
             if (player.playbackState == Player.STATE_ENDED) {
@@ -3104,12 +3208,14 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         // Look-and-feel fix: pehle yahan MX Player ka hi signature purple
-        // (#8C6FFF) hardcoded tha — ab app ke apne gold accent (#FFD700) se
-        // match karta hai, baaki poore player jaisa hi.
-        val accentColor = android.graphics.Color.parseColor("#FFD700")
+        // (#8C6FFF) hardcoded tha — ab app ke apne gold accent se match
+        // karta hai, baaki poore player jaisa hi. Ab themeAccentColor se
+        // (fixed #FFD700 ki jagah) taaki subtitle-track list bhi web theme
+        // follow kare, baaki player ke saath consistent rahe.
+        val accentColor = themeAccentColor
         fun subRowBg(selected: Boolean) = GradientDrawable().apply {
             cornerRadius = dp(10).toFloat()
-            setColor(if (selected) android.graphics.Color.parseColor("#26FFD700") else android.graphics.Color.TRANSPARENT)
+            setColor(if (selected) applyAccentAlpha(themeAccentColor, 0x26) else android.graphics.Color.TRANSPARENT)
         }
         subLabels.forEachIndexed { idx, label ->
             val cb = CheckBox(this).apply {
@@ -3563,8 +3669,8 @@ class PlayerActivity : AppCompatActivity() {
                 marginStart = dp(10)
                 marginEnd = dp(10)
             }
-            progressTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
-            thumbTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+            progressTintList = android.content.res.ColorStateList.valueOf(themeAccentColor)
+            thumbTintList = android.content.res.ColorStateList.valueOf(themeAccentColor)
         }
         sliderRow.addView(minusBtn)
         sliderRow.addView(seek)
@@ -3700,12 +3806,14 @@ class PlayerActivity : AppCompatActivity() {
         })
 
         // Look-and-feel fix: pehle yahan MX Player ka hi signature purple
-        // (#8C6FFF) hardcoded tha — ab app ke apne gold accent (#FFD700) se
-        // match karta hai, baaki poore player jaisa hi.
-        val accentColor = android.graphics.Color.parseColor("#FFD700")
+        // (#8C6FFF) hardcoded tha — ab app ke apne gold accent se match
+        // karta hai, baaki poore player jaisa hi. Ab themeAccentColor se
+        // (fixed #FFD700 ki jagah) taaki audio-track list bhi web theme
+        // follow kare.
+        val accentColor = themeAccentColor
         fun audioRowBg(selected: Boolean) = GradientDrawable().apply {
             cornerRadius = dp(12).toFloat()
-            setColor(if (selected) android.graphics.Color.parseColor("#26FFD700") else android.graphics.Color.TRANSPARENT)
+            setColor(if (selected) applyAccentAlpha(themeAccentColor, 0x26) else android.graphics.Color.TRANSPARENT)
         }
         val radioGroup = RadioGroup(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -3869,6 +3977,10 @@ class PlayerActivity : AppCompatActivity() {
         val tabEqualizer = view.findViewById<TextView>(R.id.tabEqualizer)
         val tabRow = view.findViewById<LinearLayout>(R.id.tabRow)
         val tabIndicator = view.findViewById<View>(R.id.tabIndicator)
+        // XML has this hairline underline hardcoded gold — override at
+        // runtime with the live theme color (same reasoning as everywhere
+        // else in this function).
+        tabIndicator.setBackgroundColor(themeAccentColor)
         val pageAudioEffect = view.findViewById<LinearLayout>(R.id.pageAudioEffect)
         val pageEqualizer = view.findViewById<LinearLayout>(R.id.pageEqualizer)
 
@@ -3877,9 +3989,10 @@ class PlayerActivity : AppCompatActivity() {
             pageEqualizer.visibility = if (effectTab) View.GONE else View.VISIBLE
             // Theme fix: pehle selected tab blue (#3399FF) ho jaata tha, jabki poore
             // player mein (timebar, tab underline, EQ switch waghera) app ka apna gold
-            // accent (#FFD700) use hota hai — ab dono consistent hain.
-            tabAudioEffect.setTextColor(if (effectTab) 0xFFFFD700.toInt() else 0xFFAAAAAA.toInt())
-            tabEqualizer.setTextColor(if (!effectTab) 0xFFFFD700.toInt() else 0xFFAAAAAA.toInt())
+            // accent use hota hai — ab dono consistent hain, aur ab themeAccentColor
+            // se (fixed #FFD700 ki jagah) taaki web theme yahan bhi follow ho.
+            tabAudioEffect.setTextColor(if (effectTab) themeAccentColor else 0xFFAAAAAA.toInt())
+            tabEqualizer.setTextColor(if (!effectTab) themeAccentColor else 0xFFAAAAAA.toInt())
             tabAudioEffect.setTypeface(null, if (effectTab) Typeface.BOLD else Typeface.NORMAL)
             tabEqualizer.setTypeface(null, if (!effectTab) Typeface.BOLD else Typeface.NORMAL)
             // Gold underline ko dusre tab ke neeche slide karo (MX Player jaisa)
@@ -3904,6 +4017,10 @@ class PlayerActivity : AppCompatActivity() {
 
         // --- Equalizer tab: on/off + presets + 5 bands ---
         val eqSwitch = view.findViewById<Switch>(R.id.equalizerSwitch)
+        // XML has this hardcoded gold thumb/track — override with the live
+        // theme color, same as tabIndicator above.
+        eqSwitch.thumbTintList = android.content.res.ColorStateList.valueOf(themeAccentColor)
+        eqSwitch.trackTintList = android.content.res.ColorStateList.valueOf(applyAccentAlpha(themeAccentColor, 0x66))
         val bandSeeks = listOf<SeekBar>(
             view.findViewById(R.id.bandSeek0), view.findViewById(R.id.bandSeek1),
             view.findViewById(R.id.bandSeek2), view.findViewById(R.id.bandSeek3),
@@ -3938,7 +4055,7 @@ class PlayerActivity : AppCompatActivity() {
             savedEqPresetName = selected
             presetViews.forEach { (name, tv) ->
                 val isSelected = name.equals(selected, ignoreCase = true)
-                tv.setTextColor(if (isSelected) 0xFFFFD700.toInt() else 0xFFFFFFFF.toInt())
+                tv.setTextColor(if (isSelected) themeAccentColor else 0xFFFFFFFF.toInt())
                 tv.setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
             }
         }
@@ -6646,7 +6763,7 @@ class PlayerActivity : AppCompatActivity() {
         playerSnackbar.removeCallbacks(hidePlayerSnackbarRunnable)
         playerSnackbarText.text = message
         playerSnackbarIcon.setImageResource(if (isError) R.drawable.ic_warning else R.drawable.ic_info)
-        playerSnackbarIcon.setColorFilter(if (isError) android.graphics.Color.parseColor("#FF6B5D") else android.graphics.Color.parseColor("#FFD700"))
+        playerSnackbarIcon.setColorFilter(if (isError) android.graphics.Color.parseColor("#FF6B5D") else themeAccentColor)
 
         playerSnackbar.animate().cancel()
         playerSnackbar.visibility = View.VISIBLE
