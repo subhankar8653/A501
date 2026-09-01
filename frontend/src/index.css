@@ -148,7 +148,22 @@ input, textarea {
    directional light-source gradient at all, just a flat tinted surface
    + hairline, which is legible in every mode. */
 .chrome-surface {
-  background: color-mix(in srgb, var(--reel-surface) 94%, transparent);
+  background-color: color-mix(in srgb, var(--reel-surface) 94%, transparent);
+  /* FEATURE (user ask: "header aur footer mein bhi theme pattern hona
+     chahiye, sahi jagah blend hoke"): header/footer paint their OWN
+     background here — body's fixed wallpaper pattern can't show through
+     a 94%-opaque, blurred surface like this one, so the same pattern
+     image is layered on again directly, via the CSS vars ThemeContext
+     writes onto <html> (see applyPatternToDocument in ThemeContext.jsx).
+     This paints crisp (an element's own background-image isn't affected
+     by that same element's backdrop-filter, which only blurs what's
+     BEHIND it), so it stays a clean, subtle texture instead of a blur
+     smear, and sits UNDER the tint color above so header/footer text and
+     icons stay just as legible as before. 'none' (pattern off) falls
+     back to a no-op background-image, same as always. */
+  background-image: var(--reel-pattern-image, none);
+  background-repeat: repeat;
+  background-size: var(--reel-pattern-size, 56px) var(--reel-pattern-size, 56px);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
