@@ -386,8 +386,17 @@ export function qualityLabel(stream) {
   return (stream?.name || 'Auto').split('\n')[0].trim()
 }
 
-// Home page content-type tabs, in display order (Anime always first).
+// Home page content-type tabs, in display order.
+// FEATURE (user ask: "All aur New to You catagory nahi hai, add karo — All
+// mein sare mix hoga, New to You pe jo jo latest upload kiya hoga woh show
+// hoga"): two extra tabs on top of the existing content-type ones. "All"
+// mixes every catalog together (handled by groupCatalogsByTab below,
+// rendered the normal grouped-by-language way). "New to You" needs its own
+// loader — see loadNewToYou() — since it's sorted by upload recency, not
+// grouped by language.
 export const HOME_TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'new', label: 'New to You' },
   { key: 'anime', label: 'Anime' },
   { key: 'movie', label: 'Movies' },
   { key: 'kdrama', label: 'K-Drama' },
@@ -409,7 +418,59 @@ export function groupCatalogsByTab(manifestCatalogs) {
     } else if (cat.type === 'movie') tabs.movie.push(cat)
     else if (cat.type === 'series') tabs.series.push(cat)
   }
+  // "All" = every catalog from every other tab, mixed together — same
+  // list loadTabByLanguage() already merges+dedupes+groups-by-language for
+  // any single tab, just fed everything at once instead of one type.
+  const everything = [...tabs.anime, ...tabs.movie, ...tabs.kdrama, ...tabs.series, ...tabs.shortdrama]
+  tabs.all = everything
+  // "New to You" scans that same full set — loadNewToYou() (not
+  // loadTabByLanguage) is what actually picks out the latest uploads.
+  tabs.new = everything
   return tabs
+}
+
+// How many pages deep we scan per catalog for "New to You". Catalogs are
+// already returned newest-first by the backend (sort_params default to
+// updated_on desc — see stremio_routes.py), so a few pages per catalog is
+// enough to find the true latest items across ALL catalogs mixed together
+// without pulling in each catalog's entire back-catalog just to sort it.
+const NEW_TO_YOU_PAGES_PER_CATALOG = 3
+const NEW_TO_YOU_LIMIT = 60
+
+// FEATURE (user ask: "New to You pe jo jo letest upload kiya hoga ohh show
+// hoga"): merges the newest few pages of every catalog (movies, series,
+// anime, k-drama, short drama — everything) into one pool, de-dupes, then
+// sorts by each title's actual addedAt timestamp (see convert_to_stremio_meta
+// in stremio_routes.py) so the freshest uploads across the WHOLE app show
+// first — not just the freshest within one catalog.
+export async function loadNewToYou(catalogsForTab) {
+  const merged = new Map()
+  await Promise.all(
+    (catalogsForTab || []).map(async (cat) => {
+      try {
+        for (let page = 0; page < NEW_TO_YOU_PAGES_PER_CATALOG; page++) {
+          const skip = page * CATALOG_PAGE_SIZE
+          const metas = await getCatalog(cat.type, cat.id, { skip: skip || undefined })
+          if (!metas.length) break
+          for (const item of metas) {
+            if (item && item.id && !merged.has(item.id)) merged.set(item.id, item)
+          }
+          if (metas.length < CATALOG_PAGE_SIZE) break // this catalog's already exhausted
+        }
+      } catch {
+        // one catalog failing shouldn't blank out New to You
+      }
+    })
+  )
+
+  const items = [...merged.values()]
+    .sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0))
+    .slice(0, NEW_TO_YOU_LIMIT)
+
+  // Same {language, items} shape loadTabByLanguage() returns, so Home.jsx
+  // can render it through the exact same LanguageRail path — just one
+  // section instead of several.
+  return items.length ? [{ language: 'New to You', items }] : []
 }
 
 // Fetches every catalog for one tab, merges + de-dupes items by id, then
