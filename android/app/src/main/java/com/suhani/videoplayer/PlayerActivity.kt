@@ -1277,22 +1277,17 @@ class PlayerActivity : AppCompatActivity() {
         if (::playerView.isInitialized) {
             playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
                 bar.setPlayedColor(color)
+                // FIX (build error: "Unresolved reference 'setScrubberDrawable'")
+                // — this project's self-built media3-ui.aar doesn't expose a
+                // public setScrubberDrawable() setter (confirmed by
+                // inspecting its compiled classes), so the custom
+                // layered-glow scrubber dot from XML could never be
+                // re-tinted here. Fix was two-part: (1) dropped
+                // app:scrubber_drawable from custom_player_control_view.xml
+                // so DefaultTimeBar falls back to its BUILT-IN scrubber dot,
+                // and (2) setScrubberColor(color) below now actually reaches
+                // that built-in dot.
                 bar.setScrubberColor(color)
-                val outer = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(applyAccentAlpha(color, 0x40))
-                    setSize(dpToPxInt(18f), dpToPxInt(18f))
-                }
-                val inner = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(color)
-                }
-                val innerSize = dpToPxInt(10f)
-                val layered = android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
-                    setLayerSize(1, innerSize, innerSize)
-                    setLayerGravity(1, Gravity.CENTER)
-                }
-                bar.setScrubberDrawable(layered)
             }
         }
     }
