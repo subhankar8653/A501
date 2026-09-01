@@ -52,18 +52,23 @@ function applyThemeToDocument(theme) {
   root.style.colorScheme = theme.isDark ? 'dark' : 'light'
 }
 
-// Paints the chosen pattern shape onto `body`'s background-image, tinted
-// with the CURRENT theme's gold/accent color — so switching theme mode
-// re-colors the pattern automatically (same gold value every other themed
-// element already uses), and switching pattern shape doesn't touch colors
-// at all. Layered on top of body's own bg-reel-bg background-color class,
-// so it shows through wherever a page/component doesn't paint its own
-// opaque surface over it.
+// Paints the chosen pattern shape onto `body`'s background-image (for the
+// main scroll area), AND exposes it as CSS custom properties on <html> so
+// `.chrome-surface` (header + bottom nav — see index.css) can layer the
+// SAME pattern onto itself too. Needed because header/footer are their own
+// opaque-ish, blurred surfaces sitting on top of body — without this they'd
+// just hide body's pattern layer entirely, leaving header/footer bare while
+// everywhere else showed the shape (user feedback: "header aur footer mein
+// bhi kuchh hota to achcha lagta"). Both tinted with the CURRENT theme's
+// gold/accent color, so switching theme mode re-colors the pattern
+// everywhere at once — same gold value every other themed element uses.
 function applyPatternToDocument(pattern, theme) {
   const body = document.body
+  const root = document.documentElement
   const uri = buildPatternDataUri(pattern, theme.colors.gold)
   if (!uri) {
     body.style.backgroundImage = ''
+    root.style.setProperty('--reel-pattern-image', 'none')
     return
   }
   body.style.backgroundImage = `url("${uri}")`
@@ -72,6 +77,9 @@ function applyPatternToDocument(pattern, theme) {
   // 'fixed' keeps the wallpaper anchored to the viewport (doesn't drift
   // while a page scrolls), matching how the theme's own bg color behaves.
   body.style.backgroundAttachment = 'fixed'
+
+  root.style.setProperty('--reel-pattern-image', `url("${uri}")`)
+  root.style.setProperty('--reel-pattern-size', `${PATTERN_TILE_SIZE}px`)
 }
 
 export function ThemeModeProvider({ children }) {

@@ -96,15 +96,23 @@ export function getPattern(id) {
 // app's normal surface colors don't fully cover (page margins, gaps
 // between rail cards, empty states, hero backdrops) — same idea as a chat
 // app's wallpaper layer, sitting BEHIND every screen's own content.
-const TILE = 96
+//
+// SIZE/SUBTLETY TUNING (user feedback: "aur chota, aur theme ke sath blend
+// hona chahiye" — shapes were reading as bold foreground hearts instead of
+// a quiet wallpaper texture): tile shrunk 96->56px and per-shape scale cut
+// roughly in half, so many more, much smaller copies repeat instead of a
+// few large ones; opacity dropped substantially (0.55/0.35 -> 0.16/0.10)
+// so it sits as a faint texture behind content rather than competing with
+// it, closer to how a premium app's subtle wallpaper pattern reads.
+const TILE = 56
 
 export function buildPatternDataUri(pattern, color) {
   if (!pattern || pattern.id === 'none' || !pattern.markup) return null
   const shape = pattern.markup(color)
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE}" height="${TILE}" viewBox="0 0 ${TILE} ${TILE}">` +
-    `<g opacity="0.55"><g transform="translate(4,4) rotate(-14) scale(0.9)">${shape}</g></g>` +
-    `<g opacity="0.35"><g transform="translate(${TILE / 2 + 6},${TILE / 2 + 2}) rotate(18) scale(0.6)">${shape}</g></g>` +
+    `<g opacity="0.16"><g transform="translate(2,2) rotate(-14) scale(0.46)">${shape}</g></g>` +
+    `<g opacity="0.10"><g transform="translate(${TILE / 2 + 3},${TILE / 2 + 1}) rotate(18) scale(0.3)">${shape}</g></g>` +
     `</svg>`
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
