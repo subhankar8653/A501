@@ -325,6 +325,14 @@
         <!-- Flush, edge-to-edge, zero margin — bilkul YouTube reference ki
              thin line jaisa. Info-row ka sibling hai (isi ek LinearLayout ke
              andar), FrameLayout/gravity wala alag overlay nahi. -->
+        <!-- FIX (build error: setScrubberDrawable unresolved) — app:scrubber_drawable
+             removed. This project's self-built media3-ui.aar doesn't expose a
+             public setScrubberDrawable() setter (confirmed by inspecting the
+             aar's compiled classes), so a custom drawable set here could never
+             be re-tinted at runtime to match the theme color anyway. Dropping
+             it falls back to DefaultTimeBar's BUILT-IN scrubber dot, which DOES
+             respond to setScrubberColor() (both the XML value below and
+             MainActivity.kt's applyInlineThemeColor()). -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
@@ -335,7 +343,6 @@
             app:buffered_color="#80FFFFFF"
             app:bar_height="2.5dp"
             app:touch_target_height="14dp"
-            app:scrubber_drawable="@drawable/scrubber_handle_premium"
             app:scrubber_enabled_size="12dp"
             app:scrubber_disabled_size="0dp"
             app:scrubber_dragged_size="18dp" />
