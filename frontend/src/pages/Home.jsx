@@ -251,13 +251,13 @@ function HomeContent({ t }) {
           they're the first thing you see and always in the same spot
           regardless of which hero slide is showing. */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-3 relative z-10">
-        <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
           {HOME_TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActive(tab.key)}
               disabled={!tabCatalogs}
-              className={`shrink-0 px-5 py-2 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 ${
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-medium tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                 active === tab.key
                   ? 'animate-tab-pop-in bg-gradient-to-b from-[color-mix(in_srgb,var(--reel-gold)_65%,white)] to-reel-gold text-reel-bg shadow-[0_6px_20px_-4px_rgba(232,163,61,0.5)]'
                   : 'bg-reel-surface/90 backdrop-blur-sm text-reel-muted ring-1 ring-reel-ink/[0.08] hover:ring-reel-gold/40 hover:text-reel-ink'
