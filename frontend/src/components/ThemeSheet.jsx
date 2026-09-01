@@ -24,6 +24,56 @@ import { useThemeMode } from '../theme/ThemeContext'
 // problem — its z-index is now compared at the true top level, safely above
 // BottomNav, and the full grid + its max-h-[80vh] scroll both work as
 // intended.
+// FEATURE (user ask: "theme select karne ke option ke sath ek aur option
+// hona chahiye theme icon select karne ka — love shape aur baaki achhe-achhe
+// shapes, jo shape chunoge wahi shape chhote-chhote poore theme (uske color
+// ke sath) pe lag jaayega"): second grid below the existing color-theme
+// grid, same tile/active-ring visual language so it reads as a natural
+// extension of this sheet rather than a separate screen. Each tile previews
+// the shape pre-tinted in the CURRENTLY selected theme's gold color (not a
+// fixed color) — so the preview always matches what picking it will
+// actually look like right now, even before tapping it.
+function PatternGrid() {
+  const { patternId, patterns, changePattern, theme } = useThemeMode()
+
+  return (
+    <>
+      <p className="text-reel-ink font-semibold mb-1 mt-5">Pattern</p>
+      <p className="text-reel-muted text-xs mb-4">Background mein bhar jaane wala shape chuno</p>
+      <div className="grid grid-cols-4 gap-2.5">
+        {patterns.map((p) => {
+          const active = p.id === patternId
+          return (
+            <button
+              key={p.id}
+              onClick={() => changePattern(p.id)}
+              className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl transition active:scale-[0.98] ${
+                active
+                  ? 'bg-reel-gold/10 ring-2 ring-reel-gold'
+                  : 'bg-reel-ink/[0.04] ring-1 ring-reel-ink/5 hover:bg-reel-ink/[0.07]'
+              }`}
+            >
+              <span className="w-7 h-7 shrink-0 grid place-items-center" aria-hidden="true">
+                {p.id === 'none' ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-reel-muted">
+                    <circle cx="12" cy="12" r="9" />
+                    <line x1="5" y1="19" x2="19" y2="5" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: p.markup(theme.colors.gold) }} />
+                )}
+              </span>
+              <span className={`text-[10px] font-medium truncate max-w-full ${active ? 'text-reel-ink' : 'text-reel-ink/70'}`}>
+                {p.name}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
 export default function ThemeSheet({ open, onClose }) {
   const { themeId, themes, changeTheme } = useThemeMode()
 
@@ -90,6 +140,8 @@ export default function ThemeSheet({ open, onClose }) {
             )
           })}
         </div>
+
+        <PatternGrid />
       </div>
     </div>,
     document.body
