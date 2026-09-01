@@ -88,6 +88,26 @@ export function ThemeModeProvider({ children }) {
 
   useEffect(() => {
     applyThemeToDocument(getTheme(themeId))
+    // BUG FIX (user report, with screenshot: "video player mein play button/
+    // ring/quality-text/progress-bar hamesha yellow hi rehte hain, web side
+    // pe alag theme select karne ke baad bhi"): those controls are the
+    // ANDROID APP's native ExoPlayer view (inline_player_control_view.xml /
+    // activity_player.xml / dialog_equalizer.xml — a completely separate
+    // rendering layer from this WebView's CSS), so they have no way to know
+    // the color theme changed unless we explicitly tell them. `window.
+    // AndroidPlayer` is the existing native JS bridge (see MainActivity.kt's
+    // WebAppInterface) — `setThemeColor` is a new method on it (native side:
+    // MainActivity.setInlineThemeColor() / PlayerActivity's intent-extra
+    // handoff) that retints the play button, its ring, the quality badge,
+    // and the progress bar/scrubber to match. Guarded with `?.` since this
+    // bridge object only exists inside the Android app's WebView — plain
+    // browser visits (or iOS) simply skip the call, no error.
+    try {
+      window.AndroidPlayer?.setThemeColor?.(getTheme(themeId).colors.gold)
+    } catch {
+      // Non-fatal — native bridge call failing shouldn't break the web
+      // theme switch itself.
+    }
     try {
       localStorage.setItem(STORAGE_KEY, themeId)
     } catch {
