@@ -250,8 +250,25 @@ def convert_to_stremio_meta(item: dict) -> dict:
         "cast": item.get("cast") or [],
         "runtime": item.get("runtime") or "",
         "languages": item_languages(item),
+        # FEATURE (user ask: "New to You" home tab — sabse latest upload
+        # dikhna chahiye): non-Stremio-spec extra field, harmless for any
+        # Stremio client, but lets our own frontend sort a mixed batch of
+        # movies+series across every catalog by actual upload/update time
+        # instead of just whatever order each catalog happened to return.
+        "addedAt": _added_at_iso(item),
     }
     return meta
+
+
+#----- ISO timestamp of when a title was added/last updated, or None
+def _added_at_iso(item: dict):
+    ts = item.get("updated_on") or item.get("added_at") or item.get("created_at")
+    if not ts:
+        return None
+    try:
+        return ts.isoformat() + "Z"
+    except Exception:
+        return None
 
 
 #----- Format a movie release date as an ISO string, or None
