@@ -14,7 +14,7 @@ export default function VerifyGate({ message }) {
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-reel-surface rounded-xl p-6 text-center ring-1 ring-white/5 space-y-4">
+      <div className="w-full max-w-sm bg-reel-surface rounded-xl p-6 text-center ring-1 ring-reel-ink/5 space-y-4">
         <div className="w-14 h-14 mx-auto rounded-full bg-reel-surface2 ring-1 ring-reel-gold/30 flex items-center justify-center text-reel-gold">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
         </div>

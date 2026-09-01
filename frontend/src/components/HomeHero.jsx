@@ -88,14 +88,13 @@ export default function HomeHero({ items, loading }) {
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
             className="glossy-btn flex items-center gap-1.5 text-reel-bg font-semibold text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform"
-            style={{ '--glossy-btn-base': '#E8A33D', '--glossy-btn-glow': 'rgba(232,163,61,0.65)' }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="relative z-10"><path d="M8 5v14l11-7z"/></svg>
             <span className="relative z-10">Watch Now</span>
           </Link>
           <Link
             to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
-            className="glossy-chip flex items-center gap-1.5 ring-1 ring-white/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-white/[0.06]"
+            className="glossy-chip flex items-center gap-1.5 ring-1 ring-reel-ink/15 text-reel-ink font-medium text-xs sm:text-sm px-4 py-2 rounded-full active:scale-95 transition-transform hover:bg-reel-ink/[0.06]"
           >
             Details
           </Link>
@@ -111,7 +110,7 @@ export default function HomeHero({ items, loading }) {
                 aria-label={`Slide ${i + 1}`}
                 onClick={() => setIndex(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === index ? 'w-5 bg-reel-gold' : 'w-1.5 bg-white/30 hover:bg-white/50'
+                  i === index ? 'w-5 bg-reel-gold' : 'w-1.5 bg-reel-ink/30 hover:bg-reel-ink/50'
                 }`}
               />
             ))}

@@ -64,7 +64,7 @@ export default function ConnectionOverlay() {
 
       <button
         onClick={() => navigate('/downloads')}
-        className="px-5 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-b from-[#F3C067] to-reel-gold text-reel-bg active:scale-95 transition"
+        className="px-5 py-2.5 rounded-full text-sm font-semibold bg-gradient-to-b from-[color-mix(in_srgb,var(--reel-gold)_65%,white)] to-reel-gold text-reel-bg active:scale-95 transition"
       >
         {t('overlay_view_downloads')}
       </button>

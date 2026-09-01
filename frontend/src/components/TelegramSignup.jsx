@@ -93,7 +93,7 @@ export default function TelegramSignup({ onDone }) {
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-reel-surface rounded-xl p-6 space-y-4 ring-1 ring-white/5 text-center">
+      <div className="bg-reel-surface rounded-xl p-6 space-y-4 ring-1 ring-reel-ink/5 text-center">
         {phase === 'idle' || phase === 'error' ? (
           <>
             {error ? <p className="text-reel-rust text-xs">{error}</p> : null}

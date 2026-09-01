@@ -163,9 +163,9 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
       <div className="absolute inset-0 bg-black/60" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
+        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-reel-ink/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
       >
-        <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+        <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
 
         <p className="text-reel-ink font-semibold mb-1">
           {isSeason
@@ -192,7 +192,7 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
                   key={l}
                   onClick={() => setPicked(l)}
                   className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    picked === l ? 'bg-reel-gold text-reel-bg' : 'bg-white/10 text-reel-ink'
+                    picked === l ? 'bg-reel-gold text-reel-bg' : 'bg-reel-ink/10 text-reel-ink'
                   }`}
                 >
                   {l}
@@ -225,7 +225,7 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
                 </p>
                 <button
                   onClick={onClose}
-                  className="w-full py-2.5 rounded-xl bg-white/10 text-reel-ink font-semibold active:scale-[0.98] transition"
+                  className="w-full py-2.5 rounded-xl bg-reel-ink/10 text-reel-ink font-semibold active:scale-[0.98] transition"
                 >
                   {t('done')}
                 </button>

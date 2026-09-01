@@ -12,7 +12,6 @@ export default function Navbar() {
     <div className="sticky top-0 z-30">
       <header
         className="glossy-surface relative border-b border-reel-gold/[0.14] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.9)]"
-        style={{ '--glossy-base': '#16151F' }}
       >
         {/* Soft ambient glow behind the logo — gives the header some depth
             instead of a flat solid bar. Sits on the OPAQUE surface color
@@ -50,7 +49,7 @@ export default function Navbar() {
             onClick={() => setThemeOpen(true)}
             aria-label="Change theme"
             className="glossy-btn group/theme shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
-            style={{ '--glossy-btn-base': '#211F2C', '--glossy-btn-glow': 'rgba(232,163,61,0.35)' }}
+            style={{ '--glossy-btn-base': 'var(--reel-surface2)' }}
           >
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/theme:text-reel-gold transition-colors duration-200">
               <circle cx="12" cy="12" r="9" />
@@ -65,7 +64,7 @@ export default function Navbar() {
             onClick={() => setSearchOpen(true)}
             aria-label="Search"
             className="glossy-btn group/search shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform duration-200"
-            style={{ '--glossy-btn-base': '#211F2C', '--glossy-btn-glow': 'rgba(232,163,61,0.35)' }}
+            style={{ '--glossy-btn-base': 'var(--reel-surface2)' }}
           >
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="relative z-10 text-reel-ink group-hover/search:text-reel-gold transition-colors duration-200">
               <circle cx="11" cy="11" r="7" />

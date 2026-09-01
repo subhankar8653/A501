@@ -86,11 +86,11 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-reel-bg flex flex-col page-fade-in">
       {/* Header: back + big input, YouTube jaisa — no separate content above it */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-reel-ink/5 shrink-0">
         <button
           onClick={onClose}
           aria-label="Close search"
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-reel-ink hover:bg-white/5 active:scale-90 transition"
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-reel-ink hover:bg-reel-ink/5 active:scale-90 transition"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
             <path d="m15 18-6-6 6-6" />
@@ -104,7 +104,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
             runSearch(query)
           }}
         >
-          <div className="flex items-center rounded-full bg-reel-surface2 border border-white/5 focus-within:border-reel-gold/70 focus-within:shadow-[0_0_0_4px_rgba(232,163,61,0.12)] transition-all duration-200">
+          <div className="flex items-center rounded-full bg-reel-surface2 border border-reel-ink/5 focus-within:border-reel-gold/70 focus-within:shadow-[0_0_0_4px_rgba(232,163,61,0.12)] transition-all duration-200">
             <input
               ref={inputRef}
               value={query}
@@ -124,7 +124,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                   setQuery('')
                   inputRef.current?.focus()
                 }}
-                className="mr-1.5 shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-white/5 transition active:scale-90"
+                className="mr-1.5 shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-reel-ink/5 transition active:scale-90"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M18 6 6 18M6 6l12 12" />
@@ -140,7 +140,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
           onClick={() => runSearch(query)}
           disabled={!query.trim()}
           aria-label="Search"
-          className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-reel-gold text-black hover:brightness-110 active:scale-90 transition disabled:opacity-30 disabled:pointer-events-none"
+          className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-reel-gold text-reel-bg hover:brightness-110 active:scale-90 transition disabled:opacity-30 disabled:pointer-events-none"
         >
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="7" />
@@ -184,7 +184,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                         e.stopPropagation()
                         setRecent(removeRecentSearch(term))
                       }}
-                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-white/5 opacity-0 group-hover:opacity-100 transition active:scale-90"
+                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-reel-ink/5 opacity-0 group-hover:opacity-100 transition active:scale-90"
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <path d="M18 6 6 18M6 6l12 12" />
@@ -226,7 +226,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                 ))}
               </div>
             ) : suggestions.length > 0 ? (
-              <div className="mt-1 border-t border-white/5">
+              <div className="mt-1 border-t border-reel-ink/5">
                 {suggestions.map((item) => (
                   <div
                     key={item.id}

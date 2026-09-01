@@ -20,7 +20,7 @@ function ContinueWatchingRail({ items, onRemove }) {
           return (
             <div key={it.k} className="relative group shrink-0 w-[calc(60vw-24px)] sm:w-[240px]">
               <Link to={`/watch/${it.media_type}/${encodeURIComponent(it.k)}`} className="block active:scale-95 transition-transform">
-                <div className="relative aspect-video rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-white/[0.06]">
+                <div className="relative aspect-video rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/[0.06]">
                   {it.poster ? (
                     <img src={it.poster} alt={it.title} loading="lazy" className="w-full h-full object-cover" />
                   ) : (
@@ -29,12 +29,12 @@ function ContinueWatchingRail({ items, onRemove }) {
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-9 h-9 rounded-full bg-reel-gold/90 flex items-center justify-center">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="#0b0b0d"><path d="M8 5v14l11-7z" /></svg>
+                    <div className="w-9 h-9 rounded-full bg-reel-gold/90 text-reel-bg flex items-center justify-center">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
                     </div>
                   </div>
                   {/* Resume progress bar */}
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-reel-ink/20">
                     <div className="h-full bg-reel-gold" style={{ width: `${pct}%` }} />
                   </div>
                 </div>

@@ -26,7 +26,7 @@ function Row({ items, keySuffix = '' }) {
             aria-label="Scroll left"
             className="hidden sm:flex opacity-0 group-hover/row:opacity-100 transition absolute left-0 top-0 bottom-1 w-10 items-center justify-center bg-gradient-to-r from-reel-bg to-transparent"
           >
-            <span className="w-8 h-8 rounded-full bg-reel-bg/95 ring-1 ring-white/10 flex items-center justify-center text-reel-ink hover:bg-reel-surface2">
+            <span className="w-8 h-8 rounded-full bg-reel-bg/95 ring-1 ring-reel-ink/10 flex items-center justify-center text-reel-ink hover:bg-reel-surface2">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
             </span>
           </button>
@@ -35,7 +35,7 @@ function Row({ items, keySuffix = '' }) {
             aria-label="Scroll right"
             className="hidden sm:flex opacity-0 group-hover/row:opacity-100 transition absolute right-0 top-0 bottom-1 w-10 items-center justify-center bg-gradient-to-l from-reel-bg to-transparent"
           >
-            <span className="w-8 h-8 rounded-full bg-reel-bg/95 ring-1 ring-white/10 flex items-center justify-center text-reel-ink hover:bg-reel-surface2">
+            <span className="w-8 h-8 rounded-full bg-reel-bg/95 ring-1 ring-reel-ink/10 flex items-center justify-center text-reel-ink hover:bg-reel-surface2">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
             </span>
           </button>

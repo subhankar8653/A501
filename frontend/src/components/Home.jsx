@@ -109,8 +109,8 @@ function HomeContent() {
               disabled={!tabCatalogs}
               className={`shrink-0 px-5 py-2 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                 active === tab.key
-                  ? 'animate-tab-pop-in bg-gradient-to-b from-[#F3C067] to-reel-gold text-reel-bg shadow-[0_6px_20px_-4px_rgba(232,163,61,0.5)]'
-                  : 'bg-reel-surface/90 backdrop-blur-sm text-reel-muted ring-1 ring-white/[0.08] hover:ring-reel-gold/40 hover:text-reel-ink'
+                  ? 'animate-tab-pop-in bg-gradient-to-b from-[color-mix(in_srgb,var(--reel-gold)_65%,white)] to-reel-gold text-reel-bg shadow-[0_6px_20px_-4px_rgba(232,163,61,0.5)]'
+                  : 'bg-reel-surface/90 backdrop-blur-sm text-reel-muted ring-1 ring-reel-ink/[0.08] hover:ring-reel-gold/40 hover:text-reel-ink'
               }`}
             >
               {tab.label}

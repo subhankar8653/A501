@@ -17,9 +17,9 @@ export default function ThemeSheet({ open, onClose }) {
       <div className="absolute inset-0 bg-black/60" />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
+        className="relative w-full max-w-md bg-reel-bg rounded-t-2xl pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-5 ring-1 ring-reel-ink/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] max-h-[80vh] overflow-y-auto"
       >
-        <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+        <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
 
         <p className="text-reel-ink font-semibold mb-1">Theme</p>
         <p className="text-reel-muted text-xs mb-4">Apna pasandida theme mode chuno</p>
@@ -34,11 +34,11 @@ export default function ThemeSheet({ open, onClose }) {
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition active:scale-[0.98] ${
                   active
                     ? 'bg-reel-gold/10 ring-2 ring-reel-gold'
-                    : 'bg-white/[0.04] ring-1 ring-white/5 hover:bg-white/[0.07]'
+                    : 'bg-reel-ink/[0.04] ring-1 ring-reel-ink/5 hover:bg-reel-ink/[0.07]'
                 }`}
               >
                 <span
-                  className="shrink-0 w-8 h-8 rounded-full ring-1 ring-white/10 overflow-hidden grid grid-cols-2 grid-rows-2"
+                  className="shrink-0 w-8 h-8 rounded-full ring-1 ring-reel-ink/10 overflow-hidden grid grid-cols-2 grid-rows-2"
                   aria-hidden="true"
                 >
                   <span style={{ background: t.colors.bg }} />

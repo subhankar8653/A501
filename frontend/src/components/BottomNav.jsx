@@ -78,7 +78,6 @@ export default function BottomNav() {
   return (
     <nav
       className="glossy-surface fixed bottom-0 inset-x-0 z-40 border-t border-reel-gold/[0.14] shadow-[0_-8px_24px_-14px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]"
-      style={{ '--glossy-base': '#16151F' }}
     >
       {showOfflineHint ? (
         <div
@@ -119,7 +118,6 @@ export default function BottomNav() {
                   {tab.to === '/downloads' && activeCount > 0 ? (
                     <span
                       className="glossy-btn absolute top-0.5 right-[22%] w-4 h-4 rounded-full text-reel-bg text-[9px] font-bold flex items-center justify-center"
-                      style={{ '--glossy-btn-base': '#E8A33D' }}
                     >
                       <span className="relative z-10">{activeCount}</span>
                     </span>

@@ -22,7 +22,7 @@ export default function LanguagePicker() {
               className={`flex flex-col items-start px-3.5 py-2.5 rounded-lg text-left transition active:scale-[0.98] ${
                 active
                   ? 'bg-reel-gold/10 ring-1 ring-reel-gold text-reel-ink'
-                  : 'bg-reel-surface ring-1 ring-white/5 text-reel-muted hover:text-reel-ink'
+                  : 'bg-reel-surface ring-1 ring-reel-ink/5 text-reel-muted hover:text-reel-ink'
               }`}
             >
               <span className="text-sm font-medium">{l.native}</span>

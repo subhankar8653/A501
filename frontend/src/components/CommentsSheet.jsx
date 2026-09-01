@@ -53,14 +53,14 @@ export default function CommentsSheet({ open, onClose, title, children }) {
           transform: `translateY(${dragY}px)`,
           transition: dragging.current ? 'none' : 'transform 220ms cubic-bezier(.2,.8,.2,1)',
         }}
-        className="relative w-full max-w-2xl bg-reel-bg rounded-t-2xl ring-1 ring-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] flex flex-col"
+        className="relative w-full max-w-2xl bg-reel-bg rounded-t-2xl ring-1 ring-reel-ink/10 shadow-[0_-8px_32px_rgba(0,0,0,0.7)] flex flex-col"
       >
         {/* Drag handle — same swipe-down-to-close affordance as YouTube's sheet */}
         <div className="pt-3 pb-2 shrink-0 cursor-grab active:cursor-grabbing">
-          <div className="w-10 h-1 rounded-full bg-white/15 mx-auto" />
+          <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto" />
         </div>
 
-        <div className="flex items-center justify-between px-4 pb-3 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between px-4 pb-3 border-b border-reel-ink/5 shrink-0">
           <p className="font-display font-semibold text-reel-ink">{title}</p>
           <button
             onClick={onClose}
