@@ -149,21 +149,27 @@ input, textarea {
    + hairline, which is legible in every mode. */
 .chrome-surface {
   background-color: color-mix(in srgb, var(--reel-surface) 94%, transparent);
-  /* FEATURE (user ask: "header aur footer mein bhi theme pattern hona
-     chahiye, sahi jagah blend hoke"): header/footer paint their OWN
-     background here — body's fixed wallpaper pattern can't show through
-     a 94%-opaque, blurred surface like this one, so the same pattern
-     image is layered on again directly, via the CSS vars ThemeContext
-     writes onto <html> (see applyPatternToDocument in ThemeContext.jsx).
-     This paints crisp (an element's own background-image isn't affected
-     by that same element's backdrop-filter, which only blurs what's
-     BEHIND it), so it stays a clean, subtle texture instead of a blur
-     smear, and sits UNDER the tint color above so header/footer text and
-     icons stay just as legible as before. 'none' (pattern off) falls
-     back to a no-op background-image, same as always. */
-  background-image: var(--reel-pattern-image, none);
-  background-repeat: repeat;
-  background-size: var(--reel-pattern-size, 56px) var(--reel-pattern-size, 56px);
+  /* PERF FIX (user report: "theme add karne ke baad app bahut zyada hang
+     karta hai"): this used to ALSO layer the pattern's repeating
+     background-image directly onto this surface (see the removed
+     comment below this line in git history) — but .chrome-surface is
+     Navbar + BottomNav, both `position: fixed`, both visible on literally
+     EVERY screen, and both already doing `backdrop-filter: blur(14px)` —
+     one of the single most expensive things a browser/WebView can render
+     continuously (many Android WebView versions fall back to a software
+     blur, and it has to re-blur whatever's scrolling underneath on every
+     frame since the header/footer never move). Stacking a second image
+     layer + color-mix tint UNDERNEATH that same continuous blur, on the
+     two most-rendered elements in the whole app, compounded into exactly
+     the kind of "hangs everywhere, all the time" the user reported. The
+     pattern still shows everywhere else (body's plain, non-blurred
+     background-image — cheap, GPU-tiled once, doesn't fight a live blur)
+     — just not literally inside the header/footer chip anymore. Tradeoff
+     made deliberately in favor of not hanging.
+     BUG FIX (user report: "header aur footer mein bhi theme pattern hona
+     chahiye, sahi jagah blend hoke") — this is the feature that motivated
+     the (now-reverted) background-image line above; noting it here so a
+     future revisit knows why it was tried and why it was rolled back. */
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
