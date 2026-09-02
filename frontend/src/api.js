@@ -467,6 +467,31 @@ export async function removeWatchProgress(mediaId, episodeId) {
   }
 }
 
+// ---------------------------------------------------------------------
+// FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch add
+// karo — Report ya Rating"): same shape as reactions above — GET fetches
+// the current state (with `mine` reflecting this user), POST submits.
+// ---------------------------------------------------------------------
+export async function getRating(type, id) {
+  const { backendUrl, token } = base()
+  return fetchJson(`${backendUrl}/stremio/${token}/rating/${type}/${id}.json`)
+}
+
+export async function rateTitle(type, id, stars) {
+  const { backendUrl, token } = base()
+  return postJson(`${backendUrl}/stremio/${token}/rating/${type}/${id}.json`, { stars })
+}
+
+export async function getReportStatus(type, id) {
+  const { backendUrl, token } = base()
+  return fetchJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`)
+}
+
+export async function submitReport(type, id, reason, note) {
+  const { backendUrl, token } = base()
+  return postJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`, { reason, note })
+}
+
 // FEATURE (user ask: "Related/Recommended videos"): koi naya backend
 // endpoint nahi chahiye — catalog endpoint already `genre=` filter support
 // karta hai (dekho stremio_routes.py get_catalog). Current title ke pehle
