@@ -7,9 +7,9 @@
 // wahi key add kar do.
 
 export const LANGUAGES = [
+  { code: 'en', label: 'English', native: 'English' },
   { code: 'hinglish', label: 'Hinglish', native: 'Hinglish' },
   { code: 'hi', label: 'Hindi', native: 'हिन्दी' },
-  { code: 'en', label: 'English', native: 'English' },
   { code: 'bn', label: 'Bangla', native: 'বাংলা' },
   { code: 'ur', label: 'Urdu', native: 'اردو' },
   { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
