@@ -68,15 +68,29 @@ function applyPatternToDocument(pattern, theme) {
   const uri = buildPatternDataUri(pattern, theme.colors.gold)
   if (!uri) {
     body.style.backgroundImage = ''
+    body.style.backgroundAttachment = ''
     root.style.setProperty('--reel-pattern-image', 'none')
     return
   }
   body.style.backgroundImage = `url("${uri}")`
   body.style.backgroundRepeat = 'repeat'
   body.style.backgroundSize = `${PATTERN_TILE_SIZE}px ${PATTERN_TILE_SIZE}px`
-  // 'fixed' keeps the wallpaper anchored to the viewport (doesn't drift
-  // while a page scrolls), matching how the theme's own bg color behaves.
-  body.style.backgroundAttachment = 'fixed'
+  // Explicitly reset to the default (not just "leave unset") so an earlier
+  // 'fixed' value from a stale cached build can never linger.
+  body.style.backgroundAttachment = 'scroll'
+  // PERF FIX (user ask: "poora app aur smooth/makkhan jaisa chalna
+  // chahiye"): this used to be 'fixed' so the wallpaper stayed anchored to
+  // the viewport instead of drifting with the page. But `background-
+  // attachment: fixed` is a well-known mobile WebView scroll-jank cause —
+  // most mobile browser engines can't GPU-composite a fixed background the
+  // way desktop Chrome can, so it forces a full-page repaint on EVERY
+  // scroll frame, on EVERY screen, for as long as any pattern is selected.
+  // For a small 56px repeating texture, plain 'scroll' (the default —
+  // moves with the page like any other background) is visually almost
+  // identical on a phone screen (you'd only ever notice the difference by
+  // scrolling several screens and comparing), but composites on the GPU
+  // like a normal background instead of repainting on the main thread —
+  // so it's the right trade for a subtle decorative layer.
 
   root.style.setProperty('--reel-pattern-image', `url("${uri}")`)
   root.style.setProperty('--reel-pattern-size', `${PATTERN_TILE_SIZE}px`)
