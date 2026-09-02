@@ -979,7 +979,9 @@ async def add_comment_api(token: str, media_type: str, id: str, payload: dict, t
     if len(text) > 500:
         raise HTTPException(status_code=400, detail="Comment too long")
     name = (payload.get("name") or "").strip() or "Someone"
-    entry = await db.add_comment(media_type, id, int(user_id), name, text)
+    title = payload.get("title") or ""
+    poster = payload.get("poster") or ""
+    entry = await db.add_comment(media_type, id, int(user_id), name, text, title, poster)
     return {"comment": entry}
 
 
@@ -990,6 +992,25 @@ async def delete_comment_api(token: str, media_type: str, id: str, ts: int, toke
         raise HTTPException(status_code=401, detail="No user on this token")
     ok = await db.delete_comment(media_type, id, int(user_id), ts)
     return {"deleted": ok}
+
+
+# PROFILE FEATURE (user ask: "My Comments — apne comments ki list,
+# edit/delete ka option"): reuses the same {media_type}/{id}/{ts} shape as
+# the delete route above, just PATCHes the text instead of removing it.
+@router.patch("/{token}/comments/{media_type}/{id}/{ts}")
+async def edit_comment_api(token: str, media_type: str, id: str, ts: int, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty comment")
+    if len(text) > 500:
+        raise HTTPException(status_code=400, detail="Comment too long")
+    ok = await db.edit_comment(media_type, id, int(user_id), ts, text)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"edited": True}
 
 
 # FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch add
@@ -1016,7 +1037,9 @@ async def rate_title_api(token: str, media_type: str, id: str, payload: dict, to
         raise HTTPException(status_code=400, detail="stars must be 1-5")
     if stars not in (1, 2, 3, 4, 5):
         raise HTTPException(status_code=400, detail="stars must be 1-5")
-    return await db.rate_title(media_type, id, int(user_id), stars)
+    title = payload.get("title") or ""
+    poster = payload.get("poster") or ""
+    return await db.rate_title(media_type, id, int(user_id), stars, title, poster)
 
 
 @router.get("/{token}/report/{media_type}/{id}.json")
@@ -1060,6 +1083,48 @@ async def submit_report_api(token: str, media_type: str, id: str, payload: dict,
     report = await db.add_report(media_type, id, int(user_id), reason, note, title, poster, season, episode)
     asyncio.create_task(notify_admins_new_report(report))
     return {"reported": True}
+
+
+# ========================================================================
+# PROFILE FEATURE (user ask: "profile section professional dikhna chahiye
+# — My Ratings, My Reports, My Comments, My Plan sab add karo"): four
+# small read-only "my stuff across every title" endpoints, one per
+# section on the new Profile page. Each reuses a db method added above
+# (get_user_ratings / get_user_comments / get_user_reports /
+# get_subscription_status) — no new collections, just new query shapes
+# over the existing ratings/comments/reports/users collections.
+# ========================================================================
+
+@router.get("/{token}/my/ratings.json")
+async def get_my_ratings_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    return {"ratings": await db.get_user_ratings(int(user_id))}
+
+
+@router.get("/{token}/my/comments.json")
+async def get_my_comments_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    return {"comments": await db.get_user_comments(int(user_id))}
+
+
+@router.get("/{token}/my/reports.json")
+async def get_my_reports_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    return {"reports": await db.get_user_reports(int(user_id))}
+
+
+@router.get("/{token}/my/subscription.json")
+async def get_my_subscription_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    return await db.get_subscription_status(int(user_id))
 
 
 @router.post("/{token}/progress.json")
