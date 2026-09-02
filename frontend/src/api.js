@@ -380,6 +380,23 @@ async function postJson(url, body) {
   }
 }
 
+async function patchJson(url, body) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20000)
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`Request failed (${res.status})`)
+    return await res.json()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 // ---------------------------------------------------------------------
 // FEATURE (user ask: "comments/likes/dislikes" — asli backend-stored,
 // device-specific localStorage nahi): compact per-title storage backend
@@ -402,14 +419,22 @@ export async function getComments(type, id) {
   return data.comments || []
 }
 
-export async function postComment(type, id, text) {
+export async function postComment(type, id, text, title, poster) {
   const { backendUrl, token } = base()
   const profile = getProfile()
   const data = await postJson(`${backendUrl}/stremio/${token}/comments/${type}/${id}.json`, {
     text,
     name: profile?.name || 'Someone',
+    title,
+    poster,
   })
   return data.comment
+}
+
+// PROFILE FEATURE (user ask: "My Comments — edit/delete ka option")
+export async function editComment(type, id, ts, text) {
+  const { backendUrl, token } = base()
+  return patchJson(`${backendUrl}/stremio/${token}/comments/${type}/${id}/${ts}`, { text })
 }
 
 export async function deleteComment(type, id, ts) {
@@ -477,9 +502,9 @@ export async function getRating(type, id) {
   return fetchJson(`${backendUrl}/stremio/${token}/rating/${type}/${id}.json`)
 }
 
-export async function rateTitle(type, id, stars) {
+export async function rateTitle(type, id, stars, title, poster) {
   const { backendUrl, token } = base()
-  return postJson(`${backendUrl}/stremio/${token}/rating/${type}/${id}.json`, { stars })
+  return postJson(`${backendUrl}/stremio/${token}/rating/${type}/${id}.json`, { stars, title, poster })
 }
 
 export async function getReportStatus(type, id) {
@@ -493,6 +518,36 @@ export async function getReportStatus(type, id) {
 export async function submitReport(type, id, reason, note, details = {}) {
   const { backendUrl, token } = base()
   return postJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`, { reason, note, ...details })
+}
+
+// ---------------------------------------------------------------------
+// PROFILE FEATURE (user ask: "profile section professional dikhna
+// chahiye — My Ratings, My Reports, My Comments, My Plan sab add karo"):
+// four small "my stuff across every title" reads, one per Profile.jsx
+// section. Each backed by a new db.get_user_* method — see
+// stremio_routes.py's /my/* routes and database.py.
+// ---------------------------------------------------------------------
+export async function getMyRatings() {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/my/ratings.json`)
+  return data.ratings || []
+}
+
+export async function getMyComments() {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/my/comments.json`)
+  return data.comments || []
+}
+
+export async function getMyReports() {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/my/reports.json`)
+  return data.reports || []
+}
+
+export async function getMySubscription() {
+  const { backendUrl, token } = base()
+  return fetchJson(`${backendUrl}/stremio/${token}/my/subscription.json`)
 }
 
 // FEATURE (user ask: "Related/Recommended videos"): koi naya backend
