@@ -6,12 +6,12 @@ import { LANGUAGES } from '../i18n/translations'
 // Telugu bhi ho"): ek simple tappable grid, current selection highlighted
 // gold ring se, tap karte hi turant poore app mein apply ho jaata hai
 // (localStorage mein bhi save hota hai — dekho api.js saveLanguage()).
-export default function LanguagePicker() {
+export default function LanguagePicker({ hideLabel }) {
   const { lang, changeLanguage, t } = useLanguage()
 
   return (
     <div>
-      <p className="text-xs font-medium text-reel-muted mb-2">{t('profile_language')}</p>
+      {hideLabel ? null : <p className="text-xs font-medium text-reel-muted mb-2">{t('profile_language')}</p>}
       <div className="grid grid-cols-2 gap-2">
         {LANGUAGES.map((l) => {
           const active = l.code === lang

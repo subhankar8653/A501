@@ -69,12 +69,17 @@ export function useLocalRating(type, id) {
     }
   }, [type, id])
 
-  async function rate(stars) {
+  async function rate(stars, details = {}) {
     // Optimistic — shows the tapped star immediately; average/count
     // correct themselves once the backend confirms.
     setRating((prev) => ({ ...prev, mine: stars }))
     try {
-      const confirmed = await rateTitle(type, id, stars)
+      // title/poster ride along so the rating doc can show up nicely in
+      // the Profile page's "My Ratings" list without a second fetch
+      // (dekho database.py rate_title + get_user_ratings). Passed in at
+      // call time (not hook init) since the caller may not have the
+      // title resolved yet when this hook first mounts.
+      const confirmed = await rateTitle(type, id, stars, details.title, details.poster)
       setRating(confirmed)
     } catch {
       /* leave the optimistic "mine" — a stale average is fine, a stuck

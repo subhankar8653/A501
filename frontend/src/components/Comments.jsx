@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getProfile, getComments, postComment, deleteComment } from '../api'
+import { getProfile, getComments, postComment, deleteComment, editComment } from '../api'
 import { useLanguage } from '../i18n/LanguageContext'
 
 function hueFor(name) {
@@ -24,13 +24,15 @@ function relTime(ts, t) {
 // getComments/postComment/deleteComment), taaki sab logon ko wahi ek comment
 // list dikhe. `type`/`id` woh hi hain jo Detail/Player already use karte
 // hain (movie/series + imdb-jaisa id).
-export default function Comments({ type, id, onCountChange }) {
+export default function Comments({ type, id, onCountChange, title, poster }) {
   const { t } = useLanguage()
   const profile = getProfile()
   const myUserId = profile?.userId
   const [comments, setComments] = useState(null) // null = loading
   const [text, setText] = useState('')
   const [posting, setPosting] = useState(false)
+  const [editingTs, setEditingTs] = useState(null)
+  const [editText, setEditText] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -56,7 +58,10 @@ export default function Comments({ type, id, onCountChange }) {
     if (!trimmed || posting) return
     setPosting(true)
     try {
-      const entry = await postComment(type, id, trimmed)
+      // title/poster ride along so this shows up nicely in the Profile
+      // page's "My Comments" list without a second metadata fetch (dekho
+      // database.py add_comment + get_user_comments).
+      const entry = await postComment(type, id, trimmed, title, poster)
       setComments((prev) => {
         const next = [entry, ...(prev || [])]
         onCountChange?.(next.length)
@@ -80,6 +85,25 @@ export default function Comments({ type, id, onCountChange }) {
       await deleteComment(type, id, ts)
     } catch {
       /* already optimistically removed — not worth re-showing on failure */
+    }
+  }
+
+  // PROFILE FEATURE (user ask: "My Comments — edit/delete ka option"):
+  // inline edit, same optimistic-then-confirm pattern as post()/remove().
+  function startEdit(c) {
+    setEditingTs(c.ts)
+    setEditText(c.t)
+  }
+
+  async function saveEdit(ts) {
+    const trimmed = editText.trim()
+    if (!trimmed) return
+    setComments((prev) => (prev || []).map((c) => (c.ts === ts ? { ...c, t: trimmed } : c)))
+    setEditingTs(null)
+    try {
+      await editComment(type, id, ts, trimmed)
+    } catch {
+      /* already optimistically applied */
     }
   }
 
@@ -140,15 +164,43 @@ export default function Comments({ type, id, onCountChange }) {
               </div>
               <div className="flex-1">
                 <p className="text-xs font-semibold text-reel-ink">{c.n}</p>
-                <p className="text-sm text-reel-ink/90 break-words">{c.t}</p>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-[11px] text-reel-muted">{relTime(c.ts, t)}</span>
-                  {myUserId && c.u === myUserId ? (
-                    <button onClick={() => remove(c.ts)} className="text-[11px] text-reel-muted hover:text-reel-rust">
-                      {t('remove')}
-                    </button>
-                  ) : null}
-                </div>
+                {editingTs === c.ts ? (
+                  <div className="mt-1">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={1}
+                      maxLength={500}
+                      autoFocus
+                      className="w-full bg-reel-surface2 rounded-lg px-3 py-2 text-sm text-reel-ink focus:outline-none focus:ring-1 focus:ring-reel-gold/60 resize-none"
+                    />
+                    <div className="flex gap-2 mt-1.5 justify-end">
+                      <button onClick={() => setEditingTs(null)} className="text-[11px] px-2.5 py-1 rounded text-reel-muted hover:text-reel-ink">
+                        {t('cancel')}
+                      </button>
+                      <button onClick={() => saveEdit(c.ts)} className="text-[11px] px-2.5 py-1 rounded bg-reel-gold text-reel-bg font-semibold">
+                        {t('comments_post')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-reel-ink/90 break-words">{c.t}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-[11px] text-reel-muted">{relTime(c.ts, t)}</span>
+                      {myUserId && c.u === myUserId ? (
+                        <>
+                          <button onClick={() => startEdit(c)} className="text-[11px] text-reel-muted hover:text-reel-ink">
+                            {t('edit') || 'Edit'}
+                          </button>
+                          <button onClick={() => remove(c.ts)} className="text-[11px] text-reel-muted hover:text-reel-rust">
+                            {t('remove')}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}
