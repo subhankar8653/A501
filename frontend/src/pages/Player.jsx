@@ -84,6 +84,31 @@ export default function Player() {
     })
   }
 
+  // FEATURE (user ask: "ek aur naya icon add karna hai ambient mode on/off
+  // ka"): the blurred-poster glow bleeding above/below the player already
+  // existed (see glowImage below) — this just makes it toggleable, same
+  // localStorage-persisted on/off pattern as autoplay above. Defaults on
+  // so existing behaviour doesn't change for anyone who never touches it.
+  const [ambientMode, setAmbientMode] = useState(() => {
+    try {
+      return localStorage.getItem('suhani-screen:ambient') !== 'off'
+    } catch {
+      return true
+    }
+  })
+
+  function toggleAmbient() {
+    setAmbientMode((a) => {
+      const next = !a
+      try {
+        localStorage.setItem('suhani-screen:ambient', next ? 'on' : 'off')
+      } catch {
+        // ignore storage failures
+      }
+      return next
+    })
+  }
+
   const { reactions, react } = useLocalReactions(type, id)
   // FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch
   // add karo — Report ya Rating"): star rating shares the same
@@ -557,7 +582,7 @@ export default function Player() {
               hi jagah top par sticky/fixed rehta hai jab neeche ka content
               (title, comments, Up Next) scroll hota hai. */}
           <div className="relative sticky top-0 z-30 bg-reel-bg">
-            {glowImage ? (
+            {glowImage && ambientMode ? (
               <>
                 <div
                   aria-hidden="true"
@@ -651,8 +676,12 @@ export default function Player() {
             </div>
           </div>
 
-          {/* Reactions / download / share / save row */}
-          <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
+          {/* Reactions / download / save / report / ambient row. Wrapped in
+              a relative div so the toast (download-queued messages etc,
+              see showToast) still has somewhere to render now that it's
+              not anchored to the (temporarily hidden) share button. */}
+          <div className="relative">
+            <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
             <button
               onClick={() => react('like')}
               aria-label="Like"
@@ -730,16 +759,10 @@ export default function Player() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22c4.97 0 9-4.03 9-9s-4.03-9-9-9-9 4.03-9 9 4.03 9 9 9z"/><path d="M12 8v5l3 2"/></svg>
               </button>
             ) : null}
-            <div className="relative shrink-0">
-              <button onClick={shareIt} aria-label="Share" className="p-2 rounded-full text-xs bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition" title={t('share')}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-              </button>
-              {toast ? (
-                <div className="animate-toast-in absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-reel-ink text-reel-bg font-semibold px-2.5 py-1 rounded-full z-10">
-                  {toast}
-                </div>
-              ) : null}
-            </div>
+            {/* Share button hidden for now (user ask: "share button ko
+                abhi ke liye gayab kar do") — shareIt/toast logic kept
+                as-is below (unused warnings aside) so it's a one-line
+                revert whenever it comes back. */}
             <button
               onClick={handleToggleSaved}
               aria-label={saved ? 'Remove from saved' : 'Save'}
@@ -757,6 +780,23 @@ export default function Player() {
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
             </button>
+            {/* Ambient mode on/off — toggles the blurred-poster glow above
+                the player (see glowImage/ambientMode near the top). */}
+            <button
+              onClick={toggleAmbient}
+              aria-label={ambientMode ? 'Turn off ambient mode' : 'Turn on ambient mode'}
+              aria-pressed={ambientMode}
+              className={`p-2 rounded-full text-xs shrink-0 active:scale-95 transition ${ambientMode ? 'bg-reel-gold text-reel-bg' : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'}`}
+              title={ambientMode ? 'Ambient mode: on' : 'Ambient mode: off'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </button>
+            </div>
+            {toast ? (
+              <div className="animate-toast-in absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] bg-reel-ink text-reel-bg font-semibold px-2.5 py-1 rounded-full z-10">
+                {toast}
+              </div>
+            ) : null}
           </div>
 
           {/* Rating + Report sheets — reuse CommentsSheet's generic
