@@ -2530,32 +2530,45 @@ class PlayerActivity : AppCompatActivity() {
      * case mein bhi crash nahi hota, bas glow static/dim reh jaata hai (safe fallback).
      */
     private fun sampleAmbientGlowColors() {
+        // BUG FIX (user report: "app hang kar raha hai, random/everywhere")
+        // — this sampler runs every 800ms for as long as the video is
+        // playing. It allocates a small Bitmap each tick and always
+        // recycled it — EXCEPT if any exception fired mid-processing
+        // (getPixel loops, surface resize mid-transition, etc.), in which
+        // case the bitmap was silently swallowed by the catch block below
+        // WITHOUT ever being recycled. Over a long playback session that's
+        // a slow, unpredictable native-memory leak — exactly the kind of
+        // thing that causes GC pressure/jank across the WHOLE app, not just
+        // this screen, appearing as random hangs anywhere. Fix: bitmap
+        // lifetime now lives in its own try/finally so it's ALWAYS
+        // recycled no matter what happens while reading its pixels.
+        var sample: android.graphics.Bitmap? = null
         try {
             val textureView = playerView.videoSurfaceView as? android.view.TextureView ?: return
             if (!textureView.isAvailable) return
-            val sample = textureView.getBitmap(32, 32) ?: return
+            sample = textureView.getBitmap(32, 32) ?: return
+            val bmp = sample
 
             var topR = 0L; var topG = 0L; var topB = 0L
             var botR = 0L; var botG = 0L; var botB = 0L
             var leftR = 0L; var leftG = 0L; var leftB = 0L
             var rightR = 0L; var rightG = 0L; var rightB = 0L
-            val w = sample.width
-            val h = sample.height
-            if (w == 0 || h == 0) { sample.recycle(); return }
+            val w = bmp.width
+            val h = bmp.height
+            if (w == 0 || h == 0) return
 
             for (x in 0 until w) {
-                val pTop = sample.getPixel(x, 0)
+                val pTop = bmp.getPixel(x, 0)
                 topR += android.graphics.Color.red(pTop); topG += android.graphics.Color.green(pTop); topB += android.graphics.Color.blue(pTop)
-                val pBot = sample.getPixel(x, h - 1)
+                val pBot = bmp.getPixel(x, h - 1)
                 botR += android.graphics.Color.red(pBot); botG += android.graphics.Color.green(pBot); botB += android.graphics.Color.blue(pBot)
             }
             for (y in 0 until h) {
-                val pLeft = sample.getPixel(0, y)
+                val pLeft = bmp.getPixel(0, y)
                 leftR += android.graphics.Color.red(pLeft); leftG += android.graphics.Color.green(pLeft); leftB += android.graphics.Color.blue(pLeft)
-                val pRight = sample.getPixel(w - 1, y)
+                val pRight = bmp.getPixel(w - 1, y)
                 rightR += android.graphics.Color.red(pRight); rightG += android.graphics.Color.green(pRight); rightB += android.graphics.Color.blue(pRight)
             }
-            sample.recycle()
 
             fun avgColor(r: Long, g: Long, b: Long, n: Int) = android.graphics.Color.rgb(
                 (r / n).toInt().coerceIn(0, 255),
@@ -2572,6 +2585,8 @@ class PlayerActivity : AppCompatActivity() {
         } catch (_: Exception) {
             // Kabhi kabhi surface abhi resize/transition ho raha hota hai — safe ignore,
             // agla sample 800ms baad phir try karega.
+        } finally {
+            sample?.recycle()
         }
     }
 
