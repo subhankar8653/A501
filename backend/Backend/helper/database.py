@@ -213,17 +213,21 @@ class Database:
     #----- Comments: { _id, comments: [{u,n,t,ts}, ...] } capped at 100 (oldest drop first)
     COMMENTS_CAP = 100
 
-    async def add_comment(self, media_type: str, media_id: str, user_id: int, name: str, text: str) -> dict:
+    async def add_comment(self, media_type: str, media_id: str, user_id: int, name: str, text: str, title: str = "", poster: str = "") -> dict:
         text = (text or "").strip()[:500]  # hard cap so one comment can't blow up the document
         if not text:
             raise ValueError("empty comment")
         key = self._media_key(media_type, media_id)
         entry = {"u": user_id, "n": (name or "")[:60], "t": text, "ts": int(datetime.now(timezone.utc).timestamp())}
-        await self.dbs["tracking"]["comments"].update_one(
-            {"_id": key},
-            {"$push": {"comments": {"$each": [entry], "$slice": -self.COMMENTS_CAP}}},
-            upsert=True,
-        )
+        update = {"$push": {"comments": {"$each": [entry], "$slice": -self.COMMENTS_CAP}}}
+        # PROFILE FEATURE (user ask: "My Comments — apne comments ki list,
+        # edit/delete ka option"): title/poster stashed once on the parent
+        # doc (shared by every commenter on this title, not per-comment) so
+        # a "my comments" list across ALL titles can render posters without
+        # a second metadata fetch per item.
+        if title or poster:
+            update["$set"] = {"title": (title or "")[:200], "poster": (poster or "")[:500]}
+        await self.dbs["tracking"]["comments"].update_one({"_id": key}, update, upsert=True)
         return entry
 
     async def get_comments(self, media_type: str, media_id: str) -> list:
@@ -240,6 +244,45 @@ class Database:
         )
         return res.modified_count > 0
 
+    #----- Edit one of MY OWN comments in place. Matched by (media_key, u, ts)
+    # so a user can only ever touch their own entry (positional $ operator
+    # requires the array filter to match uniquely, which u+ts already does).
+    async def edit_comment(self, media_type: str, media_id: str, user_id: int, ts: int, text: str) -> bool:
+        text = (text or "").strip()[:500]
+        if not text:
+            raise ValueError("empty comment")
+        key = self._media_key(media_type, media_id)
+        res = await self.dbs["tracking"]["comments"].update_one(
+            {"_id": key, "comments": {"$elemMatch": {"u": user_id, "ts": ts}}},
+            {"$set": {"comments.$.t": text, "comments.$.edited": True}},
+        )
+        return res.modified_count > 0
+
+    #----- Profile "My Comments": every comment doc the user has an entry
+    # in, decoded back to {type, id, title, poster} + just their own lines
+    # from that title's comment list (a popular title's doc might have 100
+    # other people's comments — we only want theirs).
+    async def get_user_comments(self, user_id: int, limit: int = 100) -> list:
+        cursor = self.dbs["tracking"]["comments"].find(
+            {"comments.u": user_id}
+        ).sort("_id", ASCENDING).limit(500)  # generous pre-filter cap; trimmed to `limit` after flattening below
+        out = []
+        async for doc in cursor:
+            media_type, _, media_id = doc["_id"].partition(":")
+            for c in doc.get("comments") or []:
+                if c.get("u") == user_id:
+                    out.append({
+                        "media_type": media_type,
+                        "media_id": media_id,
+                        "title": doc.get("title") or "",
+                        "poster": doc.get("poster") or "",
+                        "text": c.get("t", ""),
+                        "ts": c.get("ts", 0),
+                        "edited": bool(c.get("edited")),
+                    })
+        out.sort(key=lambda c: c["ts"], reverse=True)
+        return out[:limit]
+
     # ------------------------------------------------------------------
     # FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch
     # add karo — Report ya Rating"): star-rating ratings collection mein
@@ -251,17 +294,21 @@ class Database:
     # alag chhota document hai (koi compaction ki zaroorat nahi).
     # ------------------------------------------------------------------
 
-    #----- Ratings: { _id, votes: {user_id_str: stars(1-5)} }
-    async def rate_title(self, media_type: str, media_id: str, user_id: int, stars: int) -> dict:
+    #----- Ratings: { _id, votes: {user_id_str: stars(1-5)}, title, poster }
+    async def rate_title(self, media_type: str, media_id: str, user_id: int, stars: int, title: str = "", poster: str = "") -> dict:
         if stars not in (1, 2, 3, 4, 5):
             raise ValueError("stars must be 1-5")
         key = self._media_key(media_type, media_id)
         col = self.dbs["tracking"]["ratings"]
-        await col.update_one(
-            {"_id": key},
-            {"$set": {f"votes.{user_id}": stars}},
-            upsert=True,
-        )
+        update = {"$set": {f"votes.{user_id}": stars}}
+        # PROFILE FEATURE (user ask: "My Ratings — jitni titles rate ki hain
+        # unki list, star rating ke saath"): title/poster stashed once per
+        # title (same idea as comments above) so a cross-title "my ratings"
+        # list can render without a second metadata round-trip.
+        if title or poster:
+            update["$set"]["title"] = (title or "")[:200]
+            update["$set"]["poster"] = (poster or "")[:500]
+        await col.update_one({"_id": key}, update, upsert=True)
         doc = await col.find_one({"_id": key})
         votes = (doc.get("votes") or {}) if doc else {}
         values = list(votes.values())
@@ -278,6 +325,28 @@ class Database:
         average = round(sum(values) / count, 1) if count else 0
         mine = votes.get(str(user_id)) if user_id is not None else None
         return {"average": average, "count": count, "mine": mine}
+
+    #----- Profile "My Ratings": every title doc where this user has a vote.
+    async def get_user_ratings(self, user_id: int, limit: int = 100) -> list:
+        field = f"votes.{user_id}"
+        cursor = self.dbs["tracking"]["ratings"].find({field: {"$exists": True}}).limit(limit)
+        out = []
+        async for doc in cursor:
+            media_type, _, media_id = doc["_id"].partition(":")
+            votes = doc.get("votes") or {}
+            values = list(votes.values())
+            count = len(values)
+            average = round(sum(values) / count, 1) if count else 0
+            out.append({
+                "media_type": media_type,
+                "media_id": media_id,
+                "title": doc.get("title") or "",
+                "poster": doc.get("poster") or "",
+                "mine": votes.get(str(user_id)),
+                "average": average,
+                "count": count,
+            })
+        return out
 
     #----- Reports: one small document per report, for admin review later.
     REPORT_REASONS = ("audio", "subtitle", "broken", "quality", "other")
@@ -336,6 +405,13 @@ class Database:
         except Exception:
             return None
         return await self.dbs["tracking"]["reports"].find_one({"_id": oid})
+
+    #----- Profile "My Reports": status (open/resolved) of everything this
+    # user has personally reported, newest first.
+    async def get_user_reports(self, user_id: int, limit: int = 100) -> list:
+        cursor = self.dbs["tracking"]["reports"].find({"user_id": user_id}).sort("ts", DESCENDING).limit(limit)
+        reports = await cursor.to_list(None)
+        return [convert_objectid_to_str(r) for r in reports]
 
     #----- Record which admin chat/message a report was forwarded to, so the
     # "done" button can later edit every copy and know who to notify.
@@ -503,6 +579,26 @@ class Database:
     #-----
     async def get_user(self, user_id: int) -> Optional[dict]:
         return await self.dbs["tracking"]["users"].find_one({"_id": user_id})
+
+    #----- Profile "My Plan" card: active/expiry/days-left in one call, plus
+    # whether subscriptions are even turned on for this deployment (so the
+    # frontend can hide the whole section on owner-only/no-subscription
+    # setups instead of showing a permanently-inactive plan card).
+    async def get_subscription_status(self, user_id: int) -> dict:
+        enabled = SettingsManager.current().subscription
+        if not enabled:
+            return {"enabled": False, "active": False, "expiry": None, "days_left": None}
+        user = await self.get_user(user_id)
+        now = datetime.utcnow()
+        active = self.is_subscription_active(user, now)
+        expiry = user.get("subscription_expiry") if user else None
+        days_left = max(0, (expiry - now).days) if (active and expiry) else None
+        return {
+            "enabled": True,
+            "active": active,
+            "expiry": expiry.isoformat() if expiry else None,
+            "days_left": days_left,
+        }
 
     #----- Whether a user doc represents a currently-active subscription
     @staticmethod
