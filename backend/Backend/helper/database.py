@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import motor.motor_asyncio
 from bson import ObjectId
 from pydantic import ValidationError
-from pymongo import ASCENDING, DESCENDING
+from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from Backend.config import Telegram
 from Backend.helper.encrypt import decode_string, encode_string
@@ -282,7 +282,27 @@ class Database:
     #----- Reports: one small document per report, for admin review later.
     REPORT_REASONS = ("audio", "subtitle", "broken", "quality", "other")
 
-    async def add_report(self, media_type: str, media_id: str, user_id: int, reason: str, note: str = "") -> dict:
+    # FEATURE (user ask: "report Telegram pe bot ke through owner ke pass
+    # jaana chahiye, video details ke sath, aur ek 'done' button jisse
+    # owner fix hone par user ko notify kar sake"): the report document now
+    # also carries the media title/poster/season/episode the frontend
+    # already has in hand (cheaper than re-fetching metadata backend-side)
+    # plus a status + the list of admin chat/message ids the report was
+    # forwarded to, so the "done" callback can update every admin's copy
+    # and DM the original reporter — same shape as pending_payment's
+    # admin_messages in subscription.py.
+    async def add_report(
+        self,
+        media_type: str,
+        media_id: str,
+        user_id: int,
+        reason: str,
+        note: str = "",
+        title: str = "",
+        poster: str = "",
+        season: Optional[int] = None,
+        episode: Optional[int] = None,
+    ) -> dict:
         if reason not in self.REPORT_REASONS:
             raise ValueError("invalid reason")
         key = self._media_key(media_type, media_id)
@@ -293,15 +313,55 @@ class Database:
             "user_id": user_id,
             "reason": reason,
             "note": (note or "").strip()[:300],
+            "title": (title or "").strip()[:200],
+            "poster": (poster or "").strip(),
+            "season": season,
+            "episode": episode,
+            "status": "open",
+            "admin_messages": [],
             "ts": int(datetime.now(timezone.utc).timestamp()),
         }
-        await self.dbs["tracking"]["reports"].insert_one(entry)
-        return {"reported": True}
+        result = await self.dbs["tracking"]["reports"].insert_one(entry)
+        entry["_id"] = result.inserted_id
+        return entry
 
     async def has_reported(self, media_type: str, media_id: str, user_id: int) -> bool:
         key = self._media_key(media_type, media_id)
         doc = await self.dbs["tracking"]["reports"].find_one({"media_key": key, "user_id": user_id})
         return doc is not None
+
+    async def get_report(self, report_id: str) -> Optional[dict]:
+        try:
+            oid = ObjectId(report_id)
+        except Exception:
+            return None
+        return await self.dbs["tracking"]["reports"].find_one({"_id": oid})
+
+    #----- Record which admin chat/message a report was forwarded to, so the
+    # "done" button can later edit every copy and know who to notify.
+    async def set_report_admin_messages(self, report_id, admin_messages: list) -> None:
+        try:
+            oid = report_id if isinstance(report_id, ObjectId) else ObjectId(report_id)
+        except Exception:
+            return
+        await self.dbs["tracking"]["reports"].update_one(
+            {"_id": oid},
+            {"$set": {"admin_messages": admin_messages}},
+        )
+
+    #----- Owner tapped "✅ Mark as Done": flips status once (atomic, so two
+    # admins tapping at the same time can't both "win") and returns the full
+    # report doc for building the admin caption + the user DM.
+    async def resolve_report(self, report_id: str) -> Optional[dict]:
+        try:
+            oid = ObjectId(report_id)
+        except Exception:
+            return None
+        return await self.dbs["tracking"]["reports"].find_one_and_update(
+            {"_id": oid, "status": {"$ne": "resolved"}},
+            {"$set": {"status": "resolved", "resolved_at": int(datetime.now(timezone.utc).timestamp())}},
+            return_document=ReturnDocument.AFTER,
+        )
 
     # ------------------------------------------------------------------
     # FEATURE (user ask: watch history / "Continue Watching"): ek document
