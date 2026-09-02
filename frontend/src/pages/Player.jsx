@@ -636,6 +636,7 @@ export default function Player() {
                   qualities={qualities}
                   activeQuality={activeQualityObj}
                   onQualityChange={(q) => switchQuality(q)}
+                  ambientEnabled={ambientMode}
                   startAt={resumeAt.current}
                   onProgressTick={(t, dur) => {
                     resumeAt.current = t
