@@ -3,8 +3,11 @@ import { Navigate } from 'react-router-dom'
 import {
   getManifest,
   groupCatalogsByTab,
-  loadTabByLanguage,
   loadNewToYou,
+  createTabLoadState,
+  loadTabPage,
+  INITIAL_PAGES_PER_CATALOG,
+  LOAD_MORE_PAGES_PER_CATALOG,
   HOME_TABS,
   loadHomeCache,
   saveHomeCache,
@@ -58,6 +61,18 @@ function HomeContent({ t }) {
   const [active, setActive] = useState('all')
   const [groupsByTab, setGroupsByTab] = useState(cacheRef.current?.groupsByTab || {})
   const [loadingTab, setLoadingTab] = useState(false)
+  // PERF FIX (user report: "All" tab hang on open — too much loaded at
+  // once): each language-grouped tab now loads in small incremental
+  // batches instead of everything at once. `tabExhausted` tracks whether
+  // a tab has nothing more to load (so the scroll-loader can stop
+  // trying); `loadingMore` drives the small spinner at the bottom of the
+  // list while a scroll-triggered batch is in flight. `loadStatesRef`
+  // holds each tab's own fetch-progress tracker (see createTabLoadState
+  // in api.js) — a ref because it's bookkeeping the scroll-loader reads
+  // and mutates, not something that should trigger a re-render itself.
+  const [tabExhausted, setTabExhausted] = useState({})
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadStatesRef = useRef({})
   const [error, setError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
   // Only ever shown for a manual pull-to-refresh — the automatic
@@ -121,32 +136,57 @@ function HomeContent({ t }) {
   //    silent background fetch replaces it once done (this is also what
   //    picks up brand-new content someone just added on the server,
   //    without the user having to do anything).
-  // "New to You" is sorted by upload recency instead of grouped by
-  // language, so it gets its own loader — everything else keeps working
-  // exactly as before.
-  const loadActiveTab = active === 'new' ? loadNewToYou : loadTabByLanguage
-
+  // "New to You" is sorted by upload recency (already capped at 60 items
+  // total, so it doesn't need incremental loading) — everything else is
+  // grouped by language and now loads incrementally via loadTabPage(),
+  // starting from a fresh loadState each time this effect (re)runs. A
+  // fresh start on every background refresh is intentional: it keeps
+  // that first paint light, and any extra depth the user had scrolled to
+  // gets rebuilt on demand as they scroll again.
   useEffect(() => {
     if (!tabCatalogs) return
     const hasCache = !!groupsByTab[active]
-
     let cancelled = false
+
+    if (active === 'new') {
+      const apply = (groups) => {
+        if (!cancelled) setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      }
+      if (hasCache) {
+        loadNewToYou(tabCatalogs[active]).then(apply).catch(() => {})
+      } else {
+        setLoadingTab(true)
+        loadNewToYou(tabCatalogs[active])
+          .then(apply)
+          .finally(() => {
+            if (!cancelled) setLoadingTab(false)
+          })
+      }
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const loadState = createTabLoadState()
+    loadStatesRef.current[active] = loadState
+    const run = () => loadTabPage(tabCatalogs[active], loadState, INITIAL_PAGES_PER_CATALOG)
+    const apply = ({ groups, exhausted }) => {
+      if (cancelled) return
+      setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
+    }
+
     if (hasCache) {
-      loadActiveTab(tabCatalogs[active])
-        .then((groups) => {
-          if (!cancelled) setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
-        })
+      run()
+        .then(apply)
         .catch(() => {
           // keep showing the cached groups — a failed silent refresh
           // shouldn't disturb what's already on screen
         })
     } else {
       setLoadingTab(true)
-      loadActiveTab(tabCatalogs[active])
-        .then((groups) => {
-          if (cancelled) return
-          setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
-        })
+      run()
+        .then(apply)
         .finally(() => {
           if (!cancelled) setLoadingTab(false)
         })
@@ -155,6 +195,49 @@ function HomeContent({ t }) {
       cancelled = true
     }
   }, [active, tabCatalogs])
+
+  // Scroll-triggered "load more" for the active language-grouped tab —
+  // pulls the next small batch of pages per catalog and merges it into
+  // whatever's already on screen (see the IntersectionObserver sentinel
+  // near the bottom of the list below).
+  async function loadMoreActiveTab() {
+    if (active === 'new') return
+    const loadState = loadStatesRef.current[active]
+    if (!loadState || loadingMore || tabExhausted[active]) return
+    setLoadingMore(true)
+    try {
+      const { groups, exhausted } = await loadTabPage(
+        tabCatalogs[active],
+        loadState,
+        LOAD_MORE_PAGES_PER_CATALOG
+      )
+      setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
+    } catch {
+      // a failed batch shouldn't break scrolling — the next scroll near
+      // the bottom will just try again
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  // Sentinel div near the bottom of the list — once it's on/near screen,
+  // load the next batch. rootMargin gives it a head start so more content
+  // is usually ready just before the user actually reaches the bottom.
+  const sentinelRef = useRef(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMoreActiveTab()
+      },
+      { rootMargin: '600px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, tabCatalogs, groupsByTab, tabExhausted, loadingMore])
 
   // Manual pull-to-refresh: re-fetches the manifest + the active tab and
   // overwrites whatever was cached for them. Nothing else is touched, so
@@ -165,8 +248,20 @@ function HomeContent({ t }) {
       const manifest = await getManifest()
       const nextTabCatalogs = groupCatalogsByTab(manifest.catalogs)
       setTabCatalogs(nextTabCatalogs)
-      const groups = await loadActiveTab(nextTabCatalogs[active])
-      setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      if (active === 'new') {
+        const groups = await loadNewToYou(nextTabCatalogs[active])
+        setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+      } else {
+        const loadState = createTabLoadState()
+        loadStatesRef.current[active] = loadState
+        const { groups, exhausted } = await loadTabPage(
+          nextTabCatalogs[active],
+          loadState,
+          INITIAL_PAGES_PER_CATALOG
+        )
+        setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
+        setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
+      }
     } catch {
       // keep whatever was already on screen — a failed refresh shouldn't blank it
     } finally {
@@ -295,9 +390,23 @@ function HomeContent({ t }) {
           ) : loadingTab && !groups ? (
             <Rail title={t('loading')} loading items={[]} />
           ) : groups && groups.length > 0 ? (
-            groups.map(({ language, items }) => (
-              <LanguageRail key={language} language={language} items={items} />
-            ))
+            <>
+              {groups.map(({ language, items }) => (
+                <LanguageRail key={language} language={language} items={items} />
+              ))}
+              {/* Infinite-scroll trigger for this tab — invisible, just marks
+                  "getting close to the bottom" so the next small batch loads
+                  before the user actually hits the end of the list. Hidden
+                  once the tab has nothing left to load. */}
+              {active !== 'new' && !tabExhausted[active] && (
+                <div ref={sentinelRef} className="h-1" />
+              )}
+              {loadingMore && (
+                <div className="flex justify-center py-4">
+                  <div className="w-5 h-5 rounded-full border-2 border-reel-gold border-t-transparent animate-spin" />
+                </div>
+              )}
+            </>
           ) : (
             <p className="text-center text-reel-muted mt-10 px-4">
               {t('home_no_content')}
