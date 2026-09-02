@@ -77,22 +77,20 @@
          sirf pehli baar ka load hi is text ko dikhata hai (Kotlin side:
          inlineIsInitialLoadForCurrentItem) — mid-playback rebuffering mein
          sirf upar wala spinner dikhta hai, yeh nahi.
-         BUG FIX (user report: "footer/position pehle jaisa nahin, isse
-         beech mein lao, aur yellow circle hata do"): pehle 64dp neeche
-         rakha tha taaki upar wale 44dp spinner-chip se overlap na ho —
-         lekin itna zyada offset isse video ke visual center se kaafi neeche
-         dikha deta tha. Ab sirf utna hi gap (26dp — spinner ke bottom edge
-         ke turant baad) jitna zaroori hai taaki dono ek saath dikhein to
-         bhi ek tight, centered jodi jaisa lage, alag-thalag neeche latka
-         hua na lage. Background bhi ab bg_processing_chip hai (rounded
-         pill, no stroke) — bg_buffering_chip ka oval shape wide text par
-         stretched yellow-outline circle jaisa dikh raha tha. -->
+         BUG FIX (user report: "processing jo likha hai wahan hona chahiye
+         jahan pause/play button hota hai, prev/next ke beech mein"): pehle
+         yahan 26dp ka marginTop tha (bufferingIndicator chip se overlap na
+         ho isliye add kiya gaya tha), jo isse play button ki asli jagah se
+         neeche shift kar deta tha. inlineBufferingIndicator (upar) EXACT
+         isi FrameLayout ke plain `gravity="center"` se hi play/pause button
+         ki jagah par sahi baithta hai (uske apne comment ke mutabik) — ab
+         yeh bhi wahi plain center use karta hai, koi extra offset nahi, to
+         dono exactly ek hi jagah (play button ki spot) par align hote hain. -->
     <TextView
         android:id="@+id/inlineProcessingLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:layout_marginTop="26dp"
         android:paddingHorizontal="14dp"
         android:paddingVertical="6dp"
         android:background="@drawable/bg_processing_chip"
