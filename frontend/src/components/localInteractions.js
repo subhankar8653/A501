@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getReactions, toggleReaction } from '../api'
+import { getReactions, toggleReaction, getRating, rateTitle } from '../api'
 
 // FEATURE (user ask: "likes/dislikes real backend pe honi chahiye"): pehle
 // yeh purely localStorage-based tha (isi device ka apna private counter,
@@ -48,4 +48,39 @@ export function useLocalReactions(type, id) {
   }
 
   return { reactions, react }
+}
+
+// FEATURE (user ask: "Report ya Rating add karo"): 1-5 star rating, same
+// backend-shared pattern as reactions above (dekho api.js getRating/
+// rateTitle, aur backend database.py rate_title — ek document per title,
+// andar sirf {user_id: stars} map).
+export function useLocalRating(type, id) {
+  const [rating, setRating] = useState({ average: 0, count: 0, mine: null })
+
+  useEffect(() => {
+    let cancelled = false
+    getRating(type, id)
+      .then((r) => {
+        if (!cancelled) setRating(r)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [type, id])
+
+  async function rate(stars) {
+    // Optimistic — shows the tapped star immediately; average/count
+    // correct themselves once the backend confirms.
+    setRating((prev) => ({ ...prev, mine: stars }))
+    try {
+      const confirmed = await rateTitle(type, id, stars)
+      setRating(confirmed)
+    } catch {
+      /* leave the optimistic "mine" — a stale average is fine, a stuck
+         unrated star row would be worse */
+    }
+  }
+
+  return { rating, rate }
 }
