@@ -241,6 +241,69 @@ class Database:
         return res.modified_count > 0
 
     # ------------------------------------------------------------------
+    # FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch
+    # add karo — Report ya Rating"): star-rating ratings collection mein
+    # jaata hai (reactions jaisa hi compact pattern — ek document per
+    # title, andar sirf {user_id: stars} map, alag document per-vote
+    # nahi). Reports "reports" collection mein — yeh comments/reactions se
+    # alag hai kyunki inhe frontend ko wapas nahi dikhana (sirf admin ke
+    # liye), aur expected volume bhi bahut kam hai, isliye har report apna
+    # alag chhota document hai (koi compaction ki zaroorat nahi).
+    # ------------------------------------------------------------------
+
+    #----- Ratings: { _id, votes: {user_id_str: stars(1-5)} }
+    async def rate_title(self, media_type: str, media_id: str, user_id: int, stars: int) -> dict:
+        if stars not in (1, 2, 3, 4, 5):
+            raise ValueError("stars must be 1-5")
+        key = self._media_key(media_type, media_id)
+        col = self.dbs["tracking"]["ratings"]
+        await col.update_one(
+            {"_id": key},
+            {"$set": {f"votes.{user_id}": stars}},
+            upsert=True,
+        )
+        doc = await col.find_one({"_id": key})
+        votes = (doc.get("votes") or {}) if doc else {}
+        values = list(votes.values())
+        count = len(values)
+        average = round(sum(values) / count, 1) if count else 0
+        return {"average": average, "count": count, "mine": stars}
+
+    async def get_rating(self, media_type: str, media_id: str, user_id: Optional[int] = None) -> dict:
+        key = self._media_key(media_type, media_id)
+        doc = await self.dbs["tracking"]["ratings"].find_one({"_id": key})
+        votes = (doc.get("votes") or {}) if doc else {}
+        values = list(votes.values())
+        count = len(values)
+        average = round(sum(values) / count, 1) if count else 0
+        mine = votes.get(str(user_id)) if user_id is not None else None
+        return {"average": average, "count": count, "mine": mine}
+
+    #----- Reports: one small document per report, for admin review later.
+    REPORT_REASONS = ("audio", "subtitle", "broken", "quality", "other")
+
+    async def add_report(self, media_type: str, media_id: str, user_id: int, reason: str, note: str = "") -> dict:
+        if reason not in self.REPORT_REASONS:
+            raise ValueError("invalid reason")
+        key = self._media_key(media_type, media_id)
+        entry = {
+            "media_key": key,
+            "media_type": media_type,
+            "media_id": media_id,
+            "user_id": user_id,
+            "reason": reason,
+            "note": (note or "").strip()[:300],
+            "ts": int(datetime.now(timezone.utc).timestamp()),
+        }
+        await self.dbs["tracking"]["reports"].insert_one(entry)
+        return {"reported": True}
+
+    async def has_reported(self, media_type: str, media_id: str, user_id: int) -> bool:
+        key = self._media_key(media_type, media_id)
+        doc = await self.dbs["tracking"]["reports"].find_one({"media_key": key, "user_id": user_id})
+        return doc is not None
+
+    # ------------------------------------------------------------------
     # FEATURE (user ask: watch history / "Continue Watching"): ek document
     # per user, andar ek object per title jismein resume-position hoti hai.
     # Purani entries khud-ba-khud trim hoti hain (max 40) taaki yeh bhi
