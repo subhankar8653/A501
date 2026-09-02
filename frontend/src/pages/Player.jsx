@@ -114,7 +114,15 @@ export default function Player() {
   async function handleReportSubmit(reason, note) {
     setReportSubmitting(true)
     try {
-      await submitReport(type, id, reason, note)
+      // Same title/poster/season/episode the download sheet uses (see
+      // downloadEpisode below) — reused here so the report Telegram
+      // message can show the owner exactly what's being reported.
+      await submitReport(type, id, reason, note, {
+        title: isSeries ? (allEpisodes.find((e) => e.id === id)?.title || displayTitle) : titleInfo.name,
+        poster: titleInfo.poster,
+        season: isSeries ? currentSeason : undefined,
+        episode: isSeries ? currentEpisode : undefined,
+      })
       setReportSubmitted(true)
     } catch {
       // leave the form open so the user can retry — a stuck "submitting"
