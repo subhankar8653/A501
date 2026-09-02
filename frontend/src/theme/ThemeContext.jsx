@@ -52,24 +52,18 @@ function applyThemeToDocument(theme) {
   root.style.colorScheme = theme.isDark ? 'dark' : 'light'
 }
 
-// Paints the chosen pattern shape onto `body`'s background-image (for the
-// main scroll area), AND exposes it as CSS custom properties on <html> so
-// `.chrome-surface` (header + bottom nav — see index.css) can layer the
-// SAME pattern onto itself too. Needed because header/footer are their own
-// opaque-ish, blurred surfaces sitting on top of body — without this they'd
-// just hide body's pattern layer entirely, leaving header/footer bare while
-// everywhere else showed the shape (user feedback: "header aur footer mein
-// bhi kuchh hota to achcha lagta"). Both tinted with the CURRENT theme's
-// gold/accent color, so switching theme mode re-colors the pattern
-// everywhere at once — same gold value every other themed element uses.
+// Paints the chosen pattern shape onto `body`'s background-image — the
+// main scroll area only (NOT header/footer; see the .chrome-surface
+// comment in index.css for why that combination was rolled back for
+// performance). Tinted with the CURRENT theme's gold/accent color, so
+// switching theme mode re-colors the pattern too — same gold value every
+// other themed element uses.
 function applyPatternToDocument(pattern, theme) {
   const body = document.body
-  const root = document.documentElement
   const uri = buildPatternDataUri(pattern, theme.colors.gold)
   if (!uri) {
     body.style.backgroundImage = ''
     body.style.backgroundAttachment = ''
-    root.style.setProperty('--reel-pattern-image', 'none')
     return
   }
   body.style.backgroundImage = `url("${uri}")`
@@ -91,9 +85,6 @@ function applyPatternToDocument(pattern, theme) {
   // scrolling several screens and comparing), but composites on the GPU
   // like a normal background instead of repainting on the main thread —
   // so it's the right trade for a subtle decorative layer.
-
-  root.style.setProperty('--reel-pattern-image', `url("${uri}")`)
-  root.style.setProperty('--reel-pattern-size', `${PATTERN_TILE_SIZE}px`)
 }
 
 export function ThemeModeProvider({ children }) {
