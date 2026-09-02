@@ -524,6 +524,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineTimeBarRef: DefaultTimeBar? = null
     private var inlineBufferingIndicatorRef: View? = null
+    // FEATURE (user follow-up: "sabhi icon pe kaam karna chahiye" — the
+    // first pass only retinted the play/pause hero button, quality text and
+    // progress bar; every OTHER icon (chevron/pip-shrink, audio track,
+    // subtitle, settings gear, fullscreen, pip, aspect-ratio) was left the
+    // original neutral off-white on purpose, reasoning that icons overlaid
+    // directly on video should stay legible against any video content
+    // regardless of theme. Per this explicit request, ALL of them now
+    // follow the theme color too — these are the extra refs needed for that.
+    private var inlinePipChevronRef: ImageView? = null
+    private var inlineAudioTrackButtonRef: ImageView? = null
+    private var inlineSubtitleButtonRef: ImageView? = null
+    private var inlineSettingsButtonRef: ImageView? = null
+    private var inlineFullscreenButtonRef: ImageView? = null
+    private var inlinePipButtonRef: ImageView? = null
+    private var inlineAspectButtonRef: ImageView? = null
     // FEATURE (user ask, with screenshot: "video player mein play button/
     // ring, '480p' quality text, aur progress bar ka color hamesha yellow/
     // gold hi rehta hai, jabki web side pe maine ek alag (jaise blue) theme
@@ -1343,6 +1358,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineTimeBarRef = timeBar
             inlineBufferingIndicatorRef = bufferingIndicator
             inlineProcessingLabelRef = processingLabel
+            inlinePipChevronRef = pipChevron
+            inlineAudioTrackButtonRef = audioTrackButton
+            inlineSubtitleButtonRef = subtitleButton
+            inlineSettingsButtonRef = settingsButton
+            inlineFullscreenButtonRef = fullscreenButton
+            inlinePipButtonRef = pipButton
+            inlineAspectButtonRef = aspectButton
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
@@ -1944,6 +1966,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
 
         inlineQualityButtonRef?.setTextColor(color)
+
+        // All the OTHER icons (chevron, audio-track, subtitle, settings,
+        // fullscreen, pip, aspect) — see the field-comment above for why
+        // these are now included too. imageTintList is the right approach
+        // for plain ImageViews (unlike the hero play button, these don't
+        // have a separate ring/background needing a rebuilt drawable).
+        val tintList = android.content.res.ColorStateList.valueOf(color)
+        inlinePrevButtonRef?.imageTintList = tintList
+        inlineNextButtonRef?.imageTintList = tintList
+        inlinePipChevronRef?.imageTintList = tintList
+        inlineAudioTrackButtonRef?.imageTintList = tintList
+        inlineSubtitleButtonRef?.imageTintList = tintList
+        inlineSettingsButtonRef?.imageTintList = tintList
+        inlineFullscreenButtonRef?.imageTintList = tintList
+        inlinePipButtonRef?.imageTintList = tintList
+        inlineAspectButtonRef?.imageTintList = tintList
 
         inlineTimeBarRef?.let { bar ->
             bar.setPlayedColor(color)
@@ -2969,6 +3007,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineTimeBarRef = null
                 inlineBufferingIndicatorRef = null
                 inlineProcessingLabelRef = null
+                inlinePipChevronRef = null
+                inlineAudioTrackButtonRef = null
+                inlineSubtitleButtonRef = null
+                inlineSettingsButtonRef = null
+                inlineFullscreenButtonRef = null
+                inlinePipButtonRef = null
+                inlineAspectButtonRef = null
                 inlineUri = ""
                 inlineTitle = ""
                 inlineQualitiesJson = "[]"
