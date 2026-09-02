@@ -248,6 +248,109 @@ export async function getCatalogAllPages(type, id, extra = {}) {
   return all
 }
 
+// ---------------------------------------------------------------------
+// PERF FIX (user report: "All" tab par app open hote hi itna sara content
+// load karta hai ki hang ho jata hai): loadTabByLanguage() pehle "All" tab
+// ke liye EVERY catalog ka EVERY page (up to 40 pages/catalog, ~600
+// items/catalog) ek saath fetch + render kar deta tha — "All" mein
+// anime+movies+series+kdrama+shortdrama ke saare catalogs mile hue hote
+// hain, to yeh easily hazaaro items ek saath fetch+DOM mein daal deta,
+// jisse app open karte hi hang/freeze ho jata (especially "All" pe, jahan
+// default tab hi "all" hai).
+//
+// Fix: ab sirf thodi si depth (INITIAL_PAGES_PER_CATALOG) fetch hoti hai
+// pehle load pe — fast, halka open. Baaki content tab load hota hai jab
+// user neeche scroll karega (infinite scroll — dekho Home.jsx ka
+// IntersectionObserver sentinel), LOAD_MORE_PAGES_PER_CATALOG jitni depth
+// har baar add karte hue. loadState ek catalog-by-catalog progress tracker
+// hai (kitne pages ho chuke, kaunsa catalog khatam ho gaya) taaki "load
+// more" sirf NAYE pages fetch kare, purane dobara nahi.
+// ---------------------------------------------------------------------
+export const INITIAL_PAGES_PER_CATALOG = 2 // ~30 items/catalog on first paint
+export const LOAD_MORE_PAGES_PER_CATALOG = 2 // +~30 items/catalog per scroll-triggered load
+
+async function fetchCatalogPageRange(cat, fromPage, toPage) {
+  const pages = []
+  for (let p = fromPage; p < toPage && p < MAX_CATALOG_PAGES; p++) pages.push(p)
+  if (pages.length === 0) return { items: [], exhausted: true }
+
+  const results = await Promise.all(
+    pages.map((page) => {
+      const skip = page * CATALOG_PAGE_SIZE
+      return getCatalog(cat.type, cat.id, { skip: skip || undefined }).catch(() => null)
+    })
+  )
+
+  const items = []
+  let exhausted = toPage >= MAX_CATALOG_PAGES
+  for (const metas of results) {
+    if (!metas || metas.length === 0) {
+      exhausted = true
+      break
+    }
+    items.push(...metas)
+    if (metas.length < CATALOG_PAGE_SIZE) {
+      exhausted = true
+      break // yehi is catalog ka aakhri page tha
+    }
+  }
+  return { items, exhausted }
+}
+
+function groupItemsByLanguage(mergedMap) {
+  const byLanguage = new Map()
+  for (const item of mergedMap.values()) {
+    const languages = item.languages && item.languages.length ? item.languages : ['Other']
+    for (const lang of languages) {
+      if (!byLanguage.has(lang)) byLanguage.set(lang, [])
+      byLanguage.get(lang).push(item)
+    }
+  }
+  return [...byLanguage.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([language, items]) => ({ language, items }))
+}
+
+// Fresh progress-tracker for one tab's incremental load. Create one per
+// "start loading this tab from scratch" (initial load, background
+// refresh, or pull-to-refresh) and keep passing the SAME object into
+// loadTabPage() as the user scrolls, so it knows what's already fetched.
+export function createTabLoadState() {
+  return { merged: new Map(), catalogState: new Map() }
+}
+
+// Fetches `pagesPerCatalog` MORE pages for every catalog in this tab
+// (skipping catalogs already fully exhausted), merges + de-dupes into
+// loadState, and returns the same {language, items} grouped shape
+// loadTabByLanguage() used to return in one big shot — just built up
+// gradually instead. `exhausted` tells the caller whether every catalog
+// in this tab has now been fully fetched (no more "load more" needed).
+export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog) {
+  await Promise.all(
+    (catalogsForTab || []).map(async (cat) => {
+      const prev = loadState.catalogState.get(cat.id) || { pagesLoaded: 0, exhausted: false }
+      if (prev.exhausted) return
+      const toPage = prev.pagesLoaded + pagesPerCatalog
+      try {
+        const { items, exhausted } = await fetchCatalogPageRange(cat, prev.pagesLoaded, toPage)
+        for (const item of items) {
+          if (item && item.id && !loadState.merged.has(item.id)) loadState.merged.set(item.id, item)
+        }
+        loadState.catalogState.set(cat.id, { pagesLoaded: toPage, exhausted })
+      } catch {
+        // one catalog failing shouldn't block the rest — just mark it
+        // exhausted so we stop retrying it every "load more"
+        loadState.catalogState.set(cat.id, { ...prev, exhausted: true })
+      }
+    })
+  )
+
+  const exhausted = (catalogsForTab || []).every(
+    (cat) => (loadState.catalogState.get(cat.id) || {}).exhausted
+  )
+  return { groups: groupItemsByLanguage(loadState.merged), exhausted }
+}
+
 export async function getMeta(type, id) {
   const { backendUrl, token } = base()
   const data = await fetchJson(`${backendUrl}/stremio/${token}/meta/${type}/${id}.json`)
