@@ -239,10 +239,10 @@ export default function Profile() {
     return (
       <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
+          <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-reel-gold/25 via-reel-surface2 to-reel-rust/20 ring-1 ring-reel-gold/25 flex items-center justify-center text-reel-gold">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
           </div>
-          <h1 className="font-display text-xl text-reel-ink">{t('profile_verify_title')}</h1>
+          <h1 className="font-display text-xl text-reel-ink mt-1">{t('profile_verify_title')}</h1>
         </div>
         <TelegramSignup onDone={() => navigate('/')} />
         <div className="max-w-md mx-auto mt-8">
@@ -257,30 +257,71 @@ export default function Profile() {
   const totalStorage = doneDownloads.reduce((sum, d) => sum + (d.sizeBytes || 0), 0)
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6">
-      {/* ---- Header ---- */}
-      <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-20 h-20 rounded-full bg-reel-surface2 ring-2 ring-reel-gold/60 flex items-center justify-center text-reel-gold mb-3 overflow-hidden">
-          {profile?.hasPhoto && profile?.userId ? (
-            <img src={avatarUrl(profile.userId)} alt={displayName} className="w-full h-full object-cover" />
-          ) : (
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
-          )}
+    <div className="max-w-2xl mx-auto py-5 sm:py-6 px-4 sm:px-6">
+      {/* ---- Header ----
+          REDESIGN (user ask: "profile section ka design bekar/ajeeb hai,
+          professional aur stylish banao — YouTube ke profile page se
+          inspiration lo"): swapped the old plain centered avatar+name for
+          a banner-style header — gradient cover strip (theme-driven, so it
+          still reflows with every reel-* theme swap), avatar overlapping
+          the bottom edge, a gold verified checkmark badge on the avatar
+          itself instead of a separate ring color, and an active-plan pill
+          sitting right under the handle (mirrors YouTube's "Get Premium"
+          chip next to the channel name). Stats go from four loose boxes to
+          one unified bar with dividers, which reads as a single stat strip
+          rather than a grid of orphaned cards. All data/props are
+          untouched — visual layer only. */}
+      <div className="relative mb-5">
+        <div className="h-28 sm:h-36 rounded-2xl overflow-hidden relative bg-gradient-to-br from-reel-gold/25 via-reel-surface2 to-reel-rust/20">
+          <div
+            className="absolute inset-0 opacity-[0.12] text-reel-ink"
+            style={{ backgroundImage: 'radial-gradient(currentColor 1px, transparent 1px)', backgroundSize: '18px 18px' }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-reel-bg via-reel-bg/10 to-transparent" />
         </div>
-        <h1 className="font-display text-xl text-reel-ink">{displayName}</h1>
-        {handle ? <p className="text-reel-muted text-xs mt-1">{handle}</p> : null}
+
+        <div className="px-1">
+          <div className="flex items-end gap-3.5 -mt-10 sm:-mt-12">
+            <div className="relative shrink-0">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full ring-4 ring-reel-bg bg-reel-surface2 shadow-lg overflow-hidden flex items-center justify-center text-reel-gold">
+                {profile?.hasPhoto && profile?.userId ? (
+                  <img src={avatarUrl(profile.userId)} alt={displayName} className="w-full h-full object-cover" />
+                ) : (
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
+                )}
+              </div>
+              {verified ? (
+                <span className="absolute bottom-0.5 right-0.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-reel-gold ring-2 ring-reel-bg flex items-center justify-center">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B0B12" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                </span>
+              ) : null}
+            </div>
+
+            <div className="min-w-0 flex-1 pb-1.5">
+              <h1 className="font-display text-lg sm:text-xl font-bold text-reel-ink truncate">{displayName}</h1>
+              {handle ? <p className="text-reel-muted text-xs mt-0.5 truncate">{handle}</p> : null}
+            </div>
+          </div>
+
+          {subscription?.active ? (
+            <span className="inline-flex items-center gap-1.5 mt-3 text-[10px] font-bold tracking-[0.08em] uppercase text-reel-gold bg-reel-gold/10 ring-1 ring-reel-gold/25 px-2.5 py-1 rounded-full">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z" /></svg>
+              {t('profile_plan_active')}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {/* ---- Stats ---- */}
-      <div className="grid grid-cols-4 gap-2 mb-6">
+      <div className="flex bg-reel-surface rounded-xl ring-1 ring-reel-ink/5 mb-6 overflow-hidden">
         {[
           [saved.length, t('profile_saved')],
           [doneDownloads.length, t('profile_downloads')],
           [ratings?.length ?? '—', t('profile_ratings')],
           [reports?.length ?? '—', t('profile_reports')],
-        ].map(([value, label]) => (
-          <div key={label} className="bg-reel-surface rounded-lg py-3 px-1 text-center ring-1 ring-reel-ink/5">
-            <p className="font-display text-lg text-reel-gold">{value}</p>
+        ].map(([value, label], i) => (
+          <div key={label} className={`flex-1 text-center py-3.5 px-1 ${i > 0 ? 'border-l border-reel-ink/5' : ''}`}>
+            <p className="font-display text-base sm:text-lg font-bold text-reel-gold">{value}</p>
             <p className="text-[10px] text-reel-muted mt-0.5 leading-tight">{label}</p>
           </div>
         ))}
