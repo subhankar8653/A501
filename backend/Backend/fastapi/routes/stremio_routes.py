@@ -991,6 +991,53 @@ async def delete_comment_api(token: str, media_type: str, id: str, ts: int, toke
     return {"deleted": ok}
 
 
+# FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch add
+# karo — Report ya Rating"): same token-auth pattern as reactions/comments
+# above. Ratings are per-user (1-5 stars, toggle-free — posting again just
+# updates your own vote). Reports don't have a GET-all — only a GET for
+# "have I already reported this" (so the frontend can disable the button)
+# and a POST to file one; the actual list is for admin review, not shown
+# in-app.
+@router.get("/{token}/rating/{media_type}/{id}.json")
+async def get_rating_api(token: str, media_type: str, id: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    return await db.get_rating(media_type, id, int(user_id) if user_id else None)
+
+
+@router.post("/{token}/rating/{media_type}/{id}.json")
+async def rate_title_api(token: str, media_type: str, id: str, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    try:
+        stars = int(payload.get("stars"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="stars must be 1-5")
+    if stars not in (1, 2, 3, 4, 5):
+        raise HTTPException(status_code=400, detail="stars must be 1-5")
+    return await db.rate_title(media_type, id, int(user_id), stars)
+
+
+@router.get("/{token}/report/{media_type}/{id}.json")
+async def get_report_status_api(token: str, media_type: str, id: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        return {"reported": False}
+    return {"reported": await db.has_reported(media_type, id, int(user_id))}
+
+
+@router.post("/{token}/report/{media_type}/{id}.json")
+async def submit_report_api(token: str, media_type: str, id: str, payload: dict, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user on this token")
+    reason = payload.get("reason")
+    if reason not in db.REPORT_REASONS:
+        raise HTTPException(status_code=400, detail="invalid reason")
+    note = payload.get("note") or ""
+    return await db.add_report(media_type, id, int(user_id), reason, note)
+
+
 @router.post("/{token}/progress.json")
 async def save_progress_api(token: str, payload: dict, token_data: dict = Depends(verify_token)):
     user_id = token_data.get("user_id")
