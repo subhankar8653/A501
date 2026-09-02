@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments } from '../api'
+import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments, getReportStatus, submitReport } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import CommentsSheet from '../components/CommentsSheet'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import Rail from '../components/Rail'
-import { useLocalReactions } from '../components/localInteractions'
+import RatingStars from '../components/RatingStars'
+import ReportForm from '../components/ReportForm'
+import { useLocalReactions, useLocalRating } from '../components/localInteractions'
 import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, downloadId, setWatching, isWatchingNow } from '../lib/downloadsStore'
 import { formatDisplayTitle } from '../lib/formatTitle'
@@ -83,6 +85,45 @@ export default function Player() {
   }
 
   const { reactions, react } = useLocalReactions(type, id)
+  // FEATURE (user ask: "like/dislike/download/share/save ke alawa kuch
+  // add karo — Report ya Rating"): star rating shares the same
+  // per-title-per-user pattern as reactions above. `ratingOpen` /
+  // `reportOpen` drive the two bottom sheets (reusing CommentsSheet's
+  // generic shell — dekho neeche render).
+  const { rating, rate } = useLocalRating(type, id)
+  const [ratingOpen, setRatingOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [alreadyReported, setAlreadyReported] = useState(false)
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [reportSubmitted, setReportSubmitted] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setAlreadyReported(false)
+    setReportSubmitted(false)
+    getReportStatus(type, id)
+      .then((r) => {
+        if (!cancelled) setAlreadyReported(!!r.reported)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [type, id])
+
+  async function handleReportSubmit(reason, note) {
+    setReportSubmitting(true)
+    try {
+      await submitReport(type, id, reason, note)
+      setReportSubmitted(true)
+    } catch {
+      // leave the form open so the user can retry — a stuck "submitting"
+      // state would be worse than just letting them tap submit again
+    } finally {
+      setReportSubmitting(false)
+    }
+  }
+
   // Saved is per-title (whole movie/show), not per-episode — so saving from
   // any episode of a series shows the show once in the Saved tab.
   const saved = useIsSaved(type, imdbId)
@@ -627,6 +668,17 @@ export default function Player() {
               {reactions.dislikes}
             </button>
             <button
+              onClick={() => setRatingOpen(true)}
+              aria-label={t('rate')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 active:scale-95 transition ${
+                rating.mine ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
+              }`}
+              title={t('rate')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+              {rating.mine ? rating.mine : rating.count > 0 ? rating.average : t('rate')}
+            </button>
+            <button
               onClick={downloadEntry?.status === 'queued' ? () => showToast(isWatchingNow() ? t('dl_queued_watching') : t('dl_queued')) : downloadFile}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
               title={t('download')}
@@ -689,7 +741,31 @@ export default function Player() {
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
+            <button
+              onClick={() => setReportOpen(true)}
+              aria-label={t('report')}
+              className="p-2 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
+              title={t('report')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            </button>
           </div>
+
+          {/* Rating + Report sheets — reuse CommentsSheet's generic
+              bottom-sheet shell (title + children), just with different
+              content. */}
+          <CommentsSheet open={ratingOpen} onClose={() => setRatingOpen(false)} title={t('rate_title')}>
+            <RatingStars rating={rating} onRate={(stars) => { rate(stars); setRatingOpen(false) }} />
+          </CommentsSheet>
+
+          <CommentsSheet open={reportOpen} onClose={() => setReportOpen(false)} title={t('report_title')}>
+            <ReportForm
+              alreadyReported={alreadyReported}
+              submitting={reportSubmitting}
+              submitted={reportSubmitted}
+              onSubmit={handleReportSubmit}
+            />
+          </CommentsSheet>
 
           {/* Comments — YouTube-style: chhota preview bar, poori list ek
               bottom-sheet mein khulti hai (dekho CommentsSheet.jsx) */}
