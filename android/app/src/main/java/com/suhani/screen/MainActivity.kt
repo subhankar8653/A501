@@ -539,6 +539,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineFullscreenButtonRef: ImageView? = null
     private var inlinePipButtonRef: ImageView? = null
     private var inlineAspectButtonRef: ImageView? = null
+    // BUG FIX (user report: "time duration ka number ka rang nahi badla")
+    // — the "01:23 / 23:00" time text was fixed white in XML; these refs
+    // let applyInlineThemeColor() retint it to match the theme too.
+    private var inlinePositionTextRef: TextView? = null
+    private var inlineDurationTextRef: TextView? = null
     // FEATURE (user ask, with screenshot: "video player mein play button/
     // ring, '480p' quality text, aur progress bar ka color hamesha yellow/
     // gold hi rehta hai, jabki web side pe maine ek alag (jaise blue) theme
@@ -571,7 +576,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // kisi bhi code-path se, khud player se hi live check hota hai, koi
     // manual reset-placement par depend nahi karta.
     private var inlineLastReadyUri: String? = null
-    private var inlineProcessingLabelRef: View? = null
+    private var inlineProcessingLabelRef: TextView? = null
     // FEATURE (user ask: "video load nahi hota, fail ho jata hai — fail
     // hone ke baad sara cache clear karo aur wapas try karo"): chhote
     // (inline) player mein pehle koi retry hi nahi thi (dekho neeche
@@ -1353,7 +1358,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // around for exo_play/exo_pause — see its comment there).
             val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)
             val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
-            val processingLabel = root.findViewById<View>(R.id.inlineProcessingLabel)
+            val processingLabel = root.findViewById<TextView>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineTimeBarRef = timeBar
             inlineBufferingIndicatorRef = bufferingIndicator
@@ -1365,6 +1370,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineFullscreenButtonRef = fullscreenButton
             inlinePipButtonRef = pipButton
             inlineAspectButtonRef = aspectButton
+            inlinePositionTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_position)
+            inlineDurationTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_duration)
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
@@ -1998,6 +2005,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
 
         inlineQualityButtonRef?.setTextColor(color)
+        // BUG FIX (user report: "processing jo likha hai uska rang nahi
+        // badla"): was a fixed #FFF8E7 cream — now follows theme too.
+        inlineProcessingLabelRef?.setTextColor(color)
 
         // All the OTHER icons (chevron, audio-track, subtitle, settings,
         // fullscreen, pip, aspect) — see the field-comment above for why
@@ -2014,6 +2024,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         inlineFullscreenButtonRef?.imageTintList = tintList
         inlinePipButtonRef?.imageTintList = tintList
         inlineAspectButtonRef?.imageTintList = tintList
+        inlinePositionTextRef?.setTextColor(color)
+        inlineDurationTextRef?.setTextColor(color)
 
         inlineTimeBarRef?.let { bar ->
             bar.setPlayedColor(color)
@@ -3047,6 +3059,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineFullscreenButtonRef = null
                 inlinePipButtonRef = null
                 inlineAspectButtonRef = null
+                inlinePositionTextRef = null
+                inlineDurationTextRef = null
                 inlineUri = ""
                 inlineTitle = ""
                 inlineQualitiesJson = "[]"
