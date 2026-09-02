@@ -804,7 +804,7 @@ export default function Player() {
               bottom-sheet shell (title + children), just with different
               content. */}
           <CommentsSheet open={ratingOpen} onClose={() => setRatingOpen(false)} title={t('rate_title')}>
-            <RatingStars rating={rating} onRate={(stars) => { rate(stars); setRatingOpen(false) }} />
+            <RatingStars rating={rating} onRate={(stars) => { rate(stars, { title: isSeries ? (allEpisodes.find((e) => e.id === id)?.title || displayTitle) : titleInfo.name, poster: titleInfo.poster }); setRatingOpen(false) }} />
           </CommentsSheet>
 
           <CommentsSheet open={reportOpen} onClose={() => setReportOpen(false)} title={t('report_title')}>
@@ -829,7 +829,13 @@ export default function Player() {
           </button>
 
           <CommentsSheet open={commentsOpen} onClose={() => setCommentsOpen(false)} title={`${t('comments_title')}${commentCount != null ? ` · ${commentCount}` : ''}`}>
-            <Comments type={type} id={id} onCountChange={setCommentCount} />
+            <Comments
+              type={type}
+              id={id}
+              onCountChange={setCommentCount}
+              title={isSeries ? (allEpisodes.find((e) => e.id === id)?.title || displayTitle) : titleInfo.name}
+              poster={titleInfo.poster}
+            />
           </CommentsSheet>
 
           <DownloadQualitySheet
