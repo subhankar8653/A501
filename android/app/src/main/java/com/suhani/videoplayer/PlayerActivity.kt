@@ -1289,8 +1289,23 @@ class PlayerActivity : AppCompatActivity() {
         bottomPipButton.imageTintList = tintList
         bottomAspectButton.imageTintList = tintList
         backButton.imageTintList = tintList
+        // BUG FIX (user report: "fullscreen mein subtitle icon ka rang nahi
+        // badla") — this field existed but was missed from the first pass.
+        // Guarded with isInitialized: this function is first called BEFORE
+        // subtitleButton's own findViewById() line runs (early in onCreate),
+        // so an unguarded access here would crash with
+        // UninitializedPropertyAccessException on that very first call —
+        // the second call (later in onCreate, after subtitleButton exists)
+        // picks it up instead.
+        if (::subtitleButton.isInitialized) {
+            subtitleButton.imageTintList = tintList
+        }
         playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_prev)?.imageTintList = tintList
         playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_next)?.imageTintList = tintList
+        // BUG FIX (user report: "time duration ka number ka rang nahi
+        // badla") — "01:23 / 23:00" was fixed white in XML.
+        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_position)?.setTextColor(color)
+        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_duration)?.setTextColor(color)
 
         if (::playerView.isInitialized) {
             playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
