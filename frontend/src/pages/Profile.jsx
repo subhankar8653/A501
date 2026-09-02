@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   clearConfig,
   clearProfile,
@@ -8,11 +8,7 @@ import {
   isVerified,
   getContinueWatching,
   removeWatchProgress,
-  getMyRatings,
-  getMyComments,
-  getMyReports,
   getMySubscription,
-  deleteComment,
   getBotUsername,
 } from '../api'
 import { useSavedList } from '../lib/savedStore'
@@ -49,8 +45,8 @@ function SectionCard({ title, icon, right, children }) {
 
 function ToggleRow({ label, sub, checked, onChange }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2">
-      <div className="min-w-0">
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <div className="min-w-0 flex-1 pr-2">
         <p className="text-sm text-reel-ink font-medium">{label}</p>
         {sub ? <p className="text-[11px] text-reel-muted mt-0.5">{sub}</p> : null}
       </div>
@@ -58,30 +54,14 @@ function ToggleRow({ label, sub, checked, onChange }) {
         onClick={() => onChange(!checked)}
         aria-checked={checked}
         role="switch"
-        className={`shrink-0 w-11 h-6 rounded-full relative transition-colors ${checked ? 'bg-reel-gold' : 'bg-reel-ink/15'}`}
+        className={`shrink-0 relative w-12 h-7 rounded-full transition-colors duration-200 ${checked ? 'bg-reel-gold' : 'bg-reel-ink/15'}`}
       >
         <span
-          className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`}
+          className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${checked ? 'translate-x-5' : 'translate-x-0'}`}
         />
       </button>
     </div>
   )
-}
-
-function StarRow({ value }) {
-  return (
-    <span className="inline-flex items-center gap-0.5 text-reel-gold shrink-0">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <svg key={n} width="11" height="11" viewBox="0 0 24 24" fill={n <= value ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5">
-          <path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7L2 9.2l7.1-.6z" />
-        </svg>
-      ))}
-    </span>
-  )
-}
-
-function EmptyRow({ text }) {
-  return <p className="text-xs text-reel-muted py-3 text-center">{text}</p>
 }
 
 function bytesToSize(bytes) {
@@ -94,16 +74,19 @@ function bytesToSize(bytes) {
 
 // ---------------------------------------------------------------------
 // PROFILE FEATURE (user ask: "profile section bahut khali khali hai —
-// Watch History, My Ratings, My Reports, My Comments, Storage,
-// Playback/Ambient settings, App version/About, My Plan, Notification
-// preferences, Theme picker — sab add karo, aur professional dikhna
-// chahiye"): every section below reuses data/components that already
-// existed elsewhere in the app (ContinueWatchingRail, ThemeSheet,
-// downloadsStore, notificationsStore) or a small new backend read added
-// specifically for this (get_user_ratings/get_user_comments/
-// get_user_reports/get_subscription_status — see database.py +
-// stremio_routes.py's new /my/* routes). Nothing here is placeholder UI —
-// every number and every list is real user data.
+// Watch History, Storage, Playback/Ambient settings, App version/About,
+// My Plan, Notification preferences, Theme picker — sab add karo, aur
+// professional dikhna chahiye"): every section below reuses data/
+// components that already existed elsewhere in the app
+// (ContinueWatchingRail, ThemeSheet, downloadsStore, notificationsStore)
+// or a small new backend read added specifically for this
+// (get_subscription_status — see database.py + stremio_routes.py's /my/*
+// routes). My Ratings/My Comments/My Reports were later removed on user
+// request ("koi kaam ka nahi hai") — see getMySubscription-only fetch
+// below; the corresponding backend /my/ratings, /my/comments, /my/reports
+// routes and get_user_ratings/get_user_comments/get_user_reports still
+// exist server-side and are harmless to leave, just unused by this page
+// now.
 // ---------------------------------------------------------------------
 export default function Profile() {
   const navigate = useNavigate()
@@ -118,9 +101,6 @@ export default function Profile() {
   const handle = profile?.username ? `@${profile.username}` : null
 
   const [continueWatching, setContinueWatching] = useState(null)
-  const [ratings, setRatings] = useState(null)
-  const [myComments, setMyComments] = useState(null)
-  const [reports, setReports] = useState(null)
   const [subscription, setSubscription] = useState(null)
   const [themeSheetOpen, setThemeSheetOpen] = useState(false)
   const [notifEnabled, setNotifEnabled] = useState(() => isNewUploadsEnabled())
@@ -171,9 +151,6 @@ export default function Profile() {
     if (!verified) return
     let cancelled = false
     getContinueWatching().then((v) => !cancelled && setContinueWatching(v)).catch(() => !cancelled && setContinueWatching([]))
-    getMyRatings().then((v) => !cancelled && setRatings(v)).catch(() => !cancelled && setRatings([]))
-    getMyComments().then((v) => !cancelled && setMyComments(v)).catch(() => !cancelled && setMyComments([]))
-    getMyReports().then((v) => !cancelled && setReports(v)).catch(() => !cancelled && setReports([]))
     getMySubscription().then((v) => !cancelled && setSubscription(v)).catch(() => !cancelled && setSubscription({ enabled: false }))
     return () => {
       cancelled = true
@@ -183,15 +160,6 @@ export default function Profile() {
   function removeContinueWatchingItem(item) {
     setContinueWatching((prev) => (prev || []).filter((it) => it.k !== item.k))
     removeWatchProgress(item.media_id, item.episode_id).catch(() => {})
-  }
-
-  async function removeMyComment(c) {
-    setMyComments((prev) => (prev || []).filter((x) => !(x.media_id === c.media_id && x.ts === c.ts)))
-    try {
-      await deleteComment(c.media_type, c.media_id, c.ts)
-    } catch {
-      /* already optimistically removed */
-    }
   }
 
   async function handleClearDownloads() {
@@ -298,7 +266,7 @@ export default function Profile() {
             </div>
 
             <div className="min-w-0 flex-1 pb-1.5">
-              <h1 className="font-display text-lg sm:text-xl font-bold text-reel-ink truncate">{displayName}</h1>
+              <h1 className="font-display text-lg sm:text-xl font-bold text-reel-ink truncate leading-[1.35] py-0.5">{displayName}</h1>
               {handle ? <p className="text-reel-muted text-xs mt-0.5 truncate">{handle}</p> : null}
             </div>
           </div>
@@ -312,13 +280,14 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* ---- Stats ---- */}
+      {/* ---- Stats ----
+          My Ratings/My Comments/My Reports removed on user request, so the
+          stat strip now only carries the two counts that still have a
+          section on the page (Saved, Downloads). */}
       <div className="flex bg-reel-surface rounded-xl ring-1 ring-reel-ink/5 mb-6 overflow-hidden">
         {[
           [saved.length, t('profile_saved')],
           [doneDownloads.length, t('profile_downloads')],
-          [ratings?.length ?? '—', t('profile_ratings')],
-          [reports?.length ?? '—', t('profile_reports')],
         ].map(([value, label], i) => (
           <div key={label} className={`flex-1 text-center py-3.5 px-1 ${i > 0 ? 'border-l border-reel-ink/5' : ''}`}>
             <p className="font-display text-base sm:text-lg font-bold text-reel-gold">{value}</p>
@@ -367,104 +336,6 @@ export default function Profile() {
           <ContinueWatchingRail items={continueWatching} onRemove={removeContinueWatchingItem} />
         </div>
       ) : null}
-
-      {/* ---- My Ratings ---- */}
-      <SectionCard
-        title={t('profile_my_ratings')}
-        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7L2 9.2l7.1-.6z" /></svg>}
-      >
-        {ratings === null ? (
-          <div className="space-y-2">
-            {[0, 1].map((i) => <div key={i} className="h-12 rounded-lg bg-reel-surface2 animate-pulse" />)}
-          </div>
-        ) : ratings.length === 0 ? (
-          <EmptyRow text={t('profile_my_ratings_empty')} />
-        ) : (
-          <div className="space-y-1">
-            {ratings.map((r) => (
-              <Link
-                key={`${r.media_type}:${r.media_id}`}
-                to={`/title/${r.media_type}/${encodeURIComponent(r.media_id)}`}
-                className="flex items-center gap-3 py-1.5 rounded-lg hover:bg-reel-ink/[0.04] active:scale-[0.99] transition"
-              >
-                <span className="shrink-0 w-8 h-11 rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/10">
-                  {r.poster ? <img src={r.poster} alt="" loading="lazy" className="w-full h-full object-cover" /> : null}
-                </span>
-                <span className="min-w-0 flex-1 text-sm text-reel-ink truncate">{r.title || r.media_id}</span>
-                <StarRow value={r.mine || 0} />
-              </Link>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* ---- My Comments ---- */}
-      <SectionCard
-        title={t('profile_my_comments')}
-        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>}
-      >
-        {myComments === null ? (
-          <div className="space-y-2">
-            {[0, 1].map((i) => <div key={i} className="h-12 rounded-lg bg-reel-surface2 animate-pulse" />)}
-          </div>
-        ) : myComments.length === 0 ? (
-          <EmptyRow text={t('profile_my_comments_empty')} />
-        ) : (
-          <div className="space-y-2.5">
-            {myComments.map((c) => (
-              <div key={`${c.media_id}:${c.ts}`} className="flex items-start gap-3">
-                <Link to={`/title/${c.media_type}/${encodeURIComponent(c.media_id)}`} className="shrink-0 w-8 h-11 rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/10">
-                  {c.poster ? <img src={c.poster} alt="" loading="lazy" className="w-full h-full object-cover" /> : null}
-                </Link>
-                <div className="min-w-0 flex-1">
-                  <Link to={`/title/${c.media_type}/${encodeURIComponent(c.media_id)}`} className="text-xs font-medium text-reel-ink hover:text-reel-gold truncate block">
-                    {c.title || c.media_id}
-                  </Link>
-                  <p className="text-sm text-reel-ink/85 break-words">{c.text}</p>
-                  <button onClick={() => removeMyComment(c)} className="text-[11px] text-reel-muted hover:text-reel-rust mt-0.5">
-                    {t('remove')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* ---- My Reports ---- */}
-      <SectionCard
-        title={t('profile_my_reports')}
-        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>}
-      >
-        {reports === null ? (
-          <div className="space-y-2">
-            {[0, 1].map((i) => <div key={i} className="h-12 rounded-lg bg-reel-surface2 animate-pulse" />)}
-          </div>
-        ) : reports.length === 0 ? (
-          <EmptyRow text={t('profile_my_reports_empty')} />
-        ) : (
-          <div className="space-y-1">
-            {reports.map((r) => (
-              <Link
-                key={r._id}
-                to={`/title/${r.media_type}/${encodeURIComponent(r.media_id)}`}
-                className="flex items-center gap-3 py-1.5 rounded-lg hover:bg-reel-ink/[0.04] active:scale-[0.99] transition"
-              >
-                <span className="shrink-0 w-8 h-11 rounded-md overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/10">
-                  {r.poster ? <img src={r.poster} alt="" loading="lazy" className="w-full h-full object-cover" /> : null}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-reel-ink truncate">{r.title || r.media_id}</span>
-                  <span className="block text-[10px] text-reel-muted capitalize">{r.reason}</span>
-                </span>
-                <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${r.status === 'resolved' ? 'bg-green-500/15 text-green-500' : 'bg-reel-gold/15 text-reel-gold'}`}>
-                  {r.status === 'resolved' ? t('profile_report_resolved') : t('profile_report_open')}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </SectionCard>
 
       {/* ---- Storage ---- */}
       <SectionCard
