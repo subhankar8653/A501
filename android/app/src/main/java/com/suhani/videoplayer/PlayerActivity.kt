@@ -1271,8 +1271,26 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         speedButton.setTextColor(color)
+        decoderButton.setTextColor(color)
         scrubPreviewTime.setTextColor(color)
         playerSnackbarIcon.imageTintList = android.content.res.ColorStateList.valueOf(color)
+
+        // FEATURE (user follow-up: "sabhi icon pe kaam karna chahiye" —
+        // same request as the inline player's; ALL fullscreen-player icons
+        // now follow the theme too, not just the hero play/pause button).
+        val tintList = android.content.res.ColorStateList.valueOf(color)
+        frameBackButton.imageTintList = tintList
+        frameForwardButton.imageTintList = tintList
+        expandActionsButton.imageTintList = tintList
+        audioTrackButton.imageTintList = tintList
+        moreButton.imageTintList = tintList
+        lockButton.imageTintList = tintList
+        unlockButton.imageTintList = tintList
+        bottomPipButton.imageTintList = tintList
+        bottomAspectButton.imageTintList = tintList
+        backButton.imageTintList = tintList
+        playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_prev)?.imageTintList = tintList
+        playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_next)?.imageTintList = tintList
 
         if (::playerView.isInitialized) {
             playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
