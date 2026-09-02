@@ -1633,6 +1633,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             content.addView(overlay, FrameLayout.LayoutParams(0, 0))
             inlinePlayerView = playerView
             inlineOverlay = overlay
+            inlineAmbientGlowAnchor = root
         }
 
         val player = inlinePlayer ?: buildInlineExoPlayer().also {
@@ -1761,11 +1762,35 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // isliye ek dusri baar mountInlinePlayer call hone par ise dobara start
     // karne ki zaroorat nahi.
     private var inlineAmbientGlowLoopStarted = false
+    // Dedicated identity marker for the CURRENT mount's root view — needed
+    // because `inlineOverlay` (the wrapper FrameLayout) is a DIFFERENT
+    // object from `root`/`anchor` (root is a child added inside it), so
+    // comparing anchor against inlineOverlay directly would never match.
+    // Set alongside `inlineOverlay = overlay` on mount, cleared on unmount.
+    private var inlineAmbientGlowAnchor: View? = null
     private fun startInlineAmbientGlowLoop(anchor: View) {
         if (inlineAmbientGlowLoopStarted) return
         inlineAmbientGlowLoopStarted = true
         val runnable = object : Runnable {
             override fun run() {
+                // BUG FIX (user report: "app hang kar raha hai, random/
+                // everywhere"): this loop used to reschedule itself FOREVER
+                // once started, with no way to stop — even after the player
+                // fully unmounted (inlineOverlay set to null), it kept
+                // holding a strong reference to this specific `anchor` view
+                // (the very first inline player's root, with its whole
+                // child view tree) via this very closure, forever, for the
+                // rest of the app's life. That's a real, if one-time,
+                // leaked chunk of memory the GC could never reclaim. Now it
+                // checks whether the CURRENT inline player is still this
+                // same anchor — if the player's been unmounted (or
+                // remounted as a fresh root), it stops rescheduling and
+                // resets the flag, so a later mount starts a brand new
+                // loop tied to the NEW anchor instead of leaking the old one.
+                if (inlineAmbientGlowAnchor !== anchor) {
+                    inlineAmbientGlowLoopStarted = false
+                    return
+                }
                 if (inlineOverlay?.visibility == View.VISIBLE && inlinePlayer?.isPlaying == true) {
                     sampleInlineAmbientGlowColors()
                 }
@@ -1778,33 +1803,38 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     /** sampleAmbientGlowColors() (PlayerActivity.kt) jaisa hi — bas inline
      *  chhote player ke TextureView par. */
     private fun sampleInlineAmbientGlowColors() {
+        // See sampleAmbientGlowColors() in PlayerActivity.kt for the full
+        // "why" of this try/finally — same bitmap-leak-on-exception fix,
+        // applied here too since this inline version has the exact same
+        // shape and runs on the exact same 800ms loop.
+        var sample: android.graphics.Bitmap? = null
         try {
             val glowView = inlineAmbientGlowView ?: return
             val textureView = inlinePlayerView?.videoSurfaceView as? android.view.TextureView ?: return
             if (!textureView.isAvailable) return
-            val sample = textureView.getBitmap(32, 32) ?: return
+            sample = textureView.getBitmap(32, 32) ?: return
+            val bmp = sample
 
             var topR = 0L; var topG = 0L; var topB = 0L
             var botR = 0L; var botG = 0L; var botB = 0L
             var leftR = 0L; var leftG = 0L; var leftB = 0L
             var rightR = 0L; var rightG = 0L; var rightB = 0L
-            val w = sample.width
-            val h = sample.height
-            if (w == 0 || h == 0) { sample.recycle(); return }
+            val w = bmp.width
+            val h = bmp.height
+            if (w == 0 || h == 0) return
 
             for (x in 0 until w) {
-                val pTop = sample.getPixel(x, 0)
+                val pTop = bmp.getPixel(x, 0)
                 topR += android.graphics.Color.red(pTop); topG += android.graphics.Color.green(pTop); topB += android.graphics.Color.blue(pTop)
-                val pBot = sample.getPixel(x, h - 1)
+                val pBot = bmp.getPixel(x, h - 1)
                 botR += android.graphics.Color.red(pBot); botG += android.graphics.Color.green(pBot); botB += android.graphics.Color.blue(pBot)
             }
             for (y in 0 until h) {
-                val pLeft = sample.getPixel(0, y)
+                val pLeft = bmp.getPixel(0, y)
                 leftR += android.graphics.Color.red(pLeft); leftG += android.graphics.Color.green(pLeft); leftB += android.graphics.Color.blue(pLeft)
-                val pRight = sample.getPixel(w - 1, y)
+                val pRight = bmp.getPixel(w - 1, y)
                 rightR += android.graphics.Color.red(pRight); rightG += android.graphics.Color.green(pRight); rightB += android.graphics.Color.blue(pRight)
             }
-            sample.recycle()
 
             fun avgColor(r: Long, g: Long, b: Long, n: Int) = android.graphics.Color.rgb(
                 (r / n).toInt().coerceIn(0, 255),
@@ -1821,6 +1851,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         } catch (_: Exception) {
             // Surface resize/transition ke beech mein sample fail ho sakta hai —
             // safe ignore, agla tick (800ms baad) phir try karega.
+        } finally {
+            sample?.recycle()
         }
     }
 
@@ -3001,6 +3033,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     (overlay.parent as? ViewGroup)?.removeView(overlay)
                 }
                 inlineOverlay = null
+                inlineAmbientGlowAnchor = null
                 inlinePlayerView = null
                 inlineAmbientGlowView = null
                 inlineQualityButtonRef = null
