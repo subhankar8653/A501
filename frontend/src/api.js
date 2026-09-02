@@ -487,9 +487,12 @@ export async function getReportStatus(type, id) {
   return fetchJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`)
 }
 
-export async function submitReport(type, id, reason, note) {
+// `details` (title/poster/season/episode) rides along so the backend can
+// put the video's details straight into the Telegram message it sends the
+// owner — no extra metadata lookup needed on that side.
+export async function submitReport(type, id, reason, note, details = {}) {
   const { backendUrl, token } = base()
-  return postJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`, { reason, note })
+  return postJson(`${backendUrl}/stremio/${token}/report/${type}/${id}.json`, { reason, note, ...details })
 }
 
 // FEATURE (user ask: "Related/Recommended videos"): koi naya backend
