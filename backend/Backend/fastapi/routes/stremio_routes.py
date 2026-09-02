@@ -20,6 +20,7 @@ from Backend.helper.global_search import global_search, is_global_search_enabled
 from Backend.helper.imdb import get_detail, get_season
 from Backend.helper.languages import detect_languages, language_label_for_code
 from Backend.helper.metadata import resolve_cover_url, COMBINED_SEASON, COMBINED_EPISODE_BASE
+from Backend.helper.report_notify import notify_admins_new_report
 from Backend.helper.split_files import parse_combined_episodes, combined_name_key
 from Backend.helper.settings_manager import SettingsManager
 from Backend.helper.subtitles import get_subtitles_for, stremio_subtitle_entries
@@ -1035,7 +1036,30 @@ async def submit_report_api(token: str, media_type: str, id: str, payload: dict,
     if reason not in db.REPORT_REASONS:
         raise HTTPException(status_code=400, detail="invalid reason")
     note = payload.get("note") or ""
-    return await db.add_report(media_type, id, int(user_id), reason, note)
+
+    # FEATURE (user ask: report should go straight to the owner on
+    # Telegram with the video's details, plus a "done" button so the
+    # reporter gets notified once it's fixed): title/poster/season/episode
+    # come from the frontend (Player.jsx already has them loaded — cheaper
+    # than re-fetching metadata here). The report is saved first so the
+    # user always gets a success response even if Telegram is unreachable;
+    # the admin DM fires in the background right after.
+    title = (payload.get("title") or "")[:200]
+    poster = payload.get("poster") or ""
+    season = payload.get("season")
+    episode = payload.get("episode")
+    try:
+        season = int(season) if season not in (None, "") else None
+    except (TypeError, ValueError):
+        season = None
+    try:
+        episode = int(episode) if episode not in (None, "") else None
+    except (TypeError, ValueError):
+        episode = None
+
+    report = await db.add_report(media_type, id, int(user_id), reason, note, title, poster, season, episode)
+    asyncio.create_task(notify_admins_new_report(report))
+    return {"reported": True}
 
 
 @router.post("/{token}/progress.json")
