@@ -58,7 +58,7 @@ function detectNativeBridge() {
 function isBlobSrc(src) {
   return typeof src === 'string' && src.startsWith('blob:')
 }
-export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError, onPlayStateChange }) {
+export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError, onPlayStateChange, ambientEnabled }) {
   const { t } = useLanguage()
   const isNative = useRef(detectNativeBridge() && !isBlobSrc(src)).current
   const videoRef = useRef(null)
@@ -237,6 +237,21 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
       window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
     }
   }, [isNative, src, title, qualityPayload, nativeCloseTick])
+
+  // BUG FIX (user report: "video ke andar wala Ambient mode on/off nahi ho
+  // raha, bahar wala ho raha hai"): the web page's Ambient toggle (Player.jsx)
+  // only ever controlled the CSS blur-glow bleeding above/below the sticky
+  // player container — it had no way to reach the *native* in-video ambient
+  // glow (AmbientGlowView, rendered by the Android app itself behind the
+  // actual video surface). That native glow only ever read its own
+  // independent SharedPreferences default at mount time. Now every mount
+  // AND every ambientEnabled change is pushed to native via a new
+  // `setAmbientEnabled` bridge method (mirrors setThemeColor's pattern in
+  // ThemeContext.jsx), so the one toggle genuinely controls both.
+  useEffect(() => {
+    if (!isNative) return
+    window.AndroidPlayer.setAmbientEnabled && window.AndroidPlayer.setAmbientEnabled(ambientEnabled !== false)
+  }, [isNative, ambientEnabled, src])
 
   // --- Native bridge: chhote player ko is div ki exact jagah par chipkaaye rakho ---
   //
