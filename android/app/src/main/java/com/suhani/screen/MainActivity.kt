@@ -169,6 +169,18 @@ class WebAppInterface(private val activity: MainActivity) {
         runOnUiThreadSafely { activity.setInlineThemeColor(hex) }
     }
 
+    // BUG FIX (user report: "video ke andar wala Ambient mode toggle nahi
+    // ho raha, sirf bahar wala ho raha hai"): the inline native player's own
+    // AmbientGlowView (inlineAmbientGlowView) previously only ever read a
+    // fixed SharedPreferences default at mount time — the website's Ambient
+    // toggle had no bridge method to reach it at all. Web (VideoPlayer.jsx)
+    // now calls this on every mount and every toggle, same pattern as
+    // setThemeColor above.
+    @JavascriptInterface
+    fun setAmbientEnabled(enabled: Boolean) {
+        runOnUiThreadSafely { activity.setInlineAmbientEnabled(enabled) }
+    }
+
 }
 
 /**
@@ -1979,6 +1991,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         if (parsed == inlineAccentColor) return
         inlineAccentColor = parsed
         applyInlineThemeColor()
+    }
+
+    /** BUG FIX (user report: "video ke andar wala Ambient mode toggle nahi
+     *  chal raha"): the website's Ambient toggle now calls this on every
+     *  mount and every flip. Persists to the SAME "feature_prefs"/
+     *  "ambient_glow_on" SharedPreferences key that the fullscreen
+     *  PlayerActivity's own in-player toggle reads/writes (see
+     *  setupBatch3Features() there) — so both the inline player AND the
+     *  next time fullscreen opens stay in sync with whatever the website
+     *  last set, one single source of truth instead of two disconnected
+     *  ambient systems. Also flips the currently-mounted inline glow view
+     *  immediately, no re-mount needed. */
+    fun setInlineAmbientEnabled(enabled: Boolean) {
+        getSharedPreferences("feature_prefs", MODE_PRIVATE)
+            .edit().putBoolean("ambient_glow_on", enabled).apply()
+        inlineAmbientGlowView?.setGlowEnabled(enabled)
     }
 
     /** Re-paints every accent-colored inline-player view with `inlineAccentColor`.
