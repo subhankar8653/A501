@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Redesign #2: same calm dark-glass circle (no bright radial glow, as
-     user asked earlier to avoid the "chubh raha hai" glare) but fill/ring
-     both bumped up a bit so the hero play/pause button reads as clearly
-     premium/gold against any video frame, matching the bolder icon glyphs. -->
+<!-- Redesign #3: hero button ka ring bhi thoda zyada visible (60%->70%
+     opacity gold), baaki chhote icons ke naye border ke saath match karta
+     hai. Fill/glow strength same rakha hai (glare wapas nahi laana). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <solid android:color="#80000000" />

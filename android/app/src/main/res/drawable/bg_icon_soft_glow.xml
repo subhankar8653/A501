@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Redesign #2 (user report: "koi bhi rang aaye acche se sare icon dikhne
-     chahiye" — 15% flat black chip was too weak, icons almost invisible on
-     bright frames especially with lighter tint colors). Now a proper
-     visible glass-chip: darker fill so ANY icon tint (white, gold, or a
-     custom theme color) reads clearly against bright video, plus a thin
-     soft ring for definition — still a circle/chip, not the old "boxy"
-     bg_icon_circle rectangle-with-corners that was complained about earlier. -->
+<!-- Redesign #3 (user report: "icon ke upar ek achha sa patla border karo
+     taki color change hone par achha se dikhe") — ring opacity 15%->40% aur
+     width 1dp->1.2dp, taaki koi bhi accent tint lagane par bhi icon chip ka
+     outline saaf, clearly visible rahe (pehle wala ring bahut halka/almost
+     invisible tha). Fill same rakha hai (dark glass chip). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <solid android:color="#4D000000" />
     <stroke
-        android:width="1dp"
-        android:color="#26FFFFFF" />
+        android:width="1.2dp"
+        android:color="#66FFFFFF" />
 </shape>
