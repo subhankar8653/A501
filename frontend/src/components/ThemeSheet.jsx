@@ -74,6 +74,43 @@ function PatternGrid() {
   )
 }
 
+function PatternSizeSlider() {
+  const { patternId, patternScale, changePatternScale, minPatternScale, maxPatternScale, defaultPatternScale } = useThemeMode()
+  if (patternId === 'none') return null
+
+  const pct = Math.round(((patternScale - minPatternScale) / (maxPatternScale - minPatternScale)) * 100)
+
+  return (
+    <div className="mt-4 bg-reel-ink/[0.04] ring-1 ring-reel-ink/5 rounded-xl px-3.5 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-reel-ink text-xs font-medium">Pattern Size</p>
+        <button
+          onClick={() => changePatternScale(defaultPatternScale)}
+          className="text-[10px] font-medium text-reel-gold hover:opacity-80 active:scale-95 transition"
+        >
+          Reset
+        </button>
+      </div>
+      <input
+        type="range"
+        min={minPatternScale}
+        max={maxPatternScale}
+        step="0.1"
+        value={patternScale}
+        onChange={(e) => changePatternScale(e.target.value)}
+        className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-reel-gold"
+        style={{
+          background: `linear-gradient(to right, var(--reel-gold) ${pct}%, rgba(255,255,255,0.12) ${pct}%)`,
+        }}
+      />
+      <div className="flex justify-between mt-1">
+        <span className="text-[9px] text-reel-muted">Chota</span>
+        <span className="text-[9px] text-reel-muted">Bada</span>
+      </div>
+    </div>
+  )
+}
+
 export default function ThemeSheet({ open, onClose }) {
   const { themeId, themes, changeTheme } = useThemeMode()
 
@@ -142,6 +179,7 @@ export default function ThemeSheet({ open, onClose }) {
         </div>
 
         <PatternGrid />
+        <PatternSizeSlider />
       </div>
     </div>,
     document.body

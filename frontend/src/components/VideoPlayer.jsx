@@ -709,6 +709,18 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               </div>
             )}
 
+            {/* Thin YouTube-style progress line — flush with the video's
+                bottom edge, this is the ONLY progress indicator visible
+                while playing quietly (controls auto-hidden). The full rich
+                scrub bar below (inside the Controls panel) takes over the
+                instant controls are shown — this one hides then so the two
+                never show at once. */}
+            {!showControls && (
+              <div className="absolute inset-x-0 bottom-0 h-[2px] bg-white/25 pointer-events-none z-10">
+                <div className="h-full bg-white" style={{ width: `${progressPct}%` }} />
+              </div>
+            )}
+
             {/* Top bar — chevron-down = shrink into mini player (PiP); title
                 shown next to it once controls are visible, YouTube-style. */}
             <div
@@ -733,30 +745,24 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               </div>
             </div>
 
-            {/* Controls */}
+            {/* Controls
+                LAYOUT FIX (user ask, with YouTube screenshots: "time bar
+                video ke niche ke sath laga rehna chahiye, aur jab play ho
+                tab bhi bas ek patla sa white bar dikhna chahiye"): the scrub
+                bar used to render ABOVE the play/mute/quality/fullscreen row
+                with padding below that row, so it never actually touched the
+                video's bottom edge. Swapped the order (icon row first, scrub
+                bar last) and dropped the wrapper's bottom padding so the bar
+                is now the literal last pixel row of the video, exactly like
+                YouTube's reference screenshots — the icon row keeps its own
+                bottom padding instead so it doesn't visually collide with
+                the bar sitting right under it. */}
             <div
-              className={`absolute inset-x-0 bottom-0 px-3 pb-2 pt-10 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-200 ${
+              className={`absolute inset-x-0 bottom-0 px-3 pt-10 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-200 ${
                 showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}
             >
-              <div
-                ref={progressRef}
-                onPointerDown={onScrubStart}
-                className="group relative h-4 flex items-center cursor-pointer touch-none"
-              >
-                <div className="absolute inset-x-0 h-[3px] rounded-full bg-white/25 transition-all group-active:h-[5px]" />
-                <div className="absolute h-[3px] rounded-full bg-white/45 transition-all group-active:h-[5px]" style={{ width: `${bufferedPct}%` }} />
-                <div
-                  className="absolute h-[3px] rounded-full bg-gradient-to-r from-reel-gold to-amber-300 shadow-[0_0_8px_rgba(232,163,61,0.65)] transition-all group-active:h-[5px]"
-                  style={{ width: `${progressPct}%` }}
-                />
-                <div
-                  className="absolute w-3.5 h-3.5 rounded-full bg-reel-gold ring-2 ring-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.5)] transition-transform group-active:scale-125"
-                  style={{ left: `calc(${progressPct}% - 7px)` }}
-                />
-              </div>
-
-              <div className="flex items-center gap-3 mt-1 text-reel-ink">
+              <div className="flex items-center gap-3 pb-2 text-reel-ink">
                 <button onClick={() => handleZoneTap('center')} aria-label={playing ? 'Pause' : 'Play'} className="p-1 shrink-0 active:scale-90 transition">
                   {playing ? (
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
@@ -852,6 +858,23 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" /></svg>
                   )}
                 </button>
+              </div>
+
+              <div
+                ref={progressRef}
+                onPointerDown={onScrubStart}
+                className="group relative h-4 -mt-2 flex items-end pb-[6px] cursor-pointer touch-none"
+              >
+                <div className="absolute inset-x-0 bottom-[6px] h-[3px] rounded-full bg-white/25 transition-all group-active:h-[5px]" />
+                <div className="absolute bottom-[6px] h-[3px] rounded-full bg-white/45 transition-all group-active:h-[5px]" style={{ width: `${bufferedPct}%` }} />
+                <div
+                  className="absolute bottom-[6px] h-[3px] rounded-full bg-gradient-to-r from-reel-gold to-amber-300 shadow-[0_0_8px_rgba(232,163,61,0.65)] transition-all group-active:h-[5px]"
+                  style={{ width: `${progressPct}%` }}
+                />
+                <div
+                  className="absolute bottom-[3.5px] w-3.5 h-3.5 rounded-full bg-reel-gold ring-2 ring-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.5)] transition-transform group-active:scale-125"
+                  style={{ left: `calc(${progressPct}% - 7px)` }}
+                />
               </div>
             </div>
           </>
