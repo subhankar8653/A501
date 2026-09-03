@@ -1400,7 +1400,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // id is defined by the media3-ui library's own R class, not this
             // app's local R (same issue PlayerActivity.kt already worked
             // around for exo_play/exo_pause — see its comment there).
-            val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)            val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
+            val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)
+            val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             val processingLabel = root.findViewById<TextView>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineTimeBarRef = timeBar
