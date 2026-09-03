@@ -56,19 +56,27 @@
                  project's self-built media3-ui.aar has no public
                  setScrubberDrawable() setter, so it fell back to the
                  BUILT-IN scrubber dot, which DOES follow setScrubberColor(). -->
+            <!-- TOUCH AREA FIX (user report: "timeline skip karne ke liye
+                 screen touch kam ho raha hai") — view height 26dp->40dp aur
+                 app:touch_target_height=40dp se poore taller view ke andar
+                 kahin bhi touch karne se bar respond karta hai, lekin
+                 app:bar_height se asli visible line ab bhi patli/subtle
+                 rehti hai — sirf touch area bada hua hai, look bada nahi. -->
             <androidx.media3.ui.DefaultTimeBar
                 android:id="@id/exo_progress"
                 android:layout_width="0dp"
-                android:layout_height="26dp"
+                android:layout_height="40dp"
                 android:layout_weight="1"
                 android:layout_marginHorizontal="6dp"
+                app:bar_height="4dp"
+                app:touch_target_height="40dp"
                 app:played_color="#FFD700"
                 app:scrubber_color="#FFD700"
                 app:unplayed_color="#4DFFFFFF"
                 app:buffered_color="#80FFFFFF"
                 app:scrubber_enabled_size="18dp"
                 app:scrubber_disabled_size="10dp"
-                app:scrubber_dragged_size="22dp" />
+                app:scrubber_dragged_size="24dp" />
 
             <TextView
                 android:id="@id/exo_duration"
