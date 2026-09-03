@@ -263,6 +263,26 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   // scrolling jhatkedaar (janky) lagta tha, khaaskar rails scroll karte
   // waqt. Fix: rAF se throttle — ek scroll "burst" mein chaahe 50 event fire
   // ho, hum sirf agle paint frame se pehle EK baar hi rect bhejte hain.
+  //
+  // BUG FIX (user report: "controls/time-bar 3-4 video dekhne ke baad phir
+  // se upar chala jaata hai"): this effect used to depend on `[isNative]`
+  // only — so `sendRect()` fired exactly ONCE, the very first time this
+  // player mounted, and never again for later videos (the container div's
+  // on-screen box genuinely doesn't resize between videos, so the
+  // ResizeObserver had nothing to fire on either). Meanwhile, every new
+  // `src` makes MainActivity.kt tear down and rebuild `inlineOverlay`/
+  // `inlinePlayerView` from scratch (see "guaranteed fresh rebuild" in
+  // MainActivity.kt) — that fresh overlay starts at whatever default size
+  // it was created with, and only gets corrected once THIS effect happens
+  // to fire again, which (with the old `[isNative]`-only deps) meant
+  // "never, until the user happens to scroll" — exactly the "sirf kabhi-
+  // kabhi, scroll karne ke baad theek hota hai" pattern being reported.
+  // Adding `src` here makes the whole effect re-run — and its immediate
+  // `sendRect()` call fire — on every single video change, right after
+  // `mount()` runs (that effect is declared above this one, so it always
+  // commits first in the same render). A short extra timeout re-send is
+  // added as a safety net in case native's fresh overlay creation is a few
+  // milliseconds behind this component's own render commit.
   useEffect(() => {
     if (!isNative) return
     const el = containerRef.current
@@ -285,17 +305,19 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
       })
     }
     sendRect()
+    const safetyTimer = setTimeout(sendRect, 400)
     const ro = new ResizeObserver(scheduleSendRect)
     ro.observe(el)
     window.addEventListener('scroll', scheduleSendRect, { capture: true, passive: true })
     window.addEventListener('resize', scheduleSendRect)
     return () => {
       if (rafId != null) cancelAnimationFrame(rafId)
+      clearTimeout(safetyTimer)
       ro.disconnect()
       window.removeEventListener('scroll', scheduleSendRect, true)
       window.removeEventListener('resize', scheduleSendRect)
     }
-  }, [isNative])
+  }, [isNative, src])
 
   useEffect(() => {
     const onFsChange = () => setFullscreen(!!document.fullscreenElement)
