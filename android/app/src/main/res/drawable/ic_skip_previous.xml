@@ -1,12 +1,22 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <!-- Redesign #2: bar aur triangle dono bade/bolder + viewport edges ke
-         zyada kareeb — chhote button size par bhi turant dikhega. -->
+    <!-- Redesign #3 (user ask: "preview/prev icon ko stylish, mast sa
+         update karo") — pehle bar+triangle "skip track" style tha, ab
+         modern OTT-app style double-chevron "‹‹" (do rounded-cap V shapes) —
+         "previous episode" ke liye zyada premium/spacious feel deta hai. -->
     <path
-        android:pathData="M6.9,5 L7.7,5 A0.9,0.9 0 0,1 8.6,5.9 L8.6,18.1 A0.9,0.9 0 0,1 7.7,19 L6.9,19 A0.9,0.9 0 0,1 6,18.1 L6,5.9 A0.9,0.9 0 0,1 6.9,5 Z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M10,5 L4,12 L10,19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
     <path
-        android:pathData="M19,6.5 L19,17.5 Q19,19 17.72,18.22 L8.78,12.78 Q7.5,12 8.78,11.22 L17.72,5.78 Q19,5 19,6.5 Z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M18,5 L12,12 L18,19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
 </vector>

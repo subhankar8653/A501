@@ -1,9 +1,11 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <!-- Redesign #2: triangle bada karke viewport ke zyada kareeb tak
-         phaila diya (7,4)-(20,12)-(7,20) — pehla version chhota/subtle tha. -->
+    <!-- Redesign #3 (user ask: "play icon ko bhi stylish, mast sa update
+         karo") — thoda aur balanced/optically-centered rounded triangle,
+         thoda slimmer taaki hero circle ke andar zyada "premium badge" jaisa
+         baithe, bahut chaudi na lage. -->
     <path
-        android:pathData="M8.36,4.84 L18.64,11.16 Q20,12 18.64,12.84 L8.36,19.16 Q7,20 7,18.4 L7,5.6 Q7,4 8.36,4.84 Z"
+        android:pathData="M8.67,5.26 L17.83,11.24 Q19,12 17.83,12.76 L8.67,18.74 Q7.5,19.5 7.5,18.1 L7.5,5.9 Q7.5,4.5 8.67,5.26 Z"
         android:fillColor="#FFFFFF" />
 </vector>
