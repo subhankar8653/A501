@@ -7,7 +7,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 // at 40 (dekho api.js getContinueWatching + database.py). Each item's `k`
 // is the resume-lookup key (episode id for series, media id for movies),
 // which is exactly what /watch/{type}/{id} expects.
-function ContinueWatchingRail({ items, onRemove }) {
+function ContinueWatchingRail({ items, onRemove, title }) {
   const { t } = useLanguage()
   if (!items || !items.length) return null
 
@@ -15,7 +15,7 @@ function ContinueWatchingRail({ items, onRemove }) {
     <section className="mb-8">
       <h2 className="flex items-center gap-2 font-display text-xl font-semibold mb-3 px-4 sm:px-0">
         <span className="w-1 h-4 rounded-full bg-reel-gold" />
-        {t('continue_watching')}
+        {title || t('continue_watching')}
       </h2>
       <div className="flex gap-3 overflow-x-auto no-scrollbar px-4 sm:px-0 pb-1">
         {items.map((it) => {
