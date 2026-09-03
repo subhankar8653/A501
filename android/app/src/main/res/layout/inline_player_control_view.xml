@@ -247,6 +247,17 @@
         android:orientation="vertical"
         android:background="@drawable/bg_bottom_gradient">
 
+        <!-- BUG FIX ROUND 3 (user report + screenshot: "app mein bhi wahi
+             mismatch hai jo website pe tha — gold time bar white flush bar
+             ki jagah se upar baitha hai, aur time/quality/expand row bhi
+             uske hisaab se thoda niche honi chahiye"): app:bar_gravity
+             (below, on exo_progress) now pins the DRAWN line to this row's
+             own bottom edge instead of Media3's default vertical-center —
+             but that alone widens the empty gap between this info-row and
+             the bar (the bar's visible line moves ~6dp further down, away
+             from this row, while this row stays put). paddingBottom trimmed
+             6dp -> 2dp so the time/quality/expand row follows the bar down
+             and the two stay visually as tight together as before. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -254,7 +265,7 @@
             android:layout_marginEnd="6dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingBottom="6dp">
+            android:paddingBottom="2dp">
 
             <TextView
                 android:id="@id/exo_position"
@@ -333,10 +344,17 @@
              it falls back to DefaultTimeBar's BUILT-IN scrubber dot, which DOES
              respond to setScrubberColor() (both the XML value below and
              MainActivity.kt's applyInlineThemeColor()). -->
+        <!-- BUG FIX ROUND 3: app:bar_gravity="bottom" — DefaultTimeBar draws
+             its line vertically CENTERED within this 14dp view by default,
+             which sat ~6dp above the view's true bottom edge (same edge
+             inlineThinProgressBar, above, is flush-pinned to). "bottom"
+             makes it draw flush with this view's own bottom instead, so it
+             now lands on the exact same pixel row as the thin white bar. -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
             android:layout_height="14dp"
+            app:bar_gravity="bottom"
             app:played_color="#FFD700"
             app:scrubber_color="#FFD700"
             app:unplayed_color="#4DFFFFFF"
