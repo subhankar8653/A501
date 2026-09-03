@@ -7,7 +7,21 @@
 // directly into a data-URI tiled background (see PatternBackground.jsx) and
 // recolored on the fly to match whatever theme's gold/accent color is
 // currently active — same "pick once, applies everywhere" idea as themes.js.
-export const DEFAULT_PATTERN = 'none'
+// FEATURE (user ask: "pattern mein heart ko default kar do"): shows as a
+// heart-scatter background out of the box now, instead of no pattern at
+// all — everything else about the "pick once, applies everywhere" flow
+// stays the same, the user can still switch to any other shape (or back
+// to 'none') from the Theme sheet at any time.
+export const DEFAULT_PATTERN = 'heart'
+
+// FEATURE (user ask: "pattern ke neeche uska size set karne ka ek bar do,
+// abhi jo size hai vah default rahega"): the slider in ThemeSheet.jsx
+// scales the tile between these two multipliers; 1 = today's existing
+// fixed 56px tile, so anyone who never touches the new slider sees
+// exactly the same pattern size as before this feature existed.
+export const DEFAULT_PATTERN_SCALE = 1
+export const MIN_PATTERN_SCALE = 0.5
+export const MAX_PATTERN_SCALE = 2.5
 
 // `markup(color)` returns the shape's inner SVG markup (paths/circles) at a
 // 24x24 viewBox, filled with the given color. Kept as plain markup strings

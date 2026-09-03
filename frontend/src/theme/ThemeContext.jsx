@@ -1,6 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { DEFAULT_THEME, THEMES, getTheme } from './themes'
-import { DEFAULT_PATTERN, PATTERNS, getPattern, buildPatternDataUri, PATTERN_TILE_SIZE } from './patterns'
+import {
+  DEFAULT_PATTERN,
+  PATTERNS,
+  getPattern,
+  buildPatternDataUri,
+  PATTERN_TILE_SIZE,
+  DEFAULT_PATTERN_SCALE,
+  MIN_PATTERN_SCALE,
+  MAX_PATTERN_SCALE,
+} from './patterns'
 
 const STORAGE_KEY = 'hukatube-theme-mode'
 // FEATURE (user ask: "theme ke sath ek pattern-icon selector bhi add karo —
@@ -10,6 +19,10 @@ const STORAGE_KEY = 'hukatube-theme-mode'
 // stay independent — user free to mix any shape with any color theme, and
 // each persists across reloads on its own.
 const PATTERN_STORAGE_KEY = 'hukatube-theme-pattern'
+// FEATURE (user ask: "pattern ke neeche uska size set karne ka ek bar do"):
+// separate key again, same reasoning — the chosen shape and its size are
+// independent choices, each should persist on its own.
+const PATTERN_SCALE_STORAGE_KEY = 'hukatube-theme-pattern-scale'
 const ThemeModeContext = createContext(null)
 
 function readSavedTheme() {
@@ -31,6 +44,16 @@ function readSavedPattern() {
     // Same private-mode / old-WebView fallback as readSavedTheme() above.
   }
   return DEFAULT_PATTERN
+}
+
+function readSavedPatternScale() {
+  try {
+    const saved = parseFloat(localStorage.getItem(PATTERN_SCALE_STORAGE_KEY))
+    if (!Number.isNaN(saved) && saved >= MIN_PATTERN_SCALE && saved <= MAX_PATTERN_SCALE) return saved
+  } catch {
+    // Same private-mode / old-WebView fallback as readSavedTheme() above.
+  }
+  return DEFAULT_PATTERN_SCALE
 }
 
 // Writes one theme's palette onto <html> as the CSS custom properties that
@@ -58,7 +81,7 @@ function applyThemeToDocument(theme) {
 // performance). Tinted with the CURRENT theme's gold/accent color, so
 // switching theme mode re-colors the pattern too — same gold value every
 // other themed element uses.
-function applyPatternToDocument(pattern, theme) {
+function applyPatternToDocument(pattern, theme, scale) {
   const body = document.body
   const uri = buildPatternDataUri(pattern, theme.colors.gold)
   if (!uri) {
@@ -66,9 +89,10 @@ function applyPatternToDocument(pattern, theme) {
     body.style.backgroundAttachment = ''
     return
   }
+  const size = Math.round(PATTERN_TILE_SIZE * (scale || DEFAULT_PATTERN_SCALE))
   body.style.backgroundImage = `url("${uri}")`
   body.style.backgroundRepeat = 'repeat'
-  body.style.backgroundSize = `${PATTERN_TILE_SIZE}px ${PATTERN_TILE_SIZE}px`
+  body.style.backgroundSize = `${size}px ${size}px`
   // Explicitly reset to the default (not just "leave unset") so an earlier
   // 'fixed' value from a stale cached build can never linger.
   body.style.backgroundAttachment = 'scroll'
@@ -90,6 +114,7 @@ function applyPatternToDocument(pattern, theme) {
 export function ThemeModeProvider({ children }) {
   const [themeId, setThemeId] = useState(readSavedTheme)
   const [patternId, setPatternId] = useState(readSavedPattern)
+  const [patternScale, setPatternScale] = useState(readSavedPatternScale)
 
   useEffect(() => {
     applyThemeToDocument(getTheme(themeId))
@@ -122,17 +147,22 @@ export function ThemeModeProvider({ children }) {
   }, [themeId])
 
   useEffect(() => {
-    applyPatternToDocument(getPattern(patternId), getTheme(themeId))
+    applyPatternToDocument(getPattern(patternId), getTheme(themeId), patternScale)
     try {
       localStorage.setItem(PATTERN_STORAGE_KEY, patternId)
     } catch {
       // Non-fatal — pattern still applies for this session even if it
       // can't persist across reloads.
     }
+    try {
+      localStorage.setItem(PATTERN_SCALE_STORAGE_KEY, String(patternScale))
+    } catch {
+      // Non-fatal — same reasoning as above.
+    }
     // Re-run on themeId change too (not just patternId) — the pattern's
     // color comes from the theme, so switching theme mode must re-tint an
     // already-selected pattern without the user having to reselect it.
-  }, [patternId, themeId])
+  }, [patternId, themeId, patternScale])
 
   const changeTheme = useCallback((id) => {
     if (THEMES.some((t) => t.id === id)) setThemeId(id)
@@ -140,6 +170,11 @@ export function ThemeModeProvider({ children }) {
 
   const changePattern = useCallback((id) => {
     if (PATTERNS.some((p) => p.id === id)) setPatternId(id)
+  }, [])
+
+  const changePatternScale = useCallback((scale) => {
+    const clamped = Math.min(MAX_PATTERN_SCALE, Math.max(MIN_PATTERN_SCALE, Number(scale) || DEFAULT_PATTERN_SCALE))
+    setPatternScale(clamped)
   }, [])
 
   const value = useMemo(
@@ -152,8 +187,13 @@ export function ThemeModeProvider({ children }) {
       pattern: getPattern(patternId),
       patterns: PATTERNS,
       changePattern,
+      patternScale,
+      changePatternScale,
+      minPatternScale: MIN_PATTERN_SCALE,
+      maxPatternScale: MAX_PATTERN_SCALE,
+      defaultPatternScale: DEFAULT_PATTERN_SCALE,
     }),
-    [themeId, changeTheme, patternId, changePattern]
+    [themeId, changeTheme, patternId, changePattern, patternScale, changePatternScale]
   )
 
   return <ThemeModeContext.Provider value={value}>{children}</ThemeModeContext.Provider>
