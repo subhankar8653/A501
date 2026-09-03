@@ -1444,6 +1444,28 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 }
             })
 
+            // TOUCH AREA FIX (user report: "timeline skip karne ke liye
+            // screen touch kam ho raha hai", phir "timeline upar chala gaya"
+            // jab humne touch_target_height seedha bada kar diya tha — us
+            // attribute ko chhedne se is custom aar mein bar khud upar shift
+            // ho jaata hai). Safe fix: DefaultTimeBar apne proven-safe chhote
+            // size/position par hi rehta hai; XML mein iske upar ek bada
+            // (34dp) transparent overlay View hai jo poori width/height mein
+            // touch pakadta hai. Yahan uska har touch DefaultTimeBar ko
+            // forward karte hain — x waisa hi (dono same width hain), y
+            // hamesha bar ke apne center par set kar dete hain taaki bar
+            // events ko hamesha "range ke andar" samjhe, chahe overlay par
+            // kahin bhi touch ho.
+            val timeBarTouchArea = root.findViewById<View>(R.id.inlineTimeBarTouchArea)
+            timeBarTouchArea?.setOnTouchListener { _, event ->
+                val bar = timeBar ?: return@setOnTouchListener false
+                val forwarded = MotionEvent.obtain(event)
+                forwarded.setLocation(event.x, bar.height / 2f)
+                val handled = bar.dispatchTouchEvent(forwarded)
+                forwarded.recycle()
+                handled
+            }
+
             // FEATURE (user ask: "web jaisa patla safed time bar app mein
             // bhi lagao, jab video play ho tab bhi dikhna chahiye, niche
             // se ekdum chipka hua"): thin bar lives in inline_player_view.xml
