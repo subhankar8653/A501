@@ -65,6 +65,13 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   const containerRef = useRef(null)
   const slotRef = useRef(null)
   const progressRef = useRef(null)
+  // Thin flush-with-edge mini progress bar (visible while controls are
+  // auto-hidden) — gets its own ref so it can be dragged/tapped to seek
+  // directly, same as the full scrub bar, without needing controls shown.
+  const miniProgressRef = useRef(null)
+  // Which bar (full scrub bar vs mini bar) is currently being dragged —
+  // pointermove/pointerup are on window, so we need to remember this.
+  const activeBarRef = useRef(null)
   const hideTimer = useRef(null)
   const lastTap = useRef({ time: 0, side: null })
   const scrubbing = useRef(false)
@@ -408,8 +415,8 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     }
   }
 
-  function seekFromClientX(clientX) {
-    const bar = progressRef.current
+  function seekFromClientX(clientX, barEl) {
+    const bar = barEl || progressRef.current
     if (!bar) return
     const rect = bar.getBoundingClientRect()
     const frac = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
@@ -419,16 +426,19 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     setCurrent(target)
   }
 
-  function onScrubStart(e) {
+  // revealControls=false lets the thin mini bar (shown while controls are
+  // auto-hidden) be scrubbed directly without popping the full icon row open.
+  function onScrubStart(e, barEl, revealControls = true) {
     scrubbing.current = true
-    seekFromClientX(e.clientX)
-    wake()
+    activeBarRef.current = barEl || progressRef.current
+    seekFromClientX(e.clientX, activeBarRef.current)
+    if (revealControls) wake()
   }
 
   useEffect(() => {
     function onMove(e) {
       if (!scrubbing.current) return
-      seekFromClientX(e.clientX)
+      seekFromClientX(e.clientX, activeBarRef.current)
     }
     function onUp() {
       scrubbing.current = false
@@ -736,10 +746,22 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                 while playing quietly (controls auto-hidden). The full rich
                 scrub bar below (inside the Controls panel) takes over the
                 instant controls are shown — this one hides then so the two
-                never show at once. */}
+                never show at once.
+                Draggable directly (user ask: "isi bar par ek duration se
+                dusra duration par seek kar sake, bina saare icon unhide
+                kiye"): the actual white line stays a slim 2px so the look
+                doesn't change, but it sits inside a taller invisible hit
+                area (h-3) for an easy-to-grab touch target, and dragging it
+                seeks the video without revealing the full controls. */}
             {!showControls && (
-              <div className="absolute inset-x-0 bottom-0 h-[2px] bg-white/25 pointer-events-none z-10">
-                <div className="h-full bg-white" style={{ width: `${progressPct}%` }} />
+              <div
+                ref={miniProgressRef}
+                onPointerDown={(e) => onScrubStart(e, miniProgressRef.current, false)}
+                className="absolute inset-x-0 bottom-0 h-3 flex items-end z-10 cursor-pointer touch-none"
+              >
+                <div className="w-full h-[2px] bg-white/25">
+                  <div className="h-full bg-white" style={{ width: `${progressPct}%` }} />
+                </div>
               </div>
             )}
 
@@ -882,19 +904,27 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
                 </button>
               </div>
 
+              {/* LAYOUT FIX (user ask): this bar used to float ~6px above the
+                  video's true bottom edge, so it sat at a visibly different
+                  height than the thin mini bar above (which is flush at
+                  bottom-0). All three line layers now sit at bottom-0 too —
+                  same edge, same position as the mini bar — and the thumb's
+                  own bottom is pinned to 0 (instead of poking past it) so it
+                  stays fully visible against the container's overflow-hidden
+                  edge instead of getting clipped. */}
               <div
                 ref={progressRef}
-                onPointerDown={onScrubStart}
-                className="group relative h-4 -mt-2 flex items-end pb-[6px] cursor-pointer touch-none"
+                onPointerDown={(e) => onScrubStart(e)}
+                className="group relative h-4 -mt-2 flex items-end cursor-pointer touch-none"
               >
-                <div className="absolute inset-x-0 bottom-[6px] h-[3px] rounded-full bg-white/25 transition-all group-active:h-[5px]" />
-                <div className="absolute bottom-[6px] h-[3px] rounded-full bg-white/45 transition-all group-active:h-[5px]" style={{ width: `${bufferedPct}%` }} />
+                <div className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-white/25 transition-all group-active:h-[5px]" />
+                <div className="absolute bottom-0 h-[3px] rounded-full bg-white/45 transition-all group-active:h-[5px]" style={{ width: `${bufferedPct}%` }} />
                 <div
-                  className="absolute bottom-[6px] h-[3px] rounded-full bg-gradient-to-r from-reel-gold to-amber-300 shadow-[0_0_8px_rgba(232,163,61,0.65)] transition-all group-active:h-[5px]"
+                  className="absolute bottom-0 h-[3px] rounded-full bg-gradient-to-r from-reel-gold to-amber-300 shadow-[0_0_8px_rgba(232,163,61,0.65)] transition-all group-active:h-[5px]"
                   style={{ width: `${progressPct}%` }}
                 />
                 <div
-                  className="absolute bottom-[3.5px] w-3.5 h-3.5 rounded-full bg-reel-gold ring-2 ring-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.5)] transition-transform group-active:scale-125"
+                  className="absolute bottom-0 w-3.5 h-3.5 rounded-full bg-reel-gold ring-2 ring-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.5)] transition-transform group-active:scale-125"
                   style={{ left: `calc(${progressPct}% - 7px)` }}
                 />
               </div>
