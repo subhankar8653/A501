@@ -1400,8 +1400,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // id is defined by the media3-ui library's own R class, not this
             // app's local R (same issue PlayerActivity.kt already worked
             // around for exo_play/exo_pause — see its comment there).
-            val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)
-            val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
+            val timeBar = playerView.findViewById<DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)            val bufferingIndicator = root.findViewById<View>(R.id.inlineBufferingIndicator)
             val processingLabel = root.findViewById<TextView>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineTimeBarRef = timeBar
@@ -1416,6 +1415,33 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineAspectButtonRef = aspectButton
             inlinePositionTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_position)
             inlineDurationTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_duration)
+
+            // FEATURE (user ask: "jab timeline ko idhar udhar karega tabhi
+            // white time ko highlight karo, sirf tabhi dikhega jab drag kare"):
+            // inline player mein pehle koi OnScrubListener hi wired nahi tha —
+            // exo_position sirf theme accent color follow karta tha, scrub ke
+            // dauraan koi extra highlight nahi hota tha. Ab drag shuru hote hi
+            // gold + thoda bada scale, drag khatam hote hi wapas normal theme
+            // color/size — fullscreen PlayerActivity ke jaisa hi treatment.
+            timeBar?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
+                override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) {
+                    inlinePositionTextRef?.let { text ->
+                        text.animate().cancel()
+                        text.setTextColor(Color.parseColor("#FFD700"))
+                        text.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).start()
+                    }
+                }
+
+                override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {}
+
+                override fun onScrubStop(timeBar: androidx.media3.ui.TimeBar, position: Long, canceled: Boolean) {
+                    inlinePositionTextRef?.let { text ->
+                        text.animate().cancel()
+                        text.setTextColor(inlineAccentColor)
+                        text.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    }
+                }
+            })
 
             // FEATURE (user ask: "web jaisa patla safed time bar app mein
             // bhi lagao, jab video play ho tab bhi dikhna chahiye, niche
