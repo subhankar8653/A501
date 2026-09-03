@@ -1,7 +1,22 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Premium polish: pehle ek plain single quarter-note tha, ab beamed
+         eighth-notes pair (do note-heads + ek connecting slanted beam) —
+         zyada detailed/"music app" jaisa feel, achha visually distinct hai. -->
     <path
-        android:pathData="M12,3 L12,13.55 C11.41,13.21 10.73,13 10,13 C7.79,13 6,14.79 6,17 C6,19.21 7.79,21 10,21 C12.21,21 14,19.21 14,17 L14,7 L18,7 L18,3 Z"
+        android:pathData="M4.7,18 A2.3,2.3 0 1,0 9.3,18 A2.3,2.3 0 1,0 4.7,18 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M8.6,6 L9.8,6 L9.8,18 L8.6,18 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M14.7,18 A2.3,2.3 0 1,0 19.3,18 A2.3,2.3 0 1,0 14.7,18 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M16.6,4 L17.8,4 L17.8,18 L16.6,18 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M8.6,6 L9.8,6 L17.8,4 L16.6,4 Z"
         android:fillColor="#FFFFFF" />
 </vector>

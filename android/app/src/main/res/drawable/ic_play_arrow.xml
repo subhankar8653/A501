@@ -1,7 +1,10 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Premium polish: sharp-corner triangle ki jagah ab rounded-corner
+         triangle (quadratic curves har vertex par) — MX/YouTube Premium
+         players jaisa soft, high-quality feel. -->
     <path
-        android:pathData="M8,5 L19,12 L8,19 Z"
+        android:pathData="M9.35,5.86 L17.65,11.14 Q19,12 17.65,12.86 L9.35,18.14 Q8,19 8,17.4 L8,6.6 Q8,5 9.35,5.86 Z"
         android:fillColor="#FFFFFF" />
 </vector>

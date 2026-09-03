@@ -1,10 +1,11 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Premium polish: bar + triangle dono rounded-corner, sharp edges hata diye. -->
     <path
-        android:pathData="M6,6 L8,6 L8,18 L6,18 Z"
+        android:pathData="M6.6,6 L7.4,6 A0.6,0.6 0 0,1 8,6.6 L8,17.4 A0.6,0.6 0 0,1 7.4,18 L6.6,18 A0.6,0.6 0 0,1 6,17.4 L6,6.6 A0.6,0.6 0 0,1 6.6,6 Z"
         android:fillColor="#FFFFFF" />
     <path
-        android:pathData="M18,6 L18,18 L8.5,12 Z"
+        android:pathData="M18,7.3 L18,16.7 Q18,18 16.9,17.31 L9.6,12.69 Q8.5,12 9.6,11.31 L16.9,6.69 Q18,6 18,7.3 Z"
         android:fillColor="#FFFFFF" />
 </vector>
