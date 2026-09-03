@@ -36,6 +36,39 @@
         app:show_buffering="never"
         app:surface_type="texture_view" />
 
+    <!-- FEATURE (user ask, with web screenshot: "web pe jaisa patla safed
+         time bar dikhta hai jo play hone par bhi dikhta rehta hai — vaisa
+         hi app mein bhi lagao, aur video ke bilkul niche se chipka hua
+         hona chahiye" — mirrors VideoPlayer.jsx's own thin-white-bar-while-
+         playing feature): a plain white progress line that is ALWAYS
+         pinned flush to this FrameLayout's true bottom edge via
+         `layout_gravity="bottom"` — completely independent of the
+         controller's own layout math (inline_player_control_view.xml's
+         gold DefaultTimeBar), so it can never inherit that view's
+         positioning quirks. MainActivity.kt shows this exactly when the
+         Media3 controller is hidden (playing quietly) and hides it the
+         instant the full controller (with the gold bar) is shown — same
+         "only one progress indicator visible at a time" rule the web
+         player follows. `max=1000` (not raw duration ms) keeps the
+         progress-fraction math simple and precision-safe regardless of
+         how long the video is. -->
+    <ProgressBar
+        android:id="@+id/inlineThinProgressBar"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_gravity="bottom"
+        android:max="1000"
+        android:progress="0"
+        android:progressTint="#FFFFFFFF"
+        android:progressBackgroundTint="#40FFFFFF"
+        android:minHeight="3dp"
+        android:maxHeight="3dp"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false"
+        android:contentDescription="playback progress" />
+
     <!-- inline_top_bar.xml ab yahan include nahi hota — woh ab
          inline_player_control_view.xml ke andar hi maujood hai (dekho us
          file ka "Redesign #3" comment), taaki Media3 usse baaki controls
