@@ -1474,6 +1474,7 @@ class PlayerActivity : AppCompatActivity() {
                 // is baar naye position par phir se try karna chahiye.
                 scrubPreviewImage.visibility = View.VISIBLE
                 updateScrubPreview(position)
+                highlightScrubPositionText(true)
             }
 
             override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {
@@ -1484,8 +1485,33 @@ class PlayerActivity : AppCompatActivity() {
                 scrubPreviewContainer.animate().alpha(0f).setDuration(120)
                     .withEndAction { scrubPreviewContainer.visibility = View.GONE }
                     .start()
+                highlightScrubPositionText(false)
             }
         })
+    }
+
+    /**
+     * User report: "jab timeline ko idhar udhar karega tabhi white time
+     * (exo_position) ko highlight karo" — normal playback ke waqt yeh time
+     * text apni default color/size mein hi rehta hai, sirf scrub ke dauraan
+     * gold accent color + thoda bada scale ho jaata hai taaki user ko turant
+     * pata chale ki exact drag position yehi number hai. onScrubStop par
+     * wapas normal ho jaata hai.
+     */
+    private fun highlightScrubPositionText(active: Boolean) {
+        val positionText = playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_position) ?: return
+        positionText.animate().cancel()
+        if (active) {
+            positionText.setTextColor(android.graphics.Color.parseColor("#FFD700"))
+            positionText.animate().scaleX(1.25f).scaleY(1.25f).setDuration(120).start()
+        } else {
+            // NOTE: applyThemeAccentColor() already keeps exo_position tinted
+            // to the user's chosen accent color (themeAccentColor) outside of
+            // scrubbing — reverting to that instead of a hardcoded white so
+            // this doesn't fight/override that existing theming.
+            positionText.setTextColor(themeAccentColor)
+            positionText.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+        }
     }
 
     private fun updateScrubPreview(positionMs: Long) {
