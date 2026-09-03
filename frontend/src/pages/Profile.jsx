@@ -229,16 +229,17 @@ export default function Profile() {
       {/* ---- Header ----
           REDESIGN (user ask: "profile section ka design bekar/ajeeb hai,
           professional aur stylish banao — YouTube ke profile page se
-          inspiration lo"): swapped the old plain centered avatar+name for
-          a banner-style header — gradient cover strip (theme-driven, so it
-          still reflows with every reel-* theme swap), avatar overlapping
-          the bottom edge, a gold verified checkmark badge on the avatar
-          itself instead of a separate ring color, and an active-plan pill
-          sitting right under the handle (mirrors YouTube's "Get Premium"
-          chip next to the channel name). Stats go from four loose boxes to
-          one unified bar with dividers, which reads as a single stat strip
-          rather than a grid of orphaned cards. All data/props are
-          untouched — visual layer only. */}
+          inspiration lo"): banner-style header — gradient cover strip
+          (theme-driven, so it still reflows with every reel-* theme
+          swap), avatar overlapping the bottom edge, a gold verified
+          checkmark badge on the avatar itself, and an active-plan pill
+          under the handle. FOLLOW-UP FIX (user ask: "naam aadha kata hua
+          dikh raha hai"): name+handle were sitting in the same flex row
+          as the avatar, right where the row overlapped the banner's
+          bottom edge — that's what was clipping the top of the letters.
+          Moved name+handle into their own block, stacked clearly below
+          the avatar with a plain margin-top, so they never share any
+          space with the banner at all. */}
       <div className="relative mb-5">
         <div className="h-28 sm:h-36 rounded-2xl overflow-hidden relative bg-gradient-to-br from-reel-gold/25 via-reel-surface2 to-reel-rust/20">
           <div
@@ -248,27 +249,25 @@ export default function Profile() {
           <div className="absolute inset-0 bg-gradient-to-t from-reel-bg via-reel-bg/10 to-transparent" />
         </div>
 
-        <div className="px-1">
-          <div className="flex items-end gap-3.5 -mt-10 sm:-mt-12">
-            <div className="relative shrink-0">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full ring-4 ring-reel-bg bg-reel-surface2 shadow-lg overflow-hidden flex items-center justify-center text-reel-gold">
-                {profile?.hasPhoto && profile?.userId ? (
-                  <img src={avatarUrl(profile.userId)} alt={displayName} className="w-full h-full object-cover" />
-                ) : (
-                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
-                )}
-              </div>
-              {verified ? (
-                <span className="absolute bottom-0.5 right-0.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-reel-gold ring-2 ring-reel-bg flex items-center justify-center">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B0B12" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                </span>
-              ) : null}
+        <div className="px-1 -mt-10 sm:-mt-12 relative">
+          <div className="relative inline-block">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full ring-4 ring-reel-bg bg-reel-surface2 shadow-lg overflow-hidden flex items-center justify-center text-reel-gold">
+              {profile?.hasPhoto && profile?.userId ? (
+                <img src={avatarUrl(profile.userId)} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7" /></svg>
+              )}
             </div>
+            {verified ? (
+              <span className="absolute bottom-0.5 right-0.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-reel-gold ring-2 ring-reel-bg flex items-center justify-center">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B0B12" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              </span>
+            ) : null}
+          </div>
 
-            <div className="min-w-0 flex-1 pb-1.5">
-              <h1 className="font-display text-lg sm:text-xl font-bold text-reel-ink truncate leading-[1.35] py-0.5">{displayName}</h1>
-              {handle ? <p className="text-reel-muted text-xs mt-0.5 truncate">{handle}</p> : null}
-            </div>
+          <div className="mt-3">
+            <h1 className="font-display text-lg sm:text-xl font-bold text-reel-ink truncate">{displayName}</h1>
+            {handle ? <p className="text-reel-muted text-xs mt-0.5 truncate">{handle}</p> : null}
           </div>
 
           {subscription?.active ? (
@@ -279,6 +278,20 @@ export default function Profile() {
           ) : null}
         </div>
       </div>
+
+      {/* ---- History ----
+          MOVED HERE (user ask: "save/downloads button ke upar history add
+          karo, jaise YouTube ke profile page mein hota hai"): this is the
+          same Continue Watching rail/data that used to sit lower on the
+          page (near My Plan) — just relocated above the stats bar and
+          labelled "History" here instead of "Continue Watching", to match
+          the YouTube reference screenshot. Same items/data, no new
+          backend call. */}
+      {continueWatching && continueWatching.length ? (
+        <div className="mb-1 -mx-4 sm:mx-0">
+          <ContinueWatchingRail items={continueWatching} onRemove={removeContinueWatchingItem} title={t('profile_history')} />
+        </div>
+      ) : null}
 
       {/* ---- Stats ----
           My Ratings/My Comments/My Reports removed on user request, so the
@@ -328,13 +341,6 @@ export default function Profile() {
             </button>
           </div>
         </SectionCard>
-      ) : null}
-
-      {/* ---- Continue Watching ---- */}
-      {continueWatching && continueWatching.length ? (
-        <div className="mb-1 -mx-4 sm:mx-0">
-          <ContinueWatchingRail items={continueWatching} onRemove={removeContinueWatchingItem} />
-        </div>
       ) : null}
 
       {/* ---- Storage ---- */}
