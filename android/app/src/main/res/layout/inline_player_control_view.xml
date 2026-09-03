@@ -90,8 +90,8 @@
                  fullscreen player's dedicated icon. -->
             <ImageView
                 android:id="@+id/inlinePipChevron"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:padding="6dp"
                 android:src="@drawable/ic_chevron_down_pip"
                 android:tint="#FFF8E7"
@@ -106,8 +106,8 @@
 
             <ImageView
                 android:id="@+id/inlineAudioTrackButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:padding="6dp"
                 android:src="@drawable/ic_audiotrack"
                 android:tint="#FFF8E7"
@@ -117,8 +117,8 @@
 
             <ImageView
                 android:id="@+id/inlineSubtitleButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:padding="6dp"
                 android:src="@drawable/ic_subtitle"
                 android:tint="#FFF8E7"
@@ -128,8 +128,8 @@
 
             <ImageView
                 android:id="@+id/inlineSettingsButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:padding="6dp"
                 android:src="@drawable/ic_settings"
                 android:tint="#FFF8E7"
@@ -177,8 +177,8 @@
 
         <ImageButton
             android:id="@+id/inlinePrevButton"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:padding="4dp"
             android:src="@drawable/ic_skip_previous"
             android:tint="#FFF8E7"
@@ -188,8 +188,8 @@
 
         <ImageButton
             android:id="@+id/inlinePlayPauseButton"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
             android:layout_marginHorizontal="36dp"
             android:padding="12dp"
             android:elevation="2dp"
@@ -200,8 +200,8 @@
 
         <ImageButton
             android:id="@+id/inlineNextButton"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:padding="4dp"
             android:src="@drawable/ic_skip_next"
             android:tint="#FFF8E7"
@@ -328,8 +328,8 @@
 
             <ImageView
                 android:id="@+id/inlineFullscreenButton"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:padding="5dp"
                 android:src="@drawable/ic_fullscreen_expand"
                 android:tint="#FFF8E7"
@@ -358,6 +358,12 @@
              the bottom edge even centered. touch_target_height kept at
              14dp so the tap/drag area stays just as easy to hit as before —
              only the drawn line got thinner, not the touchable area. -->
+        <!-- TOUCH AREA FIX (user report: "timeline skip karne ke liye screen
+             touch kam ho raha hai") — touch_target_height 14dp->40dp badhaya.
+             Comment upar confirm karta hai ki yeh media3 build touch area
+             view ke apne visual bounds se bahar bhi extend karta hai, isliye
+             sirf yeh attribute badalne se bar look same (patla, edge-flush)
+             rehta hai lekin pakadna/drag karna kaafi aasaan ho jaata hai. -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
@@ -367,7 +373,7 @@
             app:unplayed_color="#4DFFFFFF"
             app:buffered_color="#80FFFFFF"
             app:bar_height="2.5dp"
-            app:touch_target_height="14dp"
+            app:touch_target_height="40dp"
             app:scrubber_enabled_size="12dp"
             app:scrubber_disabled_size="0dp"
             app:scrubber_dragged_size="18dp" />
