@@ -1,22 +1,18 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24">
-    <!-- Premium polish: pehle ek plain single quarter-note tha, ab beamed
-         eighth-notes pair (do note-heads + ek connecting slanted beam) —
-         zyada detailed/"music app" jaisa feel, achha visually distinct hai. -->
+    <!-- Redesign #2 (user report: "pehle jaisa hi lag raha hai, bada farak
+         nahi") — pehla beamed-note redesign chhote 32dp button mein bahut
+         subtle tha. Ab poori tarah alag glyph: 3-bar audio/equalizer icon
+         (jaisa Netflix/Spotify audio-track icon mein hota hai) — bold,
+         turant pehchana jaane wala shape, kisi bhi tint color mein saaf dikhta hai. -->
     <path
-        android:pathData="M4.7,18 A2.3,2.3 0 1,0 9.3,18 A2.3,2.3 0 1,0 4.7,18 Z"
+        android:pathData="M6,9 A1,1 0 0,1 8,9 L8,15 A1,1 0 0,1 6,15 Z"
         android:fillColor="#FFFFFF" />
     <path
-        android:pathData="M8.6,6 L9.8,6 L9.8,18 L8.6,18 Z"
+        android:pathData="M11,6 A1,1 0 0,1 13,6 L13,18 A1,1 0 0,1 11,18 Z"
         android:fillColor="#FFFFFF" />
     <path
-        android:pathData="M14.7,18 A2.3,2.3 0 1,0 19.3,18 A2.3,2.3 0 1,0 14.7,18 Z"
-        android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M16.6,4 L17.8,4 L17.8,18 L16.6,18 Z"
-        android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M8.6,6 L9.8,6 L17.8,4 L16.6,4 Z"
+        android:pathData="M16,10 A1,1 0 0,1 18,10 L18,14 A1,1 0 0,1 16,14 Z"
         android:fillColor="#FFFFFF" />
 </vector>
