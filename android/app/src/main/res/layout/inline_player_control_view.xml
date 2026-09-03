@@ -247,17 +247,23 @@
         android:orientation="vertical"
         android:background="@drawable/bg_bottom_gradient">
 
-        <!-- BUG FIX ROUND 3 (user report + screenshot: "app mein bhi wahi
-             mismatch hai jo website pe tha — gold time bar white flush bar
-             ki jagah se upar baitha hai, aur time/quality/expand row bhi
-             uske hisaab se thoda niche honi chahiye"): app:bar_gravity
-             (below, on exo_progress) now pins the DRAWN line to this row's
-             own bottom edge instead of Media3's default vertical-center —
-             but that alone widens the empty gap between this info-row and
-             the bar (the bar's visible line moves ~6dp further down, away
-             from this row, while this row stays put). paddingBottom trimmed
-             6dp -> 2dp so the time/quality/expand row follows the bar down
-             and the two stay visually as tight together as before. -->
+        <!-- BUG FIX ROUND 4 (user report + screenshot: after Round 3's
+             app:bar_gravity="bottom", the bar didn't end up flush — it
+             jumped noticeably UP, floating mid-video instead of hugging the
+             true bottom edge. This project's media3-ui.aar is a self-built/
+             modified copy (see the setScrubberDrawable note below — a stock
+             method is missing from it), so bar_gravity's resource enum being
+             present doesn't guarantee its rendering logic is intact in this
+             particular build; it's not a safe attribute to lean on here.
+             REVERTED. Flush-to-edge is done a different, more predictable
+             way instead: shrink the view's own layout_height way down
+             (14dp -> 6dp) so the default center-drawn bar has almost no
+             room left to float away from the bottom in. touch_target_height
+             stays at 14dp — Media3 extends the tappable hit area beyond the
+             view's own drawn bounds for that, independent of visual height,
+             so the touch target doesn't shrink even though the bar looks
+             thinner now. paddingBottom on the info-row above is eased back
+             from 2dp to 4dp to match this smaller, more modest shift. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -265,7 +271,7 @@
             android:layout_marginEnd="6dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingBottom="2dp">
+            android:paddingBottom="4dp">
 
             <TextView
                 android:id="@id/exo_position"
@@ -344,17 +350,18 @@
              it falls back to DefaultTimeBar's BUILT-IN scrubber dot, which DOES
              respond to setScrubberColor() (both the XML value below and
              MainActivity.kt's applyInlineThemeColor()). -->
-        <!-- BUG FIX ROUND 3: app:bar_gravity="bottom" — DefaultTimeBar draws
-             its line vertically CENTERED within this 14dp view by default,
-             which sat ~6dp above the view's true bottom edge (same edge
-             inlineThinProgressBar, above, is flush-pinned to). "bottom"
-             makes it draw flush with this view's own bottom instead, so it
-             now lands on the exact same pixel row as the thin white bar. -->
+        <!-- BUG FIX ROUND 4: app:bar_gravity reverted (see comment above on
+             the info-row) — this self-built aar didn't render it flush like
+             stock Media3 does, it floated the whole bar up instead. Back to
+             the default (center) gravity, but layout_height cut from 14dp
+             to 6dp so there's almost no room for the bar to sit away from
+             the bottom edge even centered. touch_target_height kept at
+             14dp so the tap/drag area stays just as easy to hit as before —
+             only the drawn line got thinner, not the touchable area. -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
-            android:layout_height="14dp"
-            app:bar_gravity="bottom"
+            android:layout_height="6dp"
             app:played_color="#FFD700"
             app:scrubber_color="#FFD700"
             app:unplayed_color="#4DFFFFFF"
