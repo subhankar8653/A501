@@ -83,6 +83,92 @@ export const PATTERNS = [
       `<circle cx="19" cy="12" r="2.3" fill="${c}"/>` +
       `<path d="M12 11c3.5 0 6.5 2.6 6.5 5.6 0 2.2-1.8 3.4-4 3.1-1.6-.2-1.7-1-2.5-1s-.9.8-2.5 1c-2.2.3-4-.9-4-3.1C5.5 13.6 8.5 11 12 11z" fill="${c}"/>`,
   },
+  // -------------------------------------------------------------------
+  // FEATURE (user ask: "pattern mein bhi aur 10 add karo"): ten more
+  // shapes alongside the original nine, same "inline markup at 24x24,
+  // recolored at runtime" approach as everything above.
+  // -------------------------------------------------------------------
+  {
+    id: 'sun',
+    name: 'Sun',
+    markup: (c) =>
+      `<circle cx="12" cy="12" r="4.3" fill="${c}"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(45 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(90 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(135 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(180 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(225 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(270 12 12)"/>` +
+      `<rect x="11" y="1" width="2" height="4" rx="1" fill="${c}" transform="rotate(315 12 12)"/>`,
+  },
+  {
+    id: 'snowflake',
+    name: 'Snowflake',
+    markup: (c) =>
+      `<rect x="11" y="2" width="2" height="20" rx="1" fill="${c}"/>` +
+      `<rect x="2" y="11" width="20" height="2" rx="1" fill="${c}"/>` +
+      `<rect x="11" y="2" width="2" height="20" rx="1" fill="${c}" transform="rotate(45 12 12)"/>` +
+      `<rect x="11" y="2" width="2" height="20" rx="1" fill="${c}" transform="rotate(-45 12 12)"/>`,
+  },
+  {
+    id: 'crown',
+    name: 'Crown',
+    markup: (c) => `<path d="M3 18h18l1-10-5 4-5-8-5 8-5-4 1 10z" fill="${c}"/>`,
+  },
+  {
+    id: 'anchor',
+    name: 'Anchor',
+    markup: (c) =>
+      `<circle cx="12" cy="5" r="2.2" fill="${c}"/>` +
+      `<rect x="11" y="6.5" width="2" height="13.5" fill="${c}"/>` +
+      `<rect x="7" y="9" width="10" height="2" fill="${c}"/>` +
+      `<path d="M4 13a8 8 0 0 0 16 0h-2.3a5.7 5.7 0 0 1-11.4 0z" fill="${c}"/>`,
+  },
+  {
+    id: 'music',
+    name: 'Music Note',
+    markup: (c) =>
+      `<circle cx="8" cy="18" r="3.2" fill="${c}"/>` +
+      `<rect x="10.4" y="3" width="2" height="15" fill="${c}"/>` +
+      `<path d="M12.4 3l7 2v4l-7-2z" fill="${c}"/>`,
+  },
+  {
+    id: 'flame',
+    name: 'Flame',
+    markup: (c) =>
+      `<path d="M12 2c1 4-3 5-3 9a3 3 0 0 0 6 0c0-1-.5-2-1-3 2 1 4 3 4 6a6 6 0 0 1-12 0c0-5 3-7 6-12z" fill="${c}"/>`,
+  },
+  {
+    id: 'leaf',
+    name: 'Leaf',
+    markup: (c) =>
+      `<ellipse cx="12" cy="12" rx="8" ry="4.5" fill="${c}" transform="rotate(45 12 12)"/>` +
+      `<rect x="11.4" y="14" width="1.2" height="7" rx="0.6" fill="${c}" transform="rotate(45 12 17.5)"/>`,
+  },
+  {
+    id: 'feather',
+    name: 'Feather',
+    markup: (c) =>
+      `<path d="M19 2c-9 1-15 7-16 16l-1 3 3-1c9-1 15-7 16-16z" fill="${c}"/>` +
+      `<rect x="10.5" y="9" width="1" height="12" fill="${c}" transform="rotate(45 11 15)"/>`,
+  },
+  {
+    id: 'butterfly',
+    name: 'Butterfly',
+    markup: (c) =>
+      `<ellipse cx="7" cy="9" rx="5" ry="6" fill="${c}" transform="rotate(-20 7 9)"/>` +
+      `<ellipse cx="17" cy="9" rx="5" ry="6" fill="${c}" transform="rotate(20 17 9)"/>` +
+      `<ellipse cx="8" cy="17" rx="3.2" ry="4" fill="${c}" transform="rotate(-10 8 17)"/>` +
+      `<ellipse cx="16" cy="17" rx="3.2" ry="4" fill="${c}" transform="rotate(10 16 17)"/>` +
+      `<rect x="11.3" y="4" width="1.4" height="17" rx="0.7" fill="${c}"/>`,
+  },
+  {
+    id: 'puzzle',
+    name: 'Puzzle',
+    markup: (c) =>
+      `<path d="M4 4h6c0-1.4 1-2.4 2-2.4s2 1 2 2.4h6v6c1.4 0 2.4 1 2.4 2s-1 2-2.4 2v6h-6c0 1.4-1 2.4-2 2.4s-2-1-2-2.4H4v-6c-1.4 0-2.4-1-2.4-2s1-2 2.4-2z" fill="${c}"/>`,
+  },
 ]
 
 export function getPattern(id) {

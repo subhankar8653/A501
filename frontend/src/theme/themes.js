@@ -209,6 +209,153 @@ export const THEMES = [
       muted: '#7A5A2E',
     },
   },
+  // -------------------------------------------------------------------
+  // FEATURE (user ask: "theme mein aur achhe-achhe color combine add karo
+  // — pink aur red bhi, total 10 aur"): ten more hand-picked palettes,
+  // several built specifically around pink/red/crimson (as asked), plus a
+  // spread of other combos (teal-pink, magenta, coral, wine) so the
+  // picker doesn't lean on just one hue family.
+  // -------------------------------------------------------------------
+  {
+    id: 'crimson_noir',
+    name: 'Crimson Noir',
+    isDark: true,
+    colors: {
+      bg: '#150608',
+      surface: '#230D10',
+      surface2: '#3B141A',
+      gold: '#FF4757',
+      rust: '#C1121F',
+      ink: '#FCE9EA',
+      muted: '#C98F94',
+    },
+  },
+  {
+    id: 'neon_flamingo',
+    name: 'Neon Flamingo',
+    isDark: true,
+    colors: {
+      bg: '#0D0710',
+      surface: '#1B0F22',
+      surface2: '#2E1638',
+      gold: '#FF2E9F',
+      rust: '#C6008C',
+      ink: '#FDEBF6',
+      muted: '#C79BC0',
+    },
+  },
+  {
+    id: 'coral_blush',
+    name: 'Coral Blush',
+    isDark: true,
+    colors: {
+      bg: '#170A08',
+      surface: '#291310',
+      surface2: '#3F1D18',
+      gold: '#FF6F61',
+      rust: '#E8503F',
+      ink: '#FDEEE9',
+      muted: '#C99C90',
+    },
+  },
+  {
+    id: 'cherry_blossom',
+    name: 'Cherry Blossom',
+    isDark: false,
+    colors: {
+      bg: '#FFF5F7',
+      surface: '#FFFFFF',
+      surface2: '#FFE1E8',
+      gold: '#DB2777',
+      rust: '#BE185D',
+      ink: '#4A0E24',
+      muted: '#9C5470',
+    },
+  },
+  {
+    id: 'ruby_wine',
+    name: 'Ruby Wine',
+    isDark: true,
+    colors: {
+      bg: '#0F0508',
+      surface: '#1D0A10',
+      surface2: '#33121C',
+      gold: '#E11D48',
+      rust: '#9F1239',
+      ink: '#FCE7EC',
+      muted: '#B98894',
+    },
+  },
+  {
+    id: 'magenta_dusk',
+    name: 'Magenta Dusk',
+    isDark: true,
+    colors: {
+      bg: '#0C0710',
+      surface: '#180E22',
+      surface2: '#2A1638',
+      gold: '#D946EF',
+      rust: '#A21CAF',
+      ink: '#FAEBFC',
+      muted: '#BB9BC7',
+    },
+  },
+  {
+    id: 'blood_moon',
+    name: 'Blood Moon',
+    isDark: true,
+    colors: {
+      bg: '#0A0303',
+      surface: '#170707',
+      surface2: '#2B0C0C',
+      gold: '#DC2626',
+      rust: '#7F1D1D',
+      ink: '#FDECEC',
+      muted: '#B98686',
+    },
+  },
+  {
+    id: 'bubblegum_pop',
+    name: 'Bubblegum Pop',
+    isDark: true,
+    colors: {
+      bg: '#0E0812',
+      surface: '#1C1024',
+      surface2: '#2E1A3A',
+      gold: '#FF6EC7',
+      rust: '#A855F7',
+      ink: '#FDF0FA',
+      muted: '#C79FD1',
+    },
+  },
+  {
+    id: 'scarlet_ember',
+    name: 'Scarlet Ember',
+    isDark: true,
+    colors: {
+      bg: '#140705',
+      surface: '#25100A',
+      surface2: '#3C1B10',
+      gold: '#F4511E',
+      rust: '#D62828',
+      ink: '#FCEDE6',
+      muted: '#C99A85',
+    },
+  },
+  {
+    id: 'flamingo_tropic',
+    name: 'Flamingo Tropic',
+    isDark: true,
+    colors: {
+      bg: '#070F10',
+      surface: '#0F1E1E',
+      surface2: '#183131',
+      gold: '#FF5DA2',
+      rust: '#14B8A6',
+      ink: '#EAFBF7',
+      muted: '#8FBDB5',
+    },
+  },
 ]
 
 export function getTheme(id) {
