@@ -358,25 +358,48 @@
              the bottom edge even centered. touch_target_height kept at
              14dp so the tap/drag area stays just as easy to hit as before —
              only the drawn line got thinner, not the touchable area. -->
-        <!-- TOUCH AREA FIX (user report: "timeline skip karne ke liye screen
-             touch kam ho raha hai") — touch_target_height 14dp->40dp badhaya.
-             Comment upar confirm karta hai ki yeh media3 build touch area
-             view ke apne visual bounds se bahar bhi extend karta hai, isliye
-             sirf yeh attribute badalne se bar look same (patla, edge-flush)
-             rehta hai lekin pakadna/drag karna kaafi aasaan ho jaata hai. -->
-        <androidx.media3.ui.DefaultTimeBar
-            android:id="@id/exo_progress"
+        <!-- BUG FIX ROUND 5 (user report: "timeline bar upar chala gaya" —
+             yeh EXACT wahi bug hai jo Round 4 mein bar_gravity se hua tha,
+             ab touch_target_height=40dp se hua: is self-built aar mein
+             touch_target_height sirf ek invisible hit-area add nahi karta,
+             balki bar ko us poori height ke andar CENTER kar deta hai — 40dp
+             tall region ke center mein draw hone se patli line asli bottom
+             edge se ~17dp upar float karti dikhi. FIX: exo_progress wapas
+             uske proven-safe values (layout_height 6dp, touch_target_height
+             14dp) par revert kar diya — yeh flush-to-edge rehta hai. Bada
+             touch area ab is DefaultTimeBar ke bahar, ek separate transparent
+             overlay View se milta hai (neeche), jo apne bade touch region ke
+             har touch ko MainActivity.kt mein timeBar ko forward kar deta
+             hai — is tarah bar ka apna size/position bilkul same rehta hai,
+             sirf "pakadne ka area" bada hota hai. -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="6dp"
-            app:played_color="#FFD700"
-            app:scrubber_color="#FFD700"
-            app:unplayed_color="#4DFFFFFF"
-            app:buffered_color="#80FFFFFF"
-            app:bar_height="2.5dp"
-            app:touch_target_height="40dp"
-            app:scrubber_enabled_size="12dp"
-            app:scrubber_disabled_size="0dp"
-            app:scrubber_dragged_size="18dp" />
+            android:layout_height="34dp">
+
+            <androidx.media3.ui.DefaultTimeBar
+                android:id="@id/exo_progress"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:layout_gravity="bottom"
+                app:played_color="#FFD700"
+                app:scrubber_color="#FFD700"
+                app:unplayed_color="#4DFFFFFF"
+                app:buffered_color="#80FFFFFF"
+                app:bar_height="2.5dp"
+                app:touch_target_height="14dp"
+                app:scrubber_enabled_size="12dp"
+                app:scrubber_disabled_size="0dp"
+                app:scrubber_dragged_size="18dp" />
+
+            <!-- Poore 34dp band mein kahin bhi touch karo, MainActivity.kt
+                 isse exo_progress ko forward kar deta hai (setOnTouchListener
+                 wahan wire hota hai) — bar khud sirf 6dp/patla hi dikhta hai. -->
+            <View
+                android:id="@+id/inlineTimeBarTouchArea"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent" />
+        </FrameLayout>
 
         <!-- Hidden — settings-gear menu se performClick() hote hain, logic wahi purana -->
         <ImageView
