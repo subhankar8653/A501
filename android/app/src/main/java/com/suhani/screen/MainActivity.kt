@@ -31,6 +31,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -556,6 +557,37 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // let applyInlineThemeColor() retint it to match the theme too.
     private var inlinePositionTextRef: TextView? = null
     private var inlineDurationTextRef: TextView? = null
+    // FEATURE (user ask: "web jaisa patla safed time bar, jab play ho tab
+    // bhi dikhna chahiye, video ke bilkul niche se chipka hua"): see
+    // inline_player_view.xml's own comment on `inlineThinProgressBar` for
+    // why this is a totally separate view from `inlineTimeBarRef` (the
+    // gold DefaultTimeBar inside the fading controller layout).
+    private var inlineThinProgressBarRef: ProgressBar? = null
+    private var inlineThinProgressTicking = false
+    private val inlineThinProgressHandler = Handler(Looper.getMainLooper())
+    private val inlineThinProgressTick: Runnable = object : Runnable {
+        override fun run() {
+            val bar = inlineThinProgressBarRef
+            val p = inlinePlayer
+            if (bar != null && p != null) {
+                val duration = p.duration
+                if (duration > 0) {
+                    val fraction = (p.currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                    bar.progress = (fraction * bar.max).toInt()
+                }
+            }
+            inlineThinProgressHandler.postDelayed(this, 250L)
+        }
+    }
+    // Guarded so repeated mounts (new episode, quality switch, etc.) never
+    // start a second overlapping tick loop — the single loop just keeps
+    // reading whatever `inlineThinProgressBarRef`/`inlinePlayer` currently
+    // point to, so it stays correct across video changes on its own.
+    private fun startInlineThinProgressTickIfNeeded() {
+        if (inlineThinProgressTicking) return
+        inlineThinProgressTicking = true
+        inlineThinProgressHandler.post(inlineThinProgressTick)
+    }
     // FEATURE (user ask, with screenshot: "video player mein play button/
     // ring, '480p' quality text, aur progress bar ka color hamesha yellow/
     // gold hi rehta hai, jabki web side pe maine ek alag (jaise blue) theme
@@ -1384,6 +1416,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineAspectButtonRef = aspectButton
             inlinePositionTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_position)
             inlineDurationTextRef = playerView.findViewById(androidx.media3.ui.R.id.exo_duration)
+
+            // FEATURE (user ask: "web jaisa patla safed time bar app mein
+            // bhi lagao, jab video play ho tab bhi dikhna chahiye, niche
+            // se ekdum chipka hua"): thin bar lives in inline_player_view.xml
+            // (root), not inside the controller layout, specifically so it
+            // is NOT subject to Media3's controller show/hide — we drive
+            // its visibility ourselves, inverse of the controller's, so
+            // exactly one progress indicator is ever visible at a time.
+            val thinProgressBar = root.findViewById<ProgressBar>(R.id.inlineThinProgressBar)
+            inlineThinProgressBarRef = thinProgressBar
+            playerView.setControllerVisibilityListener(
+                PlayerView.ControllerVisibilityListener { visibility ->
+                    thinProgressBar.visibility = if (visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                }
+            )
+            startInlineThinProgressTickIfNeeded()
 
             // Back-arrow aur title text hata diye gaye hain (page ka apna back
             // navigation already hai, redundant tha) — isliye ab yahan backButton
@@ -3078,6 +3126,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineAmbientGlowView = null
                 inlineQualityButtonRef = null
                 inlineTimeBarRef = null
+                inlineThinProgressBarRef = null
                 inlineBufferingIndicatorRef = null
                 inlineProcessingLabelRef = null
                 inlinePipChevronRef = null
