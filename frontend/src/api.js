@@ -363,6 +363,28 @@ export async function getStreams(type, id) {
   return data.streams || []
 }
 
+// FEATURE (user ask: "language ko jyada ahmiyat do"): native player
+// reads a file's *real* embedded audio tracks the first time someone
+// plays it — see Player.jsx's audioTracks bridge. This ships that
+// detection back to the backend so it's cached against the exact stream
+// (see database.report_stream_languages), and every later viewer sees an
+// accurate language list *before* pressing play instead of finding out
+// only after the file loads. Fire-and-forget: never blocks playback, and
+// duplicate/failed reports are harmless.
+export async function reportStreamLanguages(type, id, streamId, languages, durationSec) {
+  const { backendUrl, token } = base()
+  try {
+    await postJson(`${backendUrl}/stremio/${token}/stream-languages/${id}.json`, {
+      stream_id: streamId,
+      languages,
+      duration_sec: durationSec,
+    })
+  } catch {
+    // best-effort cache write — a failed report just means the picker
+    // stays as accurate as it was before, nothing else depends on this
+  }
+}
+
 async function postJson(url, body) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 20000)
