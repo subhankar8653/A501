@@ -384,6 +384,23 @@
              position/gap bilkul waisi hi rehti hai jaisi Round 4 mein thi,
              sirf timeline ke around ek invisible bada touch-zone overlay ho
              jaata hai. -->
+        <!-- BUG FIX ROUND 7 (user report + screenshot: "time bar fir se upar
+             uth gaya hai" — Round 6 ke baad bhi wapas hua). Round 6 ka
+             "0dp net height" wala overlay (34dp height + -34dp margin)
+             theory mein sahi tha, lekin practically iss custom aar/LinearLayout
+             combo mein bhi bar ko upar khiska raha tha. Ab teen round ki
+             trial-and-error ke baad yeh clear hai ki is build mein
+             exo_progress ke around KUCH BHI extra (wrapper ho ya sibling
+             overlay ho, negative margin ho ya na ho) add karte hi bar apni
+             flush-bottom position khona shuru kar deta hai. FIX: bada touch
+             area wala idea poori tarah drop — exo_progress ab bilkul apne
+             ASLI, pehle-se-chale-aa-rahe values (layout_height 6dp,
+             touch_target_height 14dp) par hai, koi sibling/wrapper nahi —
+             yehi woh EXACT configuration hai jisme timeline hamesha sahi
+             (flush, bina kisi gap ke) rehta tha. Agar aage bada touch area
+             chahiye toh use ek bilkul alag approach chahiye hoga (jaise
+             custom aar source ko hi fix karna), XML attribute tweaks se
+             nahi. -->
         <androidx.media3.ui.DefaultTimeBar
             android:id="@id/exo_progress"
             android:layout_width="match_parent"
@@ -397,20 +414,6 @@
             app:scrubber_enabled_size="12dp"
             app:scrubber_disabled_size="0dp"
             app:scrubber_dragged_size="18dp" />
-
-        <!-- exo_progress ka hi flat sibling — koi wrapping FrameLayout nahi.
-             34dp height + (-34dp) top margin = LinearLayout ki total height
-             mein zero net addition, isliye info-row/gap bilkul same rehta
-             hai; sirf touch ke liye ek bada, invisible, upar-overlap karta
-             hua zone ban jaata hai jo poori bar + thodi si info-row ki bottom
-             strip tak cover karta hai. MainActivity.kt iske touches ko
-             exo_progress ko forward karta hai. -->
-        <View
-            android:id="@+id/inlineTimeBarTouchArea"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="-34dp"
-            android:background="@android:color/transparent" />
 
         <!-- Hidden — settings-gear menu se performClick() hote hain, logic wahi purana -->
         <ImageView
