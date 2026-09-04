@@ -715,7 +715,15 @@ export default function Player() {
                   {b}
                 </span>
               ))}
-              {audioTracks.length > 1 && audioTracks.map((t) => (
+              {/* User ask: "jo language available hai sab yahan buttons ki
+                  tarah honi chahiye — jo abhi chal rahi hai wo glow karegi,
+                  baaki dim rahengi, kisi aur pe tap karte hi wahi glow karne
+                  lagegi aur audio switch ho jayega." Pehle yeh sirf 2+
+                  languages hone par dikhta tha — single-audio episodes
+                  (jaise yeh, sirf Hindi) mein poori tarah chhupa rehta tha,
+                  isliye khaali/missing lag raha tha. Ab kam se kam 1 track
+                  hone par bhi dikhta hai. */}
+              {audioTracks.length > 0 && audioTracks.map((t) => (
                 <button
                   key={t.index}
                   onClick={() => selectAudioTrack(t.index)}
