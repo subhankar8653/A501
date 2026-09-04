@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments, getReportStatus, submitReport } from '../api'
+import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments, getReportStatus, submitReport, reportStreamLanguages } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import CommentsSheet from '../components/CommentsSheet'
@@ -62,11 +62,31 @@ export default function Player() {
   useEffect(() => {
     setAudioTracks([])
   }, [id])
+  // FEATURE (user ask: "sabhi ka language metadata caption/track se acche
+  // se detect ho"): `active` changes independently of `id` (quality
+  // switches don't remount this effect), so a ref keeps fetchTracks() able
+  // to always report against whichever quality is *actually* loaded right
+  // now, not a stale closure from when the effect first ran.
+  const activeRef = useRef(null)
+  useEffect(() => {
+    activeRef.current = active
+  }, [active])
   useEffect(() => {
     const fetchTracks = () => {
       try {
         const json = window.AndroidPlayer?.getAudioTracksJson?.()
-        if (json) setAudioTracks(JSON.parse(json))
+        if (!json) return
+        const parsed = JSON.parse(json)
+        setAudioTracks(parsed)
+        // Crowd-source real detected languages back to the backend so the
+        // language-first picker below is accurate for every viewer after
+        // this one — see api.js reportStreamLanguages / bug report ("480p
+        // select karne par Persian nikla, kisi ko pehle se pata nahi tha").
+        const streamId = activeRef.current?.id
+        const detected = parsed.map((tr) => tr.label).filter(Boolean)
+        if (streamId && detected.length) {
+          reportStreamLanguages(type, id, streamId, detected).catch(() => {})
+        }
       } catch {
         // native bridge abhi maujood nahi ya JSON garbled — chup rehte hain,
         // buttons bas nahi dikhenge
@@ -75,7 +95,7 @@ export default function Player() {
     window.__suhaniOnNativeTracksReady = fetchTracks
     fetchTracks()
     return () => { delete window.__suhaniOnNativeTracksReady }
-  }, [id])
+  }, [id, type])
   const selectAudioTrack = (index) => {
     window.AndroidPlayer?.selectAudioTrackByIndex?.(index)
     setAudioTracks((prev) => prev.map((t) => ({ ...t, selected: t.index === index })))
@@ -414,6 +434,53 @@ export default function Player() {
     () => qualities.find((q) => q.url === active?.url) || null,
     [qualities, active]
   )
+
+  // FEATURE (user ask: "spirit away se releted jitne bhi language hai sare
+  // language section mein add kar do — Hindi pe click karega toh sirf uske
+  // available qualities dikhein"): flips the old flow (pick a quality, only
+  // then find out — the hard way — what language it happens to be) around.
+  // A stream can carry more than one language (dual-audio releases), so it
+  // lands in every language bucket it has; streams with nothing detected
+  // yet fall into "Unknown" rather than vanishing from the picker.
+  const [selectedLanguage, setSelectedLanguage] = useState(null)
+  useEffect(() => {
+    setSelectedLanguage(null)
+  }, [id])
+
+  const languageGroups = useMemo(() => {
+    const map = new Map()
+    for (const q of qualities) {
+      const langs = q.languages && q.languages.length ? q.languages : ['Unknown']
+      for (const lang of langs) {
+        if (!map.has(lang)) map.set(lang, [])
+        map.get(lang).push(q)
+      }
+    }
+    return map
+  }, [qualities])
+
+  const availableLanguages = useMemo(() => [...languageGroups.keys()], [languageGroups])
+
+  // Only the "pick a quality" menu (in-page dropdown + native quality
+  // sheet) narrows down to the selected language — the video itself keeps
+  // playing uninterrupted until the user actually taps a different
+  // quality, same as before this feature.
+  const qualitiesForPicker = useMemo(() => {
+    if (!selectedLanguage) return qualities
+    return languageGroups.get(selectedLanguage) || qualities
+  }, [selectedLanguage, languageGroups, qualities])
+
+  function switchLanguage(lang) {
+    setSelectedLanguage(lang)
+    const options = languageGroups.get(lang) || []
+    if (!options.length) return
+    // Prefer staying at (roughly) the same quality rank the user was
+    // already watching at; if that exact rank isn't available in this
+    // language, fall back to the lowest quality in it (same
+    // data-friendly default lowestQualityStream() uses on first load).
+    const sameRank = options.find((o) => o.label === activeQualityObj?.label)
+    switchQuality(sameRank || lowestQualityStream(options))
+  }
   // FEATURE (user ask: "caption mein promotion (@Channel) nahi hona
   // chahiye — Name Year [Language] Source [Quality] format chahiye"):
   // meta.filename yahan bhi raw hai, VideoPlayer ko sirf clean title jaata
@@ -674,7 +741,7 @@ export default function Player() {
                   key={active.url}
                   src={active.url}
                   title={displayTitle}
-                  qualities={qualities}
+                  qualities={qualitiesForPicker}
                   activeQuality={activeQualityObj}
                   onQualityChange={(q) => switchQuality(q)}
                   ambientEnabled={ambientMode}
@@ -706,6 +773,39 @@ export default function Player() {
           </div>
 
           <div className="px-4 sm:px-6">
+          {/* FEATURE (user ask: "480p main Persian chal gaya jabki Hindi
+              chahiye tha, jo quality daboge usi mein language pata chalti
+              hai — pehle language dikhao, phir usi language ki qualities
+              dikhao"): language-first row — only shows once there's more
+              than one language to actually pick between (a single-language
+              title has nothing to choose, so it stays out of the way).
+              Tapping a language jumps to a matching-quality stream via
+              switchLanguage() and narrows the quality menu below (see
+              qualitiesForPicker) so 480p can no longer silently mean
+              "whatever language that file happens to be". */}
+          {availableLanguages.length > 1 ? (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-reel-muted mb-2">{t('player_language')}</p>
+              <div className="flex flex-wrap gap-2">
+                {availableLanguages.map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => switchLanguage(lang)}
+                    aria-pressed={selectedLanguage === lang}
+                    className={`text-xs px-3 py-1.5 rounded-full font-medium transition active:scale-95 ${
+                      selectedLanguage === lang
+                        ? 'bg-reel-gold text-reel-bg'
+                        : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
+                    }`}
+                  >
+                    {lang}
+                    <span className="opacity-60 ml-1">· {languageGroups.get(lang).length}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {/* Title + badges */}
           <div className="mt-4">
             <h1 className="font-display text-lg text-reel-ink break-words">{displayTitle}</h1>
