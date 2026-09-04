@@ -1447,6 +1447,78 @@ class Database:
         result = await self.dbs[db_key][collection_name].replace_one({"tmdb_id": tmdb_id}, doc)
         return result.modified_count > 0
 
+    #----- FEATURE (user ask: "sabhi ka language metadata caption/track se
+    #----- acche se detect ho"): filename parsing catches releases that
+    #----- literally say "[Hindi]" etc, but plenty of files (see bug report:
+    #----- 480p file plays Persian with nothing about it in the filename)
+    #----- only reveal their real audio language once the native player
+    #----- actually opens them and reads the embedded track list. Rather
+    #----- than requiring a heavy ffprobe pipeline, we crowd-source it: the
+    #----- first viewer who plays a given file reports back what the native
+    #----- player detected (see stream_routes.report_stream_languages),
+    #----- and it's cached here so every viewer after that sees it in the
+    #----- language picker *before* pressing play.
+    async def report_stream_languages(
+        self, imdb_id: str, quality_id: str,
+        languages: List[str], duration_sec: Optional[float] = None,
+    ) -> bool:
+        if not languages and duration_sec is None:
+            return False
+
+        for db_idx in range(self.current_db_index, 0, -1):
+            db_key = f"storage_{db_idx}"
+            for collection_name in ("movie", "tv"):
+                doc = await self.dbs[db_key][collection_name].find_one({"imdb_id": imdb_id})
+                if not doc:
+                    continue
+
+                changed = self._merge_quality_languages(doc, collection_name, quality_id, languages, duration_sec)
+                if not changed:
+                    continue
+
+                doc["updated_on"] = datetime.utcnow()
+                result = await self.dbs[db_key][collection_name].replace_one({"_id": doc["_id"]}, doc)
+                return result.modified_count > 0
+        return False
+
+    #----- Walks every `telegram` list in a movie/tv doc (tv nests them
+    #----- inside seasons->episodes) looking for the matching quality id,
+    #----- then merges in newly-detected languages (dedup, order-preserving)
+    #----- and fills duration_sec only if it wasn't already known.
+    @staticmethod
+    def _merge_quality_languages(
+        doc: dict, collection_name: str, quality_id: str,
+        languages: List[str], duration_sec: Optional[float],
+    ) -> bool:
+        def merge_into(quality: dict) -> bool:
+            if quality.get("id") != quality_id:
+                return False
+            changed = False
+            existing = quality.get("languages") or []
+            for lang in languages:
+                if lang and lang not in existing:
+                    existing.append(lang)
+                    changed = True
+            if existing != quality.get("languages"):
+                quality["languages"] = existing
+            if duration_sec and not quality.get("duration_sec"):
+                quality["duration_sec"] = duration_sec
+                changed = True
+            return changed
+
+        any_changed = False
+        if collection_name == "movie":
+            for quality in doc.get("telegram", []) or []:
+                if merge_into(quality):
+                    any_changed = True
+        else:
+            for season in doc.get("seasons", []) or []:
+                for episode in season.get("episodes", []) or []:
+                    for quality in episode.get("telegram", []) or []:
+                        if merge_into(quality):
+                            any_changed = True
+        return any_changed
+
     #----- Locate an existing doc across storage DBs by imdb_id, then tmdb_id, then title+year
     async def _find_existing_media(
         self, collection_name: str, imdb_id, tmdb_id, title, release_year, total_storage_dbs: int
@@ -1578,11 +1650,20 @@ class Database:
     async def insert_media(
         self, metadata_info: dict,
         channel: int, msg_id: int, size: str, name: str, raw_size: int = 0,
-        status: Optional[dict] = None
+        status: Optional[dict] = None,
+        duration_sec: Optional[float] = None,
+        languages: Optional[List[str]] = None,
     ) -> Optional[ObjectId]:
 
         group_key = metadata_info.get("group_key")
         part_number = metadata_info.get("part_number")
+
+        #----- FEATURE (language-first quality picker): best-effort filename
+        #----- language tags captured at index time, so the picker has
+        #----- *something* to show even before any real playback happens.
+        #----- Split files across parts don't have a single reliable
+        #----- duration, so duration_sec is only kept for non-split streams.
+        languages = languages or []
 
         if group_key:
             part = {
@@ -1599,6 +1680,7 @@ class Database:
                 size=part_size,
                 group_key=group_key,
                 parts=[QualityPart(**part)],
+                languages=languages,
             )
         else:
             quality_detail = QualityDetail(
@@ -1608,6 +1690,8 @@ class Database:
                 size=size,
                 source=metadata_info.get('source', 'telegram'),
                 drive_id=metadata_info.get('drive_id'),
+                languages=languages,
+                duration_sec=duration_sec,
             )
 
         if metadata_info['media_type'] == "movie":

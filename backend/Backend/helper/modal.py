@@ -22,6 +22,22 @@ class QualityDetail(BaseModel):
     #----- "telegram" (default, existing data) or "drive" for a Google Drive-backed stream
     source: Optional[str] = "telegram"
     drive_id: Optional[str] = None
+    #----- FEATURE (user ask: "language ko jyada ahmiyat do — quality select
+    #----- karne se pehle hi pata chale kis quality mein kaunsi language
+    #----- hai"): filled two ways — best-effort at index time from the
+    #----- filename (see helper/languages.py detect_languages), and more
+    #----- reliably crowd-sourced from the actual embedded audio tracks the
+    #----- native player detects the first time anyone plays this exact
+    #----- file (see fastapi/routes/stream_routes.py report_stream_languages
+    #----- + frontend Player.jsx reportDetectedLanguages). Starts empty/None
+    #----- and only gets more accurate over time — never blocks playback.
+    languages: Optional[List[str]] = Field(default_factory=list)
+    #----- Telegram's own video.duration (seconds) captured at index time —
+    #----- no ffprobe needed, Telegram already knows this. Used to offer
+    #----- "mixed" playback (desired-language audio from one file synced
+    #----- onto a different quality's video) only when two files' runtimes
+    #----- genuinely match — see Player.jsx / VideoPlayer.jsx.
+    duration_sec: Optional[float] = None
 
 
 #----- Episode schema

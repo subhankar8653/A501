@@ -8,6 +8,7 @@ from pyrogram.errors import FloodWait, ChannelPrivate, ChatAdminRequired
 
 from Backend.logger import LOGGER
 from Backend.helper.encrypt import encode_string, decode_string
+from Backend.helper.languages import detect_languages
 from Backend.helper.metadata import metadata, extract_default_id
 from Backend.helper.pyro import clean_filename, finalize_media_name, get_readable_file_size
 from Backend.helper.skip_channel import is_skip_channel, route_to_skip_channel
@@ -468,6 +469,16 @@ class ScanManager:
         size = get_readable_file_size(file.file_size)
         channel_int = int(str(chat_id).replace("-100", ""))
 
+        #----- FEATURE (user ask: "language ko jyada ahmiyat do"): Telegram
+        #----- already tells us the video's real runtime (message.video.
+        #----- duration, seconds) — no ffprobe needed. Best-effort language
+        #----- tags come from the filename/caption right now; files that
+        #----- don't mention a language here (like the 480p "Persian" case
+        #----- from the bug report) get filled in later once a real viewer
+        #----- plays them — see database.report_stream_languages.
+        indexed_duration_sec = getattr(message.video, "duration", None) if message.video else None
+        indexed_languages = detect_languages(title)
+
         try:
             if await self._stream_id_exists(channel_int, msg_id):
                 s["counters"]["skipped_dup"] += 1
@@ -505,6 +516,8 @@ class ScanManager:
                     name=title_clean,
                     raw_size=raw_size,
                     status=insert_status,
+                    duration_sec=indexed_duration_sec,
+                    languages=indexed_languages,
                 )
             if updated_id:
                 if insert_status.get("duplicate_skipped"):
