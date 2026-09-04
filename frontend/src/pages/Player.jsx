@@ -50,6 +50,66 @@ function lowestQualityStream(list) {
 
 export default function Player() {
   const { type, id } = useParams()
+
+  // FEATURE (user ask: "jahan MB dikhta hai uske side mein audio-panel jaisi
+  // language buttons chahiye — jis language pe tap karega usi mein play hona
+  // shuru ho jaaye"): native (MainActivity.kt) STATE_READY par
+  // window.__suhaniOnNativeTracksReady() call karta hai — us par yeh
+  // getAudioTracksJson() se poori list utha leta hai. Episode badalne par
+  // list turant purani ho jaati hai, isliye id badalte hi khaali kar dete
+  // hain jab tak naya episode apni khud ki READY event na bhej de.
+  const [audioTracks, setAudioTracks] = useState([])
+  useEffect(() => {
+    setAudioTracks([])
+  }, [id])
+  useEffect(() => {
+    const fetchTracks = () => {
+      try {
+        const json = window.AndroidPlayer?.getAudioTracksJson?.()
+        if (json) setAudioTracks(JSON.parse(json))
+      } catch {
+        // native bridge abhi maujood nahi ya JSON garbled — chup rehte hain,
+        // buttons bas nahi dikhenge
+      }
+    }
+    window.__suhaniOnNativeTracksReady = fetchTracks
+    fetchTracks()
+    return () => { delete window.__suhaniOnNativeTracksReady }
+  }, [id])
+  const selectAudioTrack = (index) => {
+    window.AndroidPlayer?.selectAudioTrackByIndex?.(index)
+    setAudioTracks((prev) => prev.map((t) => ({ ...t, selected: t.index === index })))
+  }
+
+  // FEATURE (user ask: "jahan MB dikhta hai uske side mein audio-panel jaisi
+  // language buttons chahiye — jis language pe tap karega usi mein play hona
+  // shuru ho jaaye"): native (MainActivity.kt) STATE_READY par
+  // window.__suhaniOnNativeTracksReady() call karta hai — us par yeh
+  // getAudioTracksJson() se poori list utha leta hai. Episode badalne par
+  // list turant purani ho jaati hai, isliye id badalte hi khaali kar dete
+  // hain jab tak naya episode apni khud ki READY event na bhej de.
+  const [audioTracks, setAudioTracks] = useState([])
+  useEffect(() => {
+    setAudioTracks([])
+  }, [id])
+  useEffect(() => {
+    const fetchTracks = () => {
+      try {
+        const json = window.AndroidPlayer?.getAudioTracksJson?.()
+        if (json) setAudioTracks(JSON.parse(json))
+      } catch {
+        // native bridge abhi maujood nahi ya JSON garbled — chup rehte hain,
+        // buttons bas nahi dikhenge
+      }
+    }
+    window.__suhaniOnNativeTracksReady = fetchTracks
+    fetchTracks()
+    return () => { delete window.__suhaniOnNativeTracksReady }
+  }, [id])
+  const selectAudioTrack = (index) => {
+    window.AndroidPlayer?.selectAudioTrackByIndex?.(index)
+    setAudioTracks((prev) => prev.map((t) => ({ ...t, selected: t.index === index })))
+  }
   const navigate = useNavigate()
   const [streams, setStreams] = useState(null)
   const [active, setActive] = useState(null)
@@ -684,6 +744,19 @@ export default function Player() {
                 <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
                   {b}
                 </span>
+              ))}
+              {audioTracks.length > 1 && audioTracks.map((t) => (
+                <button
+                  key={t.index}
+                  onClick={() => selectAudioTrack(t.index)}
+                  className={`text-xs px-2.5 py-1 rounded-full border whitespace-pre transition-colors ${
+                    t.selected
+                      ? 'bg-reel-gold text-reel-bg border-reel-gold'
+                      : 'bg-reel-surface2 text-reel-muted border-transparent'
+                  }`}
+                >
+                  {t.label}
+                </button>
               ))}
             </div>
           </div>
