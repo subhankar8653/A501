@@ -2,6 +2,21 @@
 <resources>
     <style name="Theme.SuhaniScreen" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">#0B0B0F</item>
+        <!-- BUG FIX (user report + YouTube comparison screenshot: "niche
+             navigation bar transparent hai, YouTube jaisa solid black
+             chahiye") — root cause: edge-to-edge on hai
+             (WindowCompat.setDecorFitsSystemWindows(window, false) in
+             MainActivity.kt) aur WebView content ko bottom padding=0 di
+             gayi hai (jaanbujh kar, taaki content nav bar ke peeche tak
+             extend ho) — lekin navigationBarColor kabhi set hi nahi kiya
+             gaya tha, isliye transparent/system-default rehta tha aur
+             neeche jo bhi WebView content hai (jaise inline player ka
+             ambient-tinted background) seedha nav bar ke through dikh
+             jaata tha. Ab yeh hamesha solid opaque black hai — page ka
+             content niche extend hota rahega (jaisa pehle tha) lekin ab
+             system khud us par ek solid black bar draw karega, YouTube ki
+             tarah. -->
+        <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowBackground">#0B0B0F</item>
     </style>
 </resources>
