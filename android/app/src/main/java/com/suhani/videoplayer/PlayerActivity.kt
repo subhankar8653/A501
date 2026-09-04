@@ -767,13 +767,22 @@ class PlayerActivity : AppCompatActivity() {
 
     // Text
     private val subFonts = arrayOf("Default", "Sans Serif", "Serif", "Monospace")
-    private var subFontIndex = 0
+    // FEATURE (user ask, YouTube screenshot comparison: "video ke caption ko
+    // YouTube ke caption ke front jaisa karo") — YouTube's caption look is a
+    // plain sans-serif, regular-weight (not bold) white line sitting on a
+    // solid-ish black per-line background box — no outline/drop-shadow edge
+    // effect (the box itself gives the contrast). Default subtitle style
+    // changed to match: subFontIndex 0->1 (Sans Serif), subBold true->false,
+    // subTextBgEnabled false->true (adds the black box). Har cheez ab bhi
+    // Subtitle settings panel se poori tarah user-adjustable hai — sirf
+    // fresh-install defaults badle hain.
+    private var subFontIndex = 1
     private var subSizeSp = 22 // 8-40
     private var subScalePercent = 100 // 50-150
     private var subTextColor = android.graphics.Color.WHITE
-    private var subBold = true
-    private var subTextBgEnabled = false
-    private var subTextBgColor = android.graphics.Color.parseColor("#80000000")
+    private var subBold = false
+    private var subTextBgEnabled = true
+    private var subTextBgColor = android.graphics.Color.parseColor("#CC000000")
     private var subBorderEnabled = false
     private var subBorderColor = android.graphics.Color.BLACK
     private var subBorderSize = 80 // 0-100
