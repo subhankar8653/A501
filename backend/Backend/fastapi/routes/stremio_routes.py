@@ -860,13 +860,28 @@ async def get_streams(
                 original_url = f"{SettingsManager.current().base_url}/dl/{token}/{quality.get('id')}/video.mkv"
                 proxy_url = build_proxy_url(original_url)
 
+                #----- FEATURE (user ask: "language ko jyada ahmiyat do —
+                #----- quality select karne se pehle hi pata chale kis
+                #----- quality mein kaunsi language hai"): best-effort at
+                #----- index time from the filename, refined over time by
+                #----- real viewers' native player track detection (see
+                #----- report_stream_languages below). Falls back to a
+                #----- fresh filename scan for older/un-migrated entries
+                #----- that were indexed before this field existed.
+                stream_languages = quality.get("languages") or detect_languages(filename)
+                stream_extra = {
+                    "id": quality.get("id"),
+                    "languages": stream_languages,
+                    "duration_sec": quality.get("duration_sec"),
+                }
+
                 if SettingsManager.current().show_proxy_and_non_proxy_both and proxy_url:
-                    streams.append({"name": f"{stream_name} (Proxy)", "title": stream_title, "url": proxy_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key})
-                    streams.append({"name": f"{stream_name} (Direct)", "title": stream_title, "url": original_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key})
+                    streams.append({"name": f"{stream_name} (Proxy)", "title": stream_title, "url": proxy_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key, **stream_extra})
+                    streams.append({"name": f"{stream_name} (Direct)", "title": stream_title, "url": original_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key, **stream_extra})
                 elif proxy_url:
-                    streams.append({"name": stream_name, "title": stream_title, "url": proxy_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key})
+                    streams.append({"name": stream_name, "title": stream_title, "url": proxy_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key, **stream_extra})
                 else:
-                    streams.append({"name": stream_name, "title": stream_title, "url": original_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key})
+                    streams.append({"name": stream_name, "title": stream_title, "url": original_url, "size_bytes": size_bytes, "episode_start": episode_start, "name_key": name_key, **stream_extra})
     elif is_global_search_enabled():
         try:
             streams.extend(
@@ -897,6 +912,35 @@ async def get_streams(
             seen[s["name"]] = seen.get(s["name"], 0) + 1
             s["name"] = f"{s['name']} ({seen[s['name']]})"
     return {"streams": streams}
+
+
+#----- FEATURE (user ask: "sabhi ka language metadata caption/track se
+#----- acche se detect ho"): the frontend's native player already reads a
+#----- file's *real* embedded audio tracks the first time someone plays it
+#----- (window.AndroidPlayer.getAudioTracksJson — see Player.jsx). This
+#----- endpoint lets that detection get written back to the DB against the
+#----- exact stream id it came from, so the language-first picker shows an
+#----- accurate answer for *every later viewer* without needing a heavy
+#----- server-side ffprobe pipeline. Best-effort only — never blocks or
+#----- errors playback if it fails, and duplicate reports are harmless
+#----- (report_stream_languages just merges/dedupes).
+@router.post("/{token}/stream-languages/{id}.json")
+async def report_stream_languages_api(token: str, id: str, payload: dict, token_data: dict = Depends(verify_token)):
+    imdb_id = id.split(":")[0]
+    quality_id = payload.get("stream_id")
+    languages = [l for l in (payload.get("languages") or []) if isinstance(l, str) and l.strip()][:6]
+    duration_sec = payload.get("duration_sec")
+    try:
+        duration_sec = float(duration_sec) if duration_sec else None
+    except (TypeError, ValueError):
+        duration_sec = None
+
+    if not quality_id or (not languages and duration_sec is None):
+        return {"saved": False}
+
+    saved = await db.report_stream_languages(imdb_id, quality_id, languages, duration_sec)
+    return {"saved": saved}
+
 
 #----- Configure/install landing page rendered as HTML for a token
 @router.get("/{token}/configure")
