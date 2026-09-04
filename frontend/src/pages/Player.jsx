@@ -13,6 +13,7 @@ import { useIsSaved, toggleSaved } from '../lib/savedStore'
 import { useDownloadEntry, downloadId, setWatching, isWatchingNow } from '../lib/downloadsStore'
 import { formatDisplayTitle } from '../lib/formatTitle'
 import VerifyGate from '../components/VerifyGate'
+import PlayerErrorBoundary from '../components/PlayerErrorBoundary'
 import { useLanguage } from '../i18n/LanguageContext'
 
 // Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n👤 @Channel")
@@ -655,6 +656,7 @@ export default function Player() {
   }
 
   return (
+    <PlayerErrorBoundary>
     <div className="max-w-3xl mx-auto pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
       {error ? (
         <div className="px-4 sm:px-6">
@@ -799,7 +801,7 @@ export default function Player() {
                     }`}
                   >
                     {lang}
-                    <span className="opacity-60 ml-1">· {languageGroups.get(lang).length}</span>
+                    <span className="opacity-60 ml-1">· {languageGroups.get(lang)?.length || 0}</span>
                   </button>
                 ))}
               </div>
@@ -1060,5 +1062,6 @@ export default function Player() {
         </>
       )}
     </div>
+    </PlayerErrorBoundary>
   )
 }
