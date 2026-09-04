@@ -183,6 +183,26 @@ class WebAppInterface(private val activity: MainActivity) {
         runOnUiThreadSafely { activity.setInlineAmbientEnabled(enabled) }
     }
 
+    // FEATURE (user ask: "jahan MB dikhta hai uske side mein audio-panel
+    // jaisi language buttons chahiye — Hindi pe tap karte hi Hindi audio
+    // shuru ho jaaye"): yeh do naye bridge functions episode-detail page
+    // (Player.jsx) ko wahi audio-track info deते hain jo pehle sirf player
+    // ke andar wale "Audio track" sheet mein milti thi. getAudioTracksJson()
+    // synchronous hai (seedha JS ko return value milta hai, koi callback
+    // nahi chahiye) — dono functions activity ke showInlineAudioTrackDialog()
+    // wali hi shared logic (audioTracksSnapshot()/selectAudioTrackIndex())
+    // use karte hain, taaki dialog aur yeh buttons hamesha ek jaisi list/
+    // selection dikhayein.
+    @JavascriptInterface
+    fun getAudioTracksJson(): String {
+        return activity.audioTracksSnapshotJson()
+    }
+
+    @JavascriptInterface
+    fun selectAudioTrackByIndex(index: Int) {
+        runOnUiThreadSafely { activity.selectAudioTrackIndex(index) }
+    }
+
 }
 
 /**
@@ -667,24 +687,47 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 // nahi) — dekho inlineLastReadyUri ka field comment.
                 inlineLastReadyUri = inlinePlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
                 inlineIoRetryCount = 0
-            } else if (playbackState == Player.STATE_ENDED) {
-                // BUG FIX (user report: "Autoplay On hone ke bawajood episode
-                // khatam hone par next episode play nahi hota"): is listener
-                // mein pehle STATE_ENDED ko bilkul handle hi nahi kiya jaata
-                // tha. VideoPlayer.jsx ka apna 'ended' event-listener sirf web
-                // (`<video>` tag) fallback ke liye hai — us file mein saaf
-                // comment hai "if (isNative) return", matlab native mode mein
-                // woh JS listener kabhi lagta hi nahi, isliye Player.jsx ka
-                // handleEnded() (jo autoplay + next-episode navigate karta
-                // hai) kabhi call hi nahi hota tha chahe Autoplay On ho.
-                // Fix: yahan bhi wahi __suhaniOnNative* bridge pattern jo
-                // prev/next ke liye already hai (dekho neeche exo_prev/
-                // exo_next click listeners) — Player.jsx mein
-                // window.__suhaniOnNativeEnded ko handleEnded se wire kiya
-                // gaya hai.
+                // FEATURE (audio-language quick buttons, MB badge ke bagal):
+                // yahi sabse pehla reliable point hai jahan player ke audio
+                // tracks pata chal chuke hote hain. Player.jsx isko sunke
+                // getAudioTracksJson() call karta hai aur buttons render
+                // karta hai.
                 webView.evaluateJavascript(
-                    "if (window.__suhaniOnNativeEnded) window.__suhaniOnNativeEnded();", null
+                    "if (window.__suhaniOnNativeTracksReady) window.__suhaniOnNativeTracksReady();", null
                 )
+            } else if (playbackState == Player.STATE_ENDED) {
+                // BUG FIX ROUND 2 (user report: "autoplay pagal ho gaya —
+                // episode 1 se 11 tak bahut jaldi chain-reaction se badalta
+                // rehta hai, sirf aakhri 2 episode sahi se play hote hain").
+                // Root cause: upar wala STATE_ENDED handler (Round 1 fix)
+                // BINA kisi check ke har STATE_ENDED par next-episode bridge
+                // call kar deta tha. Yeh app TDLib (Telegram) se video
+                // stream karta hai — jab ek naya episode mount hota hai,
+                // uski asli file/stream TDLib se resolve hone mein thoda
+                // time lagta hai. Us resolve-hone-ke-beech ki window mein
+                // player kabhi-kabhi ek galat/premature STATE_ENDED dikha
+                // deta hai (duration abhi tak C.TIME_UNSET ya 0 hai, position
+                // bhi ~0 hi hai — yeh "video khatam hua" nahi hai, "abhi load
+                // hi ho raha hai" hai). Us galat STATE_ENDED par bhi hum next
+                // episode par chale jaate the, jiske liye phir wahi TDLib
+                // resolve-time lagta, phir wahi galat STATE_ENDED — isse ek
+                // chain-reaction ban jaata tha jo tabhi rukta jab kisi
+                // episode ka stream itni jaldi resolve ho jaata ki asli
+                // playback shuru ho jaaye. FIX: ab sirf "genuine" end par hi
+                // bridge call hota hai — duration valid/known ho AUR current
+                // position us duration ke 2 second ke andar ho. Loading ke
+                // dauraan wale premature STATE_ENDED mein duration hamesha
+                // unset/0 rehta hai, isliye woh is check mein fail ho jaate
+                // hain aur chain-reaction nahi banta.
+                val player = inlinePlayer
+                val duration = player?.duration ?: C.TIME_UNSET
+                val position = player?.currentPosition ?: 0L
+                val isGenuineEnd = duration != C.TIME_UNSET && duration > 0L && position >= duration - 2000L
+                if (isGenuineEnd) {
+                    webView.evaluateJavascript(
+                        "if (window.__suhaniOnNativeEnded) window.__suhaniOnNativeEnded();", null
+                    )
+                }
             }
         }
     }
@@ -2873,24 +2916,18 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
-     *  koi settings sub-screen nahi (wo dialog fullscreen mein already khula milta
-     *  hai agar zyada advanced audio options chahiye ho).
-     *
-     *  Robustness fix: kabhi-kabhi ek group ka reported `.type` audio nahi dikhta
-     *  (renderer-mapping quirk) jabki uska format `audio/...` mime hi hai — isliye
-     *  ab type-check ke saath-saath mimeType se bhi audio tracks dhoondte hain,
-     *  taaki genuinely single-audio-track file par bhi dialog khaali na dikhe. */
-    private fun showInlineAudioTrackDialog() {
-        val player = inlinePlayer ?: return
+    /** Shared track-discovery logic — dialog (showInlineAudioTrackDialog) aur
+     *  naya JS bridge (audioTracksSnapshotJson/selectAudioTrackIndex) dono
+     *  isi ek jagah se audio tracks nikalte hain, taaki list/selection/label
+     *  hamesha consistent rahe. MUST call on main thread (player access). */
+    private fun audioTracksSnapshot(): List<Triple<Tracks.Group, Int, String>> {
+        val player = inlinePlayer ?: return emptyList()
         val allGroups = player.currentTracks.groups
         val audioGroups = allGroups.filter { group ->
             group.type == C.TRACK_TYPE_AUDIO ||
                 (0 until group.length).any { i -> group.getTrackFormat(i).sampleMimeType?.startsWith("audio/") == true }
         }
-        val labels = mutableListOf<String>()
-        val trackRefs = mutableListOf<Pair<Tracks.Group, Int>>()
-
+        val result = mutableListOf<Triple<Tracks.Group, Int, String>>()
         audioGroups.forEach { group ->
             for (i in 0 until group.length) {
                 val format = group.getTrackFormat(i)
@@ -2901,12 +2938,72 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                         java.util.Locale(langCode).getDisplayLanguage(java.util.Locale.ENGLISH)
                     } catch (_: Exception) { langCode }
                     label != null -> label
-                    else -> "Track #${labels.size + 1}"
+                    else -> "Track #${result.size + 1}"
                 }
-                labels.add(name)
-                trackRefs.add(Pair(group, i))
+                result.add(Triple(group, i, name))
             }
         }
+        return result
+    }
+
+    /** JS bridge (WebAppInterface.getAudioTracksJson) ke liye — @JavascriptInterface
+     *  calls WebView ke apne background thread par aate hain, lekin ExoPlayer sirf
+     *  main thread se safely access hota hai, isliye yahan runOnUiThread + latch se
+     *  synchronous (JS ko turant return value chahiye) tareeke se main thread par
+     *  ja kar snapshot le rahe hain. */
+    fun audioTracksSnapshotJson(): String {
+        var json = "[]"
+        val latch = java.util.concurrent.CountDownLatch(1)
+        runOnUiThread {
+            try {
+                val tracks = audioTracksSnapshot()
+                val selected = tracks.indexOfFirst { (group, i, _) -> group.isTrackSelected(i) }
+                val arr = org.json.JSONArray()
+                tracks.forEachIndexed { idx, (_, _, label) ->
+                    arr.put(org.json.JSONObject().apply {
+                        put("index", idx)
+                        put("label", label)
+                        put("selected", idx == selected)
+                    })
+                }
+                json = arr.toString()
+            } catch (_: Exception) {
+                json = "[]"
+            } finally {
+                latch.countDown()
+            }
+        }
+        try { latch.await(2, java.util.concurrent.TimeUnit.SECONDS) } catch (_: Exception) {}
+        return json
+    }
+
+    /** JS bridge (WebAppInterface.selectAudioTrackByIndex) ke liye — index wahi
+     *  hai jo audioTracksSnapshotJson() ne diya tha (audioTracksSnapshot() list
+     *  ka position). Already main thread par call hota hai (runOnUiThreadSafely
+     *  se), koi latch nahi chahiye. */
+    fun selectAudioTrackIndex(index: Int) {
+        val player = inlinePlayer ?: return
+        val tracks = audioTracksSnapshot()
+        val (group, trackIndex, _) = tracks.getOrNull(index) ?: return
+        audioManuallyDisabled = false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+            .build()
+    }
+
+    /** Fullscreen ke showAudioTrackDialog() ka compact version — track list + Disable,
+     *  koi settings sub-screen nahi (wo dialog fullscreen mein already khula milta
+     *  hai agar zyada advanced audio options chahiye ho).
+     *
+     *  Robustness fix: kabhi-kabhi ek group ka reported `.type` audio nahi dikhta
+     *  (renderer-mapping quirk) jabki uska format `audio/...` mime hi hai — isliye
+     *  ab type-check ke saath-saath mimeType se bhi audio tracks dhoondte hain,
+     *  taaki genuinely single-audio-track file par bhi dialog khaali na dikhe. */
+    private fun showInlineAudioTrackDialog() {
+        val player = inlinePlayer ?: return
+        val tracks = audioTracksSnapshot()
+        val labels = tracks.map { it.third }.toMutableList()
 
         if (labels.isEmpty()) {
             android.widget.Toast.makeText(this, "Audio track ki info abhi load ho rahi hai, thodi der mein try karein", android.widget.Toast.LENGTH_SHORT).show()
@@ -2914,7 +3011,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
         labels.add("Disable")
 
-        var selectedIndex = trackRefs.indexOfFirst { (group, i) -> group.isTrackSelected(i) }
+        var selectedIndex = tracks.indexOfFirst { (group, i, _) -> group.isTrackSelected(i) }
         if (selectedIndex < 0) selectedIndex = if (audioManuallyDisabled) labels.size - 1 else 0
 
         showInlineChoiceSheet("Audio track", labels, selectedIndex) { which ->
@@ -2924,12 +3021,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
                     .build()
             } else {
-                audioManuallyDisabled = false
-                val (group, index) = trackRefs[which]
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
-                    .build()
+                selectAudioTrackIndex(which)
             }
         }
     }
