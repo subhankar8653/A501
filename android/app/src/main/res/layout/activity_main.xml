@@ -107,4 +107,26 @@
 
     </LinearLayout>
 
+    <!-- BUG FIX ROUND 2 (user report: "kuchh bhi nahi badla, nav bar same hai")
+         — pichli baar sirf styles.xml mein android:navigationBarColor set
+         kiya tha, lekin yeh targetSdk 36 par kaam nahi karta: is SDK par
+         Android edge-to-edge FORCE karta hai (MainActivity.kt mein
+         WindowCompat.setDecorFitsSystemWindows(window, false) comment dekho)
+         — is mode mein legacy navigationBarColor theme-attribute OS khud
+         ignore kar deta hai, nav bar hamesha transparent hi rehta hai chahe
+         theme mein kuch bhi ho. Asli fix: apna khud ka solid black View
+         seedha yahan (activity_main.xml ke root ke SABSE AAKHIR mein, taaki
+         WebView/loading/error — teeno — ke upar draw ho) rakho, bottom
+         gravity ke saath, jiski height MainActivity.kt runtime par asli
+         navigation-bar inset ke barabar set karta hai. Yeh transparent nav
+         bar ke "peeche" wahi solid black dikhayega jo neeche dikhna chahiye
+         — bilkul YouTube jaisa — page ka content/ambient color ab is
+         opaque bar ke peeche chhup jaata hai. -->
+    <View
+        android:id="@+id/navBarMask"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="bottom"
+        android:background="#000000" />
+
 </FrameLayout>
