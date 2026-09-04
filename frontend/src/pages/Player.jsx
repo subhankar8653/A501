@@ -464,11 +464,22 @@ export default function Player() {
     window.__suhaniOnNativePrev = () => {
       if (prevEpisode) navigate(`/watch/series/${encodeURIComponent(prevEpisode.id)}`)
     }
+    // BUG FIX (user report: "Autoplay On hone ke bawajood episode khatam
+    // hone par next episode play nahi hota"): native (inline) playback mein
+    // asli <video> tag ka 'ended' event kabhi fire nahi hota — VideoPlayer.jsx
+    // ka ended-listener sirf web fallback ke liye hai, isliye niche wala
+    // onEnded={handleEnded} prop native mode mein kabhi call hi nahi hota
+    // tha. MainActivity.kt ab STATE_ENDED par yahi window function call
+    // karta hai (prev/next jaisa hi bridge pattern) — ab handleEnded()
+    // (jo autoplay check karke agle episode par navigate karta hai) native
+    // mode mein bhi chalta hai.
+    window.__suhaniOnNativeEnded = handleEnded
     return () => {
       delete window.__suhaniOnNativeNext
       delete window.__suhaniOnNativePrev
+      delete window.__suhaniOnNativeEnded
     }
-  }, [nextEpisode, prevEpisode, navigate])
+  }, [nextEpisode, prevEpisode, navigate, handleEnded])
 
   // Android ko batao ki agla/pichla episode maujood hai ya nahi, taaki
   // wahan prev/next button sahi se enable/dim ho.
