@@ -934,6 +934,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusBarInsetPx = bars.top
             view.setPadding(bars.left, bars.top, bars.right, 0)
+            // navBarMask ki height ab asli nav-bar inset ke barabar — dekho
+            // activity_main.xml mein iska poora comment (nav bar solid
+            // black fix, Round 2).
+            val navBarMask = findViewById<View>(R.id.navBarMask)
+            if (navBarMask != null) {
+                val lp = (navBarMask.layoutParams as? FrameLayout.LayoutParams)
+                    ?: FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, bars.bottom)
+                lp.height = bars.bottom
+                navBarMask.layoutParams = lp
+            }
             insets
         }
 
