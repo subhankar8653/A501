@@ -666,6 +666,24 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 // nahi) — dekho inlineLastReadyUri ka field comment.
                 inlineLastReadyUri = inlinePlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
                 inlineIoRetryCount = 0
+            } else if (playbackState == Player.STATE_ENDED) {
+                // BUG FIX (user report: "Autoplay On hone ke bawajood episode
+                // khatam hone par next episode play nahi hota"): is listener
+                // mein pehle STATE_ENDED ko bilkul handle hi nahi kiya jaata
+                // tha. VideoPlayer.jsx ka apna 'ended' event-listener sirf web
+                // (`<video>` tag) fallback ke liye hai — us file mein saaf
+                // comment hai "if (isNative) return", matlab native mode mein
+                // woh JS listener kabhi lagta hi nahi, isliye Player.jsx ka
+                // handleEnded() (jo autoplay + next-episode navigate karta
+                // hai) kabhi call hi nahi hota tha chahe Autoplay On ho.
+                // Fix: yahan bhi wahi __suhaniOnNative* bridge pattern jo
+                // prev/next ke liye already hai (dekho neeche exo_prev/
+                // exo_next click listeners) — Player.jsx mein
+                // window.__suhaniOnNativeEnded ko handleEnded se wire kiya
+                // gaya hai.
+                webView.evaluateJavascript(
+                    "if (window.__suhaniOnNativeEnded) window.__suhaniOnNativeEnded();", null
+                )
             }
         }
     }
@@ -1341,7 +1359,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // bilkul jaisa "video cancel ho gaya" report hua. Fix: yahan bhi,
             // isi JS-supplied (accurate) `currentPath` ke saath, ek dusra
             // independent trigger try karo.
-            val onWatchPageDedupe = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+            val onWatchPageDedupe = trustedNoCheck || (currentPath?.let { isValidInlineOverlayPage(it) } ?: isCurrentlyOnWatchPage())
             if (onWatchPageDedupe) {
                 inlineOverlay?.let { overlay ->
                     if (overlay.visibility != View.VISIBLE) {
@@ -1848,7 +1866,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // call kisi purane Kotlin-internal caller se aayi ho (JS bridge se
         // nahi) — sirf us case mein purana native-url-based check fallback
         // ke roop mein istemal karo.
-        val onWatchPage = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+        val onWatchPage = trustedNoCheck || (currentPath?.let { isValidInlineOverlayPage(it) } ?: isCurrentlyOnWatchPage())
         if (onWatchPage) {
             inlineOverlay?.let { overlay ->
                 if (overlay.visibility != View.VISIBLE) {
@@ -2545,7 +2563,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // page par le aayenge — us fresh "/watch/" mount se aane wala
         // genuine updateInlinePlayerRect() call hi tab is function ko
         // dobara, successfully call karega.
-        val onWatchPage = trustedNoCheck || (currentPath?.startsWith("/watch/") ?: isCurrentlyOnWatchPage())
+        val onWatchPage = trustedNoCheck || (currentPath?.let { isValidInlineOverlayPage(it) } ?: isCurrentlyOnWatchPage())
         if (!onWatchPage) return
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
@@ -3040,6 +3058,25 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // Router BrowserRouter asli address bar URL hi use karta hai) se sirf
     // path + query nikaal deta hai, taaki React Router ke apne navigate() ko
     // seedha wahi diya jaa sake (poora origin/scheme uske liye zaroori nahi).
+    // BUG FIX (user report: "download karne ke baad play karne par black
+    // screen dikh raha hai") — root cause: neeche wala visibility-gate check
+    // (line ~1869, "onWatchPage") sirf `/watch/...` URL ko hi "trusted"
+    // maanta tha; Downloads.jsx ka offline player (`OfflinePlayer`) ek
+    // overlay div hai jo `/downloads` route par hi rehta hai, kabhi
+    // `/watch/...` par navigate nahi karta — isliye `currentPath` hamesha
+    // "/downloads" hota, check fail hota, aur `inlineOverlay.visibility`
+    // kabhi VISIBLE hi nahi hoti thi (GONE hi reh jaati thi). Video khud
+    // sahi se load/play ho raha hota tha (audio bhi chalta), lekin uska
+    // native PlayerView overlay invisible rehta — result: React ka khaali
+    // `bg-black` placeholder hi dikhta, seedha "black screen" jaisa. Fix:
+    // yeh helper ab `/watch/` ke saath-saath `/downloads` ko bhi ek valid
+    // inline-playback page maanta hai. (`lastKnownWatchPath`/PiP-return ka
+    // apna alag "/watch/"-only logic jaanbujh kar iske bahar hai — offline
+    // player PiP-return-to-episode-URL flow use hi nahi karta, use chhedne
+    // ki zaroorat nahi.)
+    private fun isValidInlineOverlayPage(path: String?): Boolean =
+        path?.startsWith("/watch/") == true || path?.startsWith("/downloads") == true
+
     private fun currentWebViewPathOrNull(): String? {
         val url = webView.url ?: return null
         return try {
@@ -3095,7 +3132,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // "/watch/" mount se aane wala genuine `updateInlinePlayerRect()` call
     // hi tab overlay ko sahi jagah/waqt par dikhayega.
     private fun isCurrentlyOnWatchPage(): Boolean =
-        currentWebViewPathOrNull()?.startsWith("/watch/") == true
+        isValidInlineOverlayPage(currentWebViewPathOrNull())
 
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
