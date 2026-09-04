@@ -1462,27 +1462,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 }
             })
 
-            // TOUCH AREA FIX (user report: "timeline skip karne ke liye
-            // screen touch kam ho raha hai", phir "timeline upar chala gaya"
-            // jab humne touch_target_height seedha bada kar diya tha — us
-            // attribute ko chhedne se is custom aar mein bar khud upar shift
-            // ho jaata hai). Safe fix: DefaultTimeBar apne proven-safe chhote
-            // size/position par hi rehta hai; XML mein iske upar ek bada
-            // (34dp) transparent overlay View hai jo poori width/height mein
-            // touch pakadta hai. Yahan uska har touch DefaultTimeBar ko
-            // forward karte hain — x waisa hi (dono same width hain), y
-            // hamesha bar ke apne center par set kar dete hain taaki bar
-            // events ko hamesha "range ke andar" samjhe, chahe overlay par
-            // kahin bhi touch ho.
-            val timeBarTouchArea = root.findViewById<View>(R.id.inlineTimeBarTouchArea)
-            timeBarTouchArea?.setOnTouchListener { _, event ->
-                val bar = timeBar ?: return@setOnTouchListener false
-                val forwarded = MotionEvent.obtain(event)
-                forwarded.setLocation(event.x, bar.height / 2f)
-                val handled = bar.dispatchTouchEvent(forwarded)
-                forwarded.recycle()
-                handled
-            }
+            // TOUCH-AREA-ENLARGE ATTEMPT REMOVED (Round 7 — see XML comment
+            // on exo_progress): teen alag tareeke try kiye (touch_target_height
+            // seedha badhana, FrameLayout wrapper, negative-margin sibling
+            // overlay) — har ek se timeline "upar float" ho jaata tha. Ab
+            // exo_progress apne bilkul original values par hai aur koi extra
+            // touch-forwarding view/listener nahi hai — stability priority par.
 
             // FEATURE (user ask: "web jaisa patla safed time bar app mein
             // bhi lagao, jab video play ho tab bhi dikhna chahiye, niche
