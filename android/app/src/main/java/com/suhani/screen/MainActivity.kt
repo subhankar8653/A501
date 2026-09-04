@@ -49,6 +49,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import com.suhani.videoplayer.PlayerNetwork
@@ -1387,8 +1388,48 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         if (inlineOverlay == null) {
             val root = LayoutInflater.from(this).inflate(R.layout.inline_player_view, null) as FrameLayout
             val playerView = root.findViewById<PlayerView>(R.id.inlinePlayerView)
+            // FEATURE (user ask, YouTube screenshot comparison: "caption ko
+            // YouTube ke caption ke font/style jaisa karo") — chhote inline
+            // player mein pehle koi custom caption style hi nahi thi (Media3
+            // ka bilkul plain default: white text + thin outline, koi
+            // background box nahi). Fullscreen PlayerActivity.kt mein bhi
+            // yehi YouTube-jaisa look (sans-serif, non-bold, solid black
+            // per-line box, koi outline/shadow nahi) default bana diya gaya
+            // hai — yahan wahi ek-baar-set kar rahe hain, chunki inline
+            // player ke paas apna poora Subtitle-settings panel nahi hai.
+            playerView.subtitleView?.setStyle(
+                CaptionStyleCompat(
+                    android.graphics.Color.WHITE,
+                    android.graphics.Color.parseColor("#CC000000"),
+                    android.graphics.Color.TRANSPARENT,
+                    CaptionStyleCompat.EDGE_TYPE_NONE,
+                    android.graphics.Color.BLACK,
+                    Typeface.SANS_SERIF
+                )
+            )
             val ambientGlowView = root.findViewById<AmbientGlowView>(R.id.inlineAmbientGlowView)
             inlineAmbientGlowView = ambientGlowView
+            // FEATURE (user ask, YouTube screenshot comparison: "YouTube mein
+            // Ambient glow status bar/notification-bar tak upar jaata hai,
+            // hamare app mein bhi vaisa karo"): edge-to-edge is forced on
+            // this targetSdk (comment upar, statusBarInsetPx field), jiska
+            // matlab status bar khud transparent hai — jo bhi asli pixel us
+            // ke peeche draw hota hai wahi dikh jaata hai (bilkul jaise
+            // neeche nav bar mein pehle se "bleed-through" ho raha tha, jo
+            // is hi conversation mein solid black kiya gaya). AmbientGlowView
+            // normally ROOT ke apne bounds tak hi seemit hai (root khud
+            // statusBarInsetPx neeche se shuru hota hai — DOM video-div ke
+            // exact rect ke barabar, taaki asli video/controls kabhi shift
+            // na hon). Sirf glow view ko negative top margin dekar root ke
+            // upar (status-bar strip tak) extend kar rahe hain — PlayerView
+            // aur baaki sab bilkul apni asli jagah par hi rehte hain, sirf
+            // glow ka rendering area bada hota hai. root.clipChildren=false
+            // isse cut hone se rokta hai.
+            root.clipChildren = false
+            (ambientGlowView.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+                lp.topMargin = -statusBarInsetPx
+                ambientGlowView.layoutParams = lp
+            }
             // User request: Ambient Glow default-ON hai (fullscreen player jaisa hi
             // — dono ek hi "feature_prefs"/"ambient_glow_on" setting share karte hain,
             // isliye ek jagah toggle karne se dono players mein consistent rehta hai).
@@ -1747,6 +1788,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
                 ))
                 visibility = View.GONE
+                // Ambient-glow-into-status-bar fix (upar dekho) ke liye zaroori —
+                // overlay hi woh container hai jiska size asal chhota rect
+                // (video div ke barabar) hota hai; isse clip na kare taaki
+                // glow view apna negative-margin top hissa (status bar tak)
+                // draw kar sake.
+                clipChildren = false
             }
             val content = findViewById<ViewGroup>(android.R.id.content)
             content.addView(overlay, FrameLayout.LayoutParams(0, 0))
