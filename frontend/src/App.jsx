@@ -10,6 +10,7 @@ import Home from './pages/Home'
 import Search from './pages/Search'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
+import PlayerErrorBoundary from './components/PlayerErrorBoundary'
 import Saved from './pages/Saved'
 import Downloads from './pages/Downloads'
 import { LanguageProvider } from './i18n/LanguageContext'
@@ -165,7 +166,7 @@ export default function App() {
                 <Route path="/downloads" element={<Downloads />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/title/:type/:id" element={<Detail />} />
-                <Route path="/watch/:type/:id" element={<Player key={`watch-${pipReturnNonce}`} />} />
+                <Route path="/watch/:type/:id" element={<PlayerErrorBoundary><Player key={`watch-${pipReturnNonce}`} /></PlayerErrorBoundary>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </ChromeForRoute>
