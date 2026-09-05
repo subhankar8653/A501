@@ -751,6 +751,7 @@ export default function Player() {
                   title={displayTitle}
                   qualities={qualitiesForPicker}
                   activeQuality={activeQualityObj}
+                  episodeKey={id}
                   onQualityChange={(q) => switchQuality(q)}
                   ambientEnabled={ambientMode}
                   startAt={resumeAt.current}
@@ -781,43 +782,31 @@ export default function Player() {
           </div>
 
           <div className="px-4 sm:px-6">
-          {/* FEATURE (user ask: "480p main Persian chal gaya jabki Hindi
-              chahiye tha, jo quality daboge usi mein language pata chalti
-              hai — pehle language dikhao, phir usi language ki qualities
-              dikhao"): language-first row — only shows once there's more
-              than one language to actually pick between (a single-language
-              title has nothing to choose, so it stays out of the way).
-              Tapping a language jumps to a matching-quality stream via
-              switchLanguage() and narrows the quality menu below (see
-              qualitiesForPicker) so 480p can no longer silently mean
-              "whatever language that file happens to be". */}
-          {availableLanguages.length > 1 ? (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-reel-muted mb-2">{t('player_language')}</p>
-              <div className="flex flex-wrap gap-2">
-                {availableLanguages.map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => switchLanguage(lang)}
-                    aria-pressed={selectedLanguage === lang}
-                    className={`text-xs px-3 py-1.5 rounded-full font-medium transition active:scale-95 ${
-                      selectedLanguage === lang
-                        ? 'bg-reel-gold text-reel-bg'
-                        : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
-                    }`}
-                  >
-                    {lang}
-                    <span className="opacity-60 ml-1">· {languageGroups.get(lang)?.length || 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           {/* Title + badges */}
           <div className="mt-4">
             <h1 className="font-display text-lg text-reel-ink break-words">{displayTitle}</h1>
             <div className="flex flex-wrap gap-2 mt-2">
+              {/* FEATURE (user ask: "Language alag se upar kyun likha hai —
+                  sara kuch ek jagah hoga, title ke niche, jahan MB diya hua
+                  hai"): pehle yeh apna alag section title ke UPAR tha — ab
+                  seedha isi size/track badges wali row mein, sabse pehle,
+                  taaki sab kuch ek hi jagah dikhe. Sirf tab dikhta hai jab
+                  1 se zyada language ho (single-language title ke liye kuch
+                  choose karne ko hai hi nahi). */}
+              {availableLanguages.length > 1 && availableLanguages.map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => switchLanguage(lang)}
+                  aria-pressed={selectedLanguage === lang}
+                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition active:scale-95 whitespace-pre ${
+                    selectedLanguage === lang
+                      ? 'bg-reel-gold text-reel-bg'
+                      : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
+                  }`}
+                >
+                  {lang} · {languageGroups.get(lang)?.length || 0}
+                </button>
+              ))}
               {meta.badges.map((b, i) => (
                 <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
                   {b}
