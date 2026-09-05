@@ -135,9 +135,26 @@ class WebAppInterface(private val activity: MainActivity) {
     // hai) — seedha isi bridge call ke saath bhej deta hai. Ab koi IPC-lag
     // wali race hi nahi bachti; native side ko kabhi native `webView.url`
     // par guess karne ki zaroorat nahi padti jab JS khud sach bata sakta hai.
+    //
+    // BUG FIX (user report: "language button dabane par kaafi baar black
+    // screen aa jaata hai, audio chalta rehta hai"): pehle native yahaan
+    // sirf URI compare karke guess karta tha ki yeh "genuine naya episode"
+    // hai ya "same episode ka quality/audio-language switch" — koi bhi do
+    // ALAG uri (previousUri != uri) "genuine episode switch" maan liya
+    // jaata tha, jisme surface jaan-bujh kar turant black clear hoti hai
+    // (dekho neeche isGenuineEpisodeSwitch). Language-first picker (naya
+    // feature) same episode ke andar hi baar-baar ek-doosre se ALAG quality
+    // file par switch karta hai — bilkul wahi shape jo pehle sirf genuine
+    // Up-Next episode-change se aati thi — isliye woh clear-surface path
+    // galti se yahan bhi trigger ho jaata, aur naya frame render hone tak
+    // (jab tak audio-decode ho chuka hota) black screen dikh jaata.
+    // Fix: JS ab khud bata deta hai ki yeh same episode hai ya nahi
+    // (episode route-param badla ya nahi, dekho VideoPlayer.jsx ka
+    // episodeKey/prevEpisodeKeyRef) — native ko ab uri-diff se guess nahi
+    // karna padta.
     @JavascriptInterface
-    fun mount(uri: String, title: String, qualitiesJson: String, currentPath: String) {
-        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson, currentPath) }
+    fun mount(uri: String, title: String, qualitiesJson: String, currentPath: String, sameEpisode: Boolean) {
+        runOnUiThreadSafely { activity.mountInlinePlayer(uri, title, qualitiesJson, currentPath, sameEpisodeHint = sameEpisode) }
     }
 
     @JavascriptInterface
@@ -1363,7 +1380,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     /** Chhota inline player (overlay) create/reuse karke naya video load karta hai,
      *  aur uske saare (scaled-down) controls wire karta hai. */
-    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String, currentPath: String? = null, trustedNoCheck: Boolean = false) {
+    fun mountInlinePlayer(uri: String, title: String, qualitiesJson: String, currentPath: String? = null, trustedNoCheck: Boolean = false, sameEpisodeHint: Boolean? = null) {
         // PERMANENT FIX (dekho `lastKnownWatchPath` field ka comment): JS ne
         // agar ek accurate "/watch/" path bheja hai, use turant yaad rakh lo
         // — yeh future kisi bhi PiP session ke liye "sahi jagah wapas jaane"
@@ -1886,7 +1903,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // hi hai) yahan tak pahunchte hi nahi (upar wala early-return unhe
         // pehle hi handle kar chuka), unka black-flash-prevention waisa hi
         // bana rehta hai.
-        val isGenuineEpisodeSwitch = previousUri != null && previousUri != uri
+        // BUG FIX (user report: "language change karne par black screen, audio
+        // chalta rehta hai"): pehle yahan URI-difference se hi guess hota tha
+        // ki yeh genuine episode-switch hai. `sameEpisodeHint` (JS se, dekho
+        // WebAppInterface.mount()'s comment) ab is guess ko replace kar deta
+        // hai jab bhi maujood ho — sirf null hone par (koi purana/direct
+        // internal caller jo hint nahi bhejta) purani URI-diff-wali inference
+        // par gira jaata hai, taaki kuch bhi break na ho.
+        val isGenuineEpisodeSwitch = sameEpisodeHint?.let { !it }
+            ?: (previousUri != null && previousUri != uri)
         if (isGenuineEpisodeSwitch) {
             inlinePlayerView?.setKeepContentOnPlayerReset(false)
             player.clearMediaItems()
