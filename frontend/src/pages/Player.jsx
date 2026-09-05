@@ -479,16 +479,48 @@ export default function Player() {
     return map
   }, [qualities])
 
-  const availableLanguages = useMemo(() => [...languageGroups.keys()], [languageGroups])
+  // BUG FIX (user ask: "Unknown ya Track 01 jaisa kuch hua toh vah list mein
+  // sabse LAST hoga, sabse pehle asli language hi honi chahiye"): pehle Map
+  // insertion order (jo bhi backend ne bheja) seedha use hoti thi, isliye
+  // "Unknown" kabhi beech mein ya shuru mein bhi aa jaata tha. Ab generic/
+  // non-language buckets ("Unknown", "Track #.." jaisi koi bhi cheez jo
+  // asal mein detected language nahi hai) hamesha list ke aakhir mein jaate
+  // hain, real languages pehle.
+  const availableLanguages = useMemo(() => {
+    const langs = [...languageGroups.keys()]
+    const isGenericLabel = (l) => /^unknown$/i.test(l) || /^track\b/i.test(l)
+    return [
+      ...langs.filter((l) => !isGenericLabel(l)),
+      ...langs.filter((l) => isGenericLabel(l)),
+    ]
+  }, [languageGroups])
 
-  // Only the "pick a quality" menu (in-page dropdown + native quality
-  // sheet) narrows down to the selected language — the video itself keeps
-  // playing uninterrupted until the user actually taps a different
-  // quality, same as before this feature.
+  // BUG FIX (user report: "480p mein Persian hai, quality-sheet mein 720p/
+  // 1080p bhi dikhte hain, lekin unmein Persian hai hi nahin — 720p pe tap
+  // karte hi chup-chaap English ho jaata hai"): pehle yahan sirf tab filter
+  // hota tha jab user ne KHUD kisi language pill par tap kiya ho
+  // (selectedLanguage set). Pehli baar video khulte hi (ya kabhi bhi jab tak
+  // user manually koi language pill na choose kare) selectedLanguage null
+  // hi rehta hai — us waqt yeh seedha SAARI qualities (har language ki)
+  // dikha deta tha, chahe abhi jo stream chal raha ho uska apna language
+  // kuch bhi ho. Ab jab tak user ne khud koi pill nahi choosa, us currently
+  // ACTIVE stream ke apne detected language(s) se hi filter hota hai —
+  // matlab jab tak Persian chal raha hai, sirf Persian-compatible qualities
+  // hi dikhengi; sirf tab "sab kuch" dikhega jab active stream ka koi bhi
+  // known language na ho aur "Unknown" bucket mein bhi kuch na mile
+  // (genuine data-gap fallback, taaki button kabhi khaali na dikhe).
   const qualitiesForPicker = useMemo(() => {
-    if (!selectedLanguage) return qualities
-    return languageGroups.get(selectedLanguage) || qualities
-  }, [selectedLanguage, languageGroups, qualities])
+    const langs = selectedLanguage
+      ? [selectedLanguage]
+      : (activeQualityObj?.languages && activeQualityObj.languages.length
+          ? activeQualityObj.languages
+          : ['Unknown'])
+    const set = new Set()
+    for (const lang of langs) {
+      for (const q of languageGroups.get(lang) || []) set.add(q)
+    }
+    return set.size ? [...set] : qualities
+  }, [selectedLanguage, languageGroups, qualities, activeQualityObj])
 
   function switchLanguage(lang) {
     setSelectedLanguage(lang)
