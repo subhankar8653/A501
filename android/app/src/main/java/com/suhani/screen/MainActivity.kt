@@ -1914,8 +1914,31 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             ?: (previousUri != null && previousUri != uri)
         if (isGenuineEpisodeSwitch) {
             inlinePlayerView?.setKeepContentOnPlayerReset(false)
+            player.stop()
             player.clearMediaItems()
             inlinePlayerView?.setKeepContentOnPlayerReset(true)
+        } else if (previousUri != null && previousUri != uri) {
+            // BUG FIX (user report, still happening: "language/quality badalne
+            // par black screen aata hai, purana audio chalta rehta hai"): yeh
+            // branch same-episode quality/language switch hai (React ke
+            // language pill ya quality-picker se) — pehle yahan seedha neeche
+            // wala `setMediaItem()` + `prepare()` call hota tha, bina koi
+            // `stop()`/`clearMediaItems()` ke, same jinda ExoPlayer instance
+            // par. `switchInlineQuality()` (upar dekho — native-only quality
+            // dialog) mein bilkul yahi symptom pehle mil chuka tha aur
+            // `stop()` + `clearMediaItems()` se fix hua tha: bina stop() ke,
+            // purana source ka renderer/decoder abhi bhi active rehta hai jab
+            // tak naya prepare() poora na ho — matlab ek pal ke liye dono
+            // sources effectively "zinda" hote hain (purana audio bajta
+            // rehta hai jabki naya video surface abhi black/blank hai, ya
+            // dono ek dusre se takra kar dono ruk jaate hain). `stop()` yahan
+            // `setKeepContentOnPlayerReset` ko chhedta nahi (wo hamesha true
+            // hi rehta is branch mein) — isliye aakhri frame screen par
+            // dikhta rehta hai jab tak naya quality/language buffer na ho
+            // jaaye, koi black flash nahi, sirf purana decoder/renderer clean
+            // shutdown ho jaata hai naya load hone se pehle.
+            player.stop()
+            player.clearMediaItems()
         }
         // BUG FIX (user report: "fullscreen mein quality badalne ke baad title
         // gayab ho ke sirf 'Video' likha aata hai"): yeh chhota/inline player kabhi
