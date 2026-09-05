@@ -63,11 +63,23 @@ export default function Player() {
   useEffect(() => {
     setAudioTracks([])
   }, [id])
+  const navigate = useNavigate()
+  const [streams, setStreams] = useState(null)
+  const [active, setActive] = useState(null)
+  const [error, setError] = useState('')
+  const verified = isVerified()
+  const { t } = useLanguage()
+
   // FEATURE (user ask: "sabhi ka language metadata caption/track se acche
   // se detect ho"): `active` changes independently of `id` (quality
   // switches don't remount this effect), so a ref keeps fetchTracks() able
   // to always report against whichever quality is *actually* loaded right
   // now, not a stale closure from when the effect first ran.
+  // BUG FIX (blank-page crash: "Cannot access 'active' before
+  // initialization"): this MUST sit after `const [active] = useState(...)`
+  // above — a useEffect's dependency array is evaluated immediately
+  // (unlike its callback body), so referencing `active` here before its
+  // own declaration line throws a TDZ ReferenceError on every render.
   const activeRef = useRef(null)
   useEffect(() => {
     activeRef.current = active
@@ -101,12 +113,6 @@ export default function Player() {
     window.AndroidPlayer?.selectAudioTrackByIndex?.(index)
     setAudioTracks((prev) => prev.map((t) => ({ ...t, selected: t.index === index })))
   }
-  const navigate = useNavigate()
-  const [streams, setStreams] = useState(null)
-  const [active, setActive] = useState(null)
-  const [error, setError] = useState('')
-  const verified = isVerified()
-  const { t } = useLanguage()
 
   const isSeries = type === 'series'
   const [imdbId, seasonStr, episodeStr] = isSeries ? id.split(':') : [id, null, null]
