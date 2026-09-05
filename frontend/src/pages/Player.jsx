@@ -16,21 +16,34 @@ import VerifyGate from '../components/VerifyGate'
 import PlayerErrorBoundary from '../components/PlayerErrorBoundary'
 import { useLanguage } from '../i18n/LanguageContext'
 
-// Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n👤 @Channel")
-// into a clean filename + list of badge lines.
+// Splits the backend's stream.title (e.g. "📁 file.mkv\n💾 3.34GB\n👤 @Channel
+// \n🎥 H.264\n🎙️ AAC\n👤 APD_720p") into a clean filename + list of badge
+// lines.
 //
 // BUG FIX (user ask: "MB ke bagal mein @HindiNewMovies jaisa username nahi
 // dikhna chahiye"): 👤 line is the source channel/encoder credit — useful
 // internally but looks unpolished/unbranded shown to viewers, so it's
-// filtered out here. Everything else (size, codec, etc.) still shows.
+// filtered out here.
+//
+// BUG FIX (user ask: "file size and language ke alava aur kuchh nahin hona
+// chahiye, H.264 APD_720p asa kuch hai vaise nahin hona chahie"): pehle yahan
+// 👤/📁 chhod kar baaki HAR line (codec/encoder lines jaise "🎥 H.264",
+// "🎙️ AAC", "👤 APD_720p", aur kabhi-kabhi ek raw track/language line bhi)
+// seedha badge ban jaati thi — result: same "Track #1"/"Persian" info ek
+// plain (non-clickable) badge ke roop mein bhi dikhta, aur asli clickable
+// audioTracks button ke roop mein bhi, jisse lagta tha do cheezein ek sath
+// "selected" hain. Ab sirf 💾 (file size) waali line hi badge banti hai —
+// baaki sab (codec/track/encoder lines) yahin filter ho jaata hai, viewer ko
+// sirf file size aur (neeche wale asli language/audio-track buttons) dikhte
+// hain.
 function parseStreamMeta(stream) {
   const lines = (stream?.title || '').split('\n').map((l) => l.trim()).filter(Boolean)
   let filename = stream?.name || ''
   const badges = []
   for (const line of lines) {
     if (line.startsWith('📁')) filename = line.replace('📁', '').trim()
-    else if (line.startsWith('👤')) continue
-    else badges.push(line)
+    else if (line.startsWith('💾')) badges.push(line)
+    // else: 👤 (channel credit) aur codec/track/other lines — sab drop.
   }
   return { filename, badges }
 }
@@ -786,13 +799,21 @@ export default function Player() {
           <div className="mt-4">
             <h1 className="font-display text-lg text-reel-ink break-words">{displayTitle}</h1>
             <div className="flex flex-wrap gap-2 mt-2">
+              {/* BUG FIX (user ask: "language file size ke baad hona
+                  chahiye"): file-size badge ab sabse pehle, language buttons
+                  uske baad — pehle order ulta tha (language pehle, size
+                  baad mein). */}
+              {meta.badges.map((b, i) => (
+                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
+                  {b}
+                </span>
+              ))}
               {/* FEATURE (user ask: "Language alag se upar kyun likha hai —
                   sara kuch ek jagah hoga, title ke niche, jahan MB diya hua
                   hai"): pehle yeh apna alag section title ke UPAR tha — ab
-                  seedha isi size/track badges wali row mein, sabse pehle,
-                  taaki sab kuch ek hi jagah dikhe. Sirf tab dikhta hai jab
-                  1 se zyada language ho (single-language title ke liye kuch
-                  choose karne ko hai hi nahi). */}
+                  seedha isi size/track badges wali row mein. Sirf tab dikhta
+                  hai jab 1 se zyada language ho (single-language title ke
+                  liye kuch choose karne ko hai hi nahi). */}
               {availableLanguages.length > 1 && availableLanguages.map((lang) => (
                 <button
                   key={lang}
@@ -807,11 +828,6 @@ export default function Player() {
                   {lang} · {languageGroups.get(lang)?.length || 0}
                 </button>
               ))}
-              {meta.badges.map((b, i) => (
-                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
-                  {b}
-                </span>
-              ))}
               {/* User ask: "jo language available hai sab yahan buttons ki
                   tarah honi chahiye — jo abhi chal rahi hai wo glow karegi,
                   baaki dim rahengi, kisi aur pe tap karte hi wahi glow karne
@@ -819,7 +835,16 @@ export default function Player() {
                   languages hone par dikhta tha — single-audio episodes
                   (jaise yeh, sirf Hindi) mein poori tarah chhupa rehta tha,
                   isliye khaali/missing lag raha tha. Ab kam se kam 1 track
-                  hone par bhi dikhta hai. */}
+                  hone par bhi dikhta hai.
+                  BUG FIX (user ask: "donon ek sath select hai aisa nahin
+                  hona chahiye, English ya Persian"): yeh apparent "dono
+                  select" wala confusion asal mein parseStreamMeta() ke
+                  purane badges se aa raha tha — wahi "Track #1"/"Persian"
+                  text ek plain (non-interactive) badge ke roop mein bhi
+                  dikhta tha aur is neeche wale asli clickable button ke
+                  roop mein bhi, jisse lagta tha do-do cheezein "selected"
+                  hain. Ab badges sirf file-size dikhate hain, isliye sirf
+                  yeh ek hi (asli) button highlight hoga. */}
               {audioTracks.length > 0 && audioTracks.map((t) => (
                 <button
                   key={t.index}
