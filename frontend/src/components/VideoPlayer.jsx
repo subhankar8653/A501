@@ -58,7 +58,7 @@ function detectNativeBridge() {
 function isBlobSrc(src) {
   return typeof src === 'string' && src.startsWith('blob:')
 }
-export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError, onPlayStateChange, ambientEnabled }) {
+export default function VideoPlayer({ src, poster, title, onEnded, qualities, activeQuality, onQualityChange, startAt, onProgressTick, onFatalError, onPlayStateChange, ambientEnabled, episodeKey }) {
   const { t } = useLanguage()
   const isNative = useRef(detectNativeBridge() && !isBlobSrc(src)).current
   const videoRef = useRef(null)
@@ -216,6 +216,11 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
   // `mount()` trigger karte hain taaki chhota player is jagah dobara zinda ho
   // jaaye (naye sire se — jaisa back-button/off ke baad hona chahiye).
   const [nativeCloseTick, setNativeCloseTick] = useState(0)
+  // BUG FIX (user report: "language change karne par black screen"): dekho
+  // neeche wale mount() effect ka comment — yeh episode-to-episode navigation
+  // (genuine switch) aur same-episode quality/language switch mein farak
+  // karne ke liye hai.
+  const prevEpisodeKeyRef = useRef(null)
   useEffect(() => {
     if (!isNative) return
     window.__suhaniOnNativeClosed = () => setNativeCloseTick((t) => t + 1)
@@ -239,11 +244,25 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     // (history.pushState turant/synchronously update karta hai, koi IPC-lag
     // nahi) bhi bhej deta hai — native ab is par bharosa karta hai, apne
     // racy `webView.url` ke bajaye.
-    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload(), window.location.pathname)
+    //
+    // BUG FIX (user report: "language button dabane par kaafi baar black
+    // screen aa jaata hai, audio chalta rehta hai"): native pehle sirf
+    // URI-difference dekh kar guess karta tha ki yeh "genuine naya episode"
+    // hai ya "same episode ka hi quality/language switch" — dono ek jaisi
+    // hi shape (`src` badal gaya) rakhte hain, isliye language-switch bhi
+    // "genuine episode switch" maan liya jaata, jo surface ko turant black
+    // clear kar deta (dekho MainActivity.kt isGenuineEpisodeSwitch). Ab yahan
+    // `episodeKey` (Player.jsx se route ka `id` — sirf tab badalta hai jab
+    // waqai doosra episode khulta hai, quality/language switch par nahi) ke
+    // saath compare karke isko khud pakka bata dete hain — native ko ab
+    // guess nahi karna padta.
+    const sameEpisode = prevEpisodeKeyRef.current != null && prevEpisodeKeyRef.current === episodeKey
+    prevEpisodeKeyRef.current = episodeKey
+    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload(), window.location.pathname, sameEpisode)
     return () => {
       window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
     }
-  }, [isNative, src, title, qualityPayload, nativeCloseTick])
+  }, [isNative, src, title, qualityPayload, nativeCloseTick, episodeKey])
 
   // BUG FIX (user report: "video ke andar wala Ambient mode on/off nahi ho
   // raha, bahar wala ho raha hai"): the web page's Ambient toggle (Player.jsx)
