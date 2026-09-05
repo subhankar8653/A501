@@ -62,6 +62,18 @@ function lowestQualityStream(list) {
   return [...list].sort((a, b) => rank(a) - rank(b))[0]
 }
 
+// BUG FIX (user report: "Track #1 jaisi cheez khud hi ek 'language' ban ke
+// list mein aa gayi, aur upar 'Hindi' selected dikhne ke bawajood neeche
+// audio-track button 'Track #1' selected dikhta hai"): native
+// (MainActivity.kt's audioTracksSnapshot()) jab kisi embedded audio track
+// ka koi real language/label metadata nahi paata, use generic
+// "Track #<n>" fallback naam deta hai — sirf UI mein tracks ko
+// differentiate karne ke liye, yeh kabhi ek real detected language nahi
+// hai. Isi regex se aage (a) aise placeholder naam backend ko kabhi
+// "language" ke roop mein report nahi honge, aur (b) UI mein possible ho
+// to unhe stream ke apne jaane-pehchane language se replace kar denge.
+const GENERIC_TRACK_LABEL = /^track\s*#?\d+$/i
+
 export default function Player() {
   const { type, id } = useParams()
 
@@ -97,19 +109,50 @@ export default function Player() {
   useEffect(() => {
     activeRef.current = active
   }, [active])
+  // BUG FIX (see GENERIC_TRACK_LABEL comment above): tracks this stream's
+  // own known/declared language (manually-picked selectedLanguage, or the
+  // active stream's own detected tag) via a ref for the same reason
+  // `activeRef` exists — fetchTracks() below is set up in an effect keyed
+  // only on [id, type], so a plain closure over selectedLanguage/
+  // activeQualityObj would go stale the moment either changes without an
+  // episode change (e.g. user taps a different language pill). Populated
+  // further down, right after those two are declared.
+  const knownLanguageRef = useRef(null)
   useEffect(() => {
     const fetchTracks = () => {
       try {
         const json = window.AndroidPlayer?.getAudioTracksJson?.()
         if (!json) return
         const parsed = JSON.parse(json)
-        setAudioTracks(parsed)
+        // BUG FIX: relabel a generically-named track ("Track #1") to this
+        // stream's own known language for DISPLAY only, when that name
+        // isn't already claimed by another track's real label — so the
+        // highlighted audio-track button matches the highlighted language
+        // pill above it instead of showing a confusing "Track #1".
+        const knownLang = knownLanguageRef.current
+        const realLabels = new Set(
+          parsed.map((tr) => tr.label).filter((l) => l && !GENERIC_TRACK_LABEL.test(l))
+        )
+        const displayTracks = parsed.map((tr) =>
+          tr.label && GENERIC_TRACK_LABEL.test(tr.label) && knownLang && !realLabels.has(knownLang)
+            ? { ...tr, label: knownLang }
+            : tr
+        )
+        setAudioTracks(displayTracks)
         // Crowd-source real detected languages back to the backend so the
         // language-first picker below is accurate for every viewer after
         // this one — see api.js reportStreamLanguages / bug report ("480p
         // select karne par Persian nikla, kisi ko pehle se pata nahi tha").
+        // BUG FIX: never report a generic native placeholder ("Track #1")
+        // as if it were a genuine detected language — that's what was
+        // polluting the language-pill list with a fake "Track #1 · 1"
+        // option for every later viewer. The display-only relabel above is
+        // just a best guess, not confirmed per-track metadata worth
+        // crowd-sourcing, so it's deliberately excluded here too.
         const streamId = activeRef.current?.id
-        const detected = parsed.map((tr) => tr.label).filter(Boolean)
+        const detected = parsed
+          .map((tr) => tr.label)
+          .filter((label) => label && !GENERIC_TRACK_LABEL.test(label))
         if (streamId && detected.length) {
           reportStreamLanguages(type, id, streamId, detected).catch(() => {})
         }
@@ -466,6 +509,17 @@ export default function Player() {
   useEffect(() => {
     setSelectedLanguage(null)
   }, [id])
+
+  // BUG FIX: keeps knownLanguageRef (declared up near activeRef, used by
+  // fetchTracks) current — this stream's manually-picked language if the
+  // user tapped one, else whatever this stream itself is already tagged
+  // as, filtering out the "Unknown" placeholder (not an actual language
+  // worth relabeling a track to).
+  useEffect(() => {
+    const fallback = activeQualityObj?.languages?.[0]
+    knownLanguageRef.current =
+      selectedLanguage || (fallback && fallback !== 'Unknown' ? fallback : null)
+  }, [selectedLanguage, activeQualityObj])
 
   const languageGroups = useMemo(() => {
     const map = new Map()
