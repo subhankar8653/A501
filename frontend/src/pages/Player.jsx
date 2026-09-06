@@ -87,6 +87,10 @@ export default function Player() {
   const [audioTracks, setAudioTracks] = useState([])
   useEffect(() => {
     setAudioTracks([])
+    // New episode — any still-pending "apply this language once tracks
+    // arrive" request (see pendingLanguageRef) belonged to the episode we
+    // just left, not this one.
+    pendingLanguageRef.current = null
   }, [id])
   const navigate = useNavigate()
   const [streams, setStreams] = useState(null)
@@ -118,6 +122,19 @@ export default function Player() {
   // episode change (e.g. user taps a different language pill). Populated
   // further down, right after those two are declared.
   const knownLanguageRef = useRef(null)
+  // BUG FIX (user report: "Hindi tap kiya black screen, phir Japanese tap
+  // kiya to load hone ke baad achanak English pe aa gaya — Hindi/Japanese
+  // kahin gum ho gaya"): jab switchLanguage() ek NAYI file load karta hai
+  // (kyunki abhi chal rahi file mein wo language embedded hi nahi thi),
+  // load poora hone par native sirf apna DEFAULT audio track (track #0)
+  // select karta hai — jo file ke andar jo bhi pehla track ho (yahan
+  // "English" nikla), user ne jo Hindi/Japanese maanga tha uska us load
+  // ke saath koi lena-dena hi nahi tha, so uska intent gum ho jaata tha.
+  // Yeh ref us intent ko yaad rakhta hai; jaise hi nayi file ke asli
+  // tracks aate hain (fetchTracks neeche), agar isi mein match milta hai
+  // to turant wahi track select kar dete hain — user ka AAKHRI tap
+  // (agar beech mein aur kuch tap kiya ho) hamesha jeetta hai.
+  const pendingLanguageRef = useRef(null)
   useEffect(() => {
     const fetchTracks = () => {
       try {
@@ -139,6 +156,18 @@ export default function Player() {
             : tr
         )
         setAudioTracks(displayTracks)
+        // Apply whatever language the user actually asked for (see
+        // pendingLanguageRef comment above), now that this file's real
+        // tracks are finally known — instead of silently staying on
+        // native's arbitrary default track.
+        const wanted = pendingLanguageRef.current
+        if (wanted) {
+          const match = displayTracks.find((t) => t.label === wanted)
+          if (match) {
+            pendingLanguageRef.current = null
+            selectAudioTrack(match.index)
+          }
+        }
         // Crowd-source real detected languages back to the backend so the
         // language-first picker below is accurate for every viewer after
         // this one — see api.js reportStreamLanguages / bug report ("480p
@@ -601,6 +630,12 @@ export default function Player() {
     setSelectedLanguage(lang)
     const options = languageGroups.get(lang) || []
     if (!options.length) return
+    // BUG FIX (see pendingLanguageRef comment near fetchTracks): remember
+    // which language we're actually switching FOR, so that once the new
+    // file's real tracks come back, we can select the matching one
+    // ourselves — instead of silently staying on whatever native's default
+    // track happens to be.
+    pendingLanguageRef.current = lang
     // Prefer staying at (roughly) the same quality rank the user was
     // already watching at; if that exact rank isn't available in this
     // language, fall back to the lowest quality in it (same
@@ -647,6 +682,10 @@ export default function Player() {
   function chooseLanguage(lang) {
     const track = audioTracks.find((t) => t.label === lang)
     if (track) {
+      // Direct in-place hit — nothing pending to wait on, and this
+      // shouldn't be overridden if an earlier (still in-flight) switch's
+      // fetchTracks callback lands after this one.
+      pendingLanguageRef.current = null
       selectAudioTrack(track.index)
       setSelectedLanguage(lang)
       return
