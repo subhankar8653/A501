@@ -573,6 +573,14 @@ export default function Player() {
     for (const lang of langs) {
       for (const q of languageGroups.get(lang) || []) set.add(q)
     }
+    // BUG FIX: chooseLanguage() (see unifiedLanguages below) can now set
+    // selectedLanguage to a language that's only an in-place embedded
+    // audio-track switch on the CURRENT file (no reload) — that language
+    // might not (yet, this session) be in the current file's own stored
+    // `.languages` tag, so the filter above could exclude the very
+    // quality that's actually playing right now. Always keep it in the
+    // list regardless.
+    if (activeQualityObj) set.add(activeQualityObj)
     return set.size ? [...set] : qualities
   }, [selectedLanguage, languageGroups, qualities, activeQualityObj])
 
@@ -586,6 +594,63 @@ export default function Player() {
     // data-friendly default lowestQualityStream() uses on first load).
     const sameRank = options.find((o) => o.label === activeQualityObj?.label)
     switchQuality(sameRank || lowestQualityStream(options))
+  }
+
+  // BUG FIX (user report: "kafi sare language double ho rahe hain — Naruto
+  // ka 480p multi-audio [Eng/Hindi/Jap] hai, ek alag 720p file sirf Hindi
+  // hai, ek alag 1080p Japanese+Korean hai — sab clash kar rahe hain"):
+  // pehle do bilkul ALAG button-rows the jo dono "language" hi represent
+  // karte the, bas do alag jagah se — (1) `availableLanguages`: har STREAM
+  // (quality file) ka apna declared/crowd-sourced tag, saare qualities mein
+  // union karke; (2) `audioTracks`: sirf ABHI chal rahi file ke apne
+  // real-time embedded audio tracks (native ExoPlayer se). Jab kabhi bhi
+  // abhi chal rahi file khud multi-audio ho (jaise 480p ka Eng+Hindi+Jap),
+  // uske embedded tracks ke naam already `availableLanguages` mein bhi
+  // maujood hote the (kyunki wahi tags reportStreamLanguages ke through
+  // wahin se aaye the) — isliye "Hindi" jaisa naam EK saath do jagah, do
+  // alag buttons ke roop mein dikhta tha, jinke tap karne par do bilkul
+  // alag cheez hoti thi (ek turant in-place audio-track switch, doosra
+  // poori nayi file reload). Fix: dono ko ek hi list mein merge kar diya —
+  // har language ka naam sirf EK baar dikhega, aur usko tap karne ka
+  // behavior neeche `chooseLanguage()` smartly decide karta hai.
+  const unifiedLanguages = useMemo(() => {
+    const order = [...availableLanguages]
+    for (const t of audioTracks) {
+      if (t.label && !order.includes(t.label)) order.push(t.label)
+    }
+    const isGenericLabel = (l) => /^unknown$/i.test(l) || /^track\b/i.test(l)
+    return [
+      ...order.filter((l) => !isGenericLabel(l)),
+      ...order.filter((l) => isGenericLabel(l)),
+    ]
+  }, [availableLanguages, audioTracks])
+
+  // Tapping a unified language button: if the file that's ALREADY loaded
+  // right now happens to carry this language as one of its own embedded
+  // audio tracks (multi-audio file), just flip to that track in place —
+  // instant, no reload/rebuffer. Only fall back to switchLanguage() (which
+  // loads a genuinely different quality/file) when the current file
+  // doesn't have this language at all.
+  function chooseLanguage(lang) {
+    const track = audioTracks.find((t) => t.label === lang)
+    if (track) {
+      selectAudioTrack(track.index)
+      setSelectedLanguage(lang)
+      return
+    }
+    switchLanguage(lang)
+  }
+
+  // A unified button lights up gold when it's the language actually
+  // playing right now: for a language that's one of the current file's
+  // own embedded tracks, that's the track's own live `selected` flag
+  // (authoritative, from native) — not the manually-tapped
+  // `selectedLanguage`, which stays stale until the user taps something
+  // and would otherwise leave every button dark on first load.
+  function isLanguageActive(lang) {
+    const track = audioTracks.find((t) => t.label === lang)
+    if (track) return !!track.selected
+    return selectedLanguage === lang
   }
   // FEATURE (user ask: "caption mein promotion (@Channel) nahi hona
   // chahiye — Name Year [Language] Source [Quality] format chahiye"):
@@ -894,54 +959,24 @@ export default function Player() {
                   {b}
                 </span>
               ))}
-              {/* FEATURE (user ask: "Language alag se upar kyun likha hai —
-                  sara kuch ek jagah hoga, title ke niche, jahan MB diya hua
-                  hai"): pehle yeh apna alag section title ke UPAR tha — ab
-                  seedha isi size/track badges wali row mein. Sirf tab dikhta
-                  hai jab 1 se zyada language ho (single-language title ke
-                  liye kuch choose karne ko hai hi nahi). */}
-              {availableLanguages.length > 1 && availableLanguages.map((lang) => (
+              {/* BUG FIX (see unifiedLanguages comment above): ab sirf EK
+                  hi row hai — har language ka naam sirf ek baar, chahe wo
+                  abhi chal rahi file ke andar embedded track ho ya kisi
+                  doosri quality/file ke roop mein. Sirf tab dikhta hai jab
+                  1 se zyada language ho (ek hi ho to choose karne ko kuch
+                  hai hi nahi). */}
+              {unifiedLanguages.length > 1 && unifiedLanguages.map((lang) => (
                 <button
                   key={lang}
-                  onClick={() => switchLanguage(lang)}
-                  aria-pressed={selectedLanguage === lang}
+                  onClick={() => chooseLanguage(lang)}
+                  aria-pressed={isLanguageActive(lang)}
                   className={`text-xs px-2.5 py-1 rounded-full font-medium transition active:scale-95 whitespace-pre ${
-                    selectedLanguage === lang
+                    isLanguageActive(lang)
                       ? 'bg-reel-gold text-reel-bg'
                       : 'bg-reel-surface2 text-reel-muted hover:text-reel-ink'
                   }`}
                 >
-                  {lang} · {languageGroups.get(lang)?.length || 0}
-                </button>
-              ))}
-              {/* User ask: "jo language available hai sab yahan buttons ki
-                  tarah honi chahiye — jo abhi chal rahi hai wo glow karegi,
-                  baaki dim rahengi, kisi aur pe tap karte hi wahi glow karne
-                  lagegi aur audio switch ho jayega." Pehle yeh sirf 2+
-                  languages hone par dikhta tha — single-audio episodes
-                  (jaise yeh, sirf Hindi) mein poori tarah chhupa rehta tha,
-                  isliye khaali/missing lag raha tha. Ab kam se kam 1 track
-                  hone par bhi dikhta hai.
-                  BUG FIX (user ask: "donon ek sath select hai aisa nahin
-                  hona chahiye, English ya Persian"): yeh apparent "dono
-                  select" wala confusion asal mein parseStreamMeta() ke
-                  purane badges se aa raha tha — wahi "Track #1"/"Persian"
-                  text ek plain (non-interactive) badge ke roop mein bhi
-                  dikhta tha aur is neeche wale asli clickable button ke
-                  roop mein bhi, jisse lagta tha do-do cheezein "selected"
-                  hain. Ab badges sirf file-size dikhate hain, isliye sirf
-                  yeh ek hi (asli) button highlight hoga. */}
-              {audioTracks.length > 0 && audioTracks.map((t) => (
-                <button
-                  key={t.index}
-                  onClick={() => selectAudioTrack(t.index)}
-                  className={`text-xs px-2.5 py-1 rounded-full border whitespace-pre transition-colors ${
-                    t.selected
-                      ? 'bg-reel-gold text-reel-bg border-reel-gold'
-                      : 'bg-reel-surface2 text-reel-muted border-transparent'
-                  }`}
-                >
-                  {t.label}
+                  {lang}
                 </button>
               ))}
             </div>
