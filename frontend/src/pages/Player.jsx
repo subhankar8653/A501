@@ -974,7 +974,29 @@ export default function Player() {
                 />
               ) : (
                 <VideoPlayer
-                  key={active.url}
+                  // BUG FIX (the recurring "language/quality switch → black
+                  // screen" reports, even after native-side stop()/
+                  // clearMediaItems() fixes): this was keyed by
+                  // `active.url` — so EVERY quality/language switch (which
+                  // changes `active.url`) forced React to fully UNMOUNT and
+                  // REMOUNT VideoPlayer as a brand-new instance, instead of
+                  // just updating its `src` prop. That wiped out
+                  // VideoPlayer's own internal `prevEpisodeKeyRef` (used to
+                  // tell native "sameEpisode: true/false") back to its
+                  // initial `null` on every single switch — so the very
+                  // FIRST effect run after any quality/language switch
+                  // always computed `sameEpisode = false` and told native
+                  // this was a genuine EPISODE switch, no matter how
+                  // carefully the native side handled the real "same
+                  // episode" branch. All those native fixes were sitting in
+                  // a code path that quality/language switches could never
+                  // actually reach. Keying by the stable episode id instead
+                  // means React updates props on the SAME instance for a
+                  // quality/language switch (refs and state survive,
+                  // `sameEpisode` computes correctly), and only remounts
+                  // fresh on a genuine episode change — which is exactly
+                  // when a full reset is actually wanted.
+                  key={id}
                   src={active.url}
                   title={displayTitle}
                   qualities={qualitiesForPicker}
