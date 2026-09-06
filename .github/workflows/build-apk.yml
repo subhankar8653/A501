@@ -69,16 +69,33 @@ jobs:
         working-directory: android
         # dl.google.com se kabhi-kabhi TLS handshake fail ho jata hai (GitHub
         # Actions runner ka transient network issue, project code ka fault
-        # nahi) — isliye 3 attempts tak retry karte hain, beech mein thoda
-        # ruk kar.
+        # nahi) — isliye retry karte hain.
+        # BUG FIX (build failure: "Received status code 429 from server: Too
+        # Many Requests" from repo.maven.apache.org / plugins.gradle.org):
+        # yeh Maven Central/Gradle Plugin Portal ka apna transient rate-limit
+        # hai, humara code/config ka fault nahi. Pehle sirf 3 attempts, har
+        # ek ke beech 15s ka fixed wait — lekin har attempt khud hi 2-3
+        # minute leta hai (poori dependency resolution phir se), aur agar
+        # rate-limit abhi bhi active hai to 15s ka gap kaafi nahi hota, agla
+        # attempt turant phir 429 khaata hai (yehi is build mein hua — teeno
+        # attempts fail). Ab attempts badha kar 5 kar diye hain aur beech ka
+        # wait badhta hua (30s, 60s, 120s, 240s) rakha hai, taaki rate-limit
+        # window ko genuinely thandा hone ka waqt mile. gradle.properties
+        # mein Gradle ke apne internal resource-retry/backoff bhi badhaye
+        # gaye hain (dekho uska comment) — taaki ek hi attempt ke andar bhi
+        # yeh khud recover kar sake, poora build restart kiye bina.
         run: |
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt of 3..."
+          delays=(30 60 120 240)
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt of 5..."
             if gradle assembleDebug --no-daemon; then
               exit 0
             fi
-            echo "Build failed, retrying in 15s..."
-            sleep 15
+            if [ "$attempt" -lt 5 ]; then
+              wait_s="${delays[$((attempt - 1))]}"
+              echo "Build failed, retrying in ${wait_s}s..."
+              sleep "$wait_s"
+            fi
           done
           echo "All attempts failed."
           exit 1
