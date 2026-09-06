@@ -615,6 +615,18 @@ export default function Player() {
     for (const lang of langs) {
       for (const q of languageGroups.get(lang) || []) set.add(q)
     }
+    // BUG FIX (user report: "isi title ka 720p/1080p bhi same multi-audio
+    // ke saath hai, lekin quality-sheet mein sirf 480p dikh raha hai"):
+    // ek quality ka "Unknown" tag sirf itna batata hai ki abhi tak KISI
+    // ne uske audio tracks report nahi kiye (shayad kisi ne dekha hi nahi
+    // ho) — iska matlab yeh NAHI ki us quality mein yeh language MAUJOOD
+    // NAHI hai. Ek confirm-kisi-aur-language-wali quality ko chhupana
+    // sahi hai (galat language pe chala jaana rokta hai), lekin ek
+    // abhi-tak-untested quality ko isi wajah se chhupa dena data-gap ko
+    // "yeh language nahi hai" jaisa treat karna hai — isliye "Unknown"
+    // waali qualities hamesha shaamil rehti hain, chahe koi specific
+    // language select ho.
+    for (const q of languageGroups.get('Unknown') || []) set.add(q)
     // BUG FIX: chooseLanguage() (see unifiedLanguages below) can now set
     // selectedLanguage to a language that's only an in-place embedded
     // audio-track switch on the CURRENT file (no reload) — that language
@@ -968,7 +980,18 @@ export default function Player() {
                   qualities={qualitiesForPicker}
                   activeQuality={activeQualityObj}
                   episodeKey={id}
-                  onQualityChange={(q) => switchQuality(q)}
+                  onQualityChange={(q) => {
+                    // BUG FIX: picking a quality directly (native quality
+                    // sheet / gear icon), not via a language button, should
+                    // still keep playing in whichever language was already
+                    // active — same pendingLanguageRef mechanism as
+                    // switchLanguage() above, so the new quality's matching
+                    // track gets auto-selected once its tracks are known
+                    // instead of silently landing on native's default.
+                    pendingLanguageRef.current =
+                      selectedLanguage || activeQualityObj?.languages?.[0] || null
+                    switchQuality(q)
+                  }}
                   ambientEnabled={ambientMode}
                   startAt={resumeAt.current}
                   onProgressTick={(t, dur) => {
