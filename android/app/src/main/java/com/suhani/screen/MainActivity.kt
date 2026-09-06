@@ -356,6 +356,19 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // user Subtitle menu se khud koi track chune tabhi true hota hai.
     private var subtitleManuallyEnabled = false
     private var audioManuallyDisabled = false
+    // BUG FIX (user report: "isi multi-audio file ke andar Hindi se English
+    // pe switch karte hi black screen — jabki teenon (Hindi/English/
+    // Japanese) ek hi file mein embedded hain, turant switch hona chahiye
+    // tha"): agar wahi specific embedded audio track khud kisi decoder/
+    // format issue ka shikaar hai (kabhi-kabhi ek multi-audio release ke
+    // andar EK track genuinely corrupt/incompatible nikal aata hai), to
+    // TrackSelectionOverride laga dene ke baad turant onPlayerError aata
+    // hai — is flag se pata chalta hai ki abhi-abhi user ne KHUD ek audio
+    // track choose kiya tha, taaki us specific error ko sirf "retry karo"
+    // na bol kar seedha us (buggy) track ka override hata kar default par
+    // wapas laaya ja sake — warna wahi bar-bar wahi broken track dobara
+    // select ho kar dobara fail hota rehta.
+    private var lastManualAudioOverride = false
     private var resizeModeIndex = 0
     private var decoderMode = 1 // 0 = HW, 1 = HW+, 2 = SW — same default as fullscreen
     private var inlineLongPressSpeedActive = false
@@ -704,6 +717,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 // nahi) — dekho inlineLastReadyUri ka field comment.
                 inlineLastReadyUri = inlinePlayer?.currentMediaItem?.localConfiguration?.uri?.toString()
                 inlineIoRetryCount = 0
+                lastManualAudioOverride = false
                 // FEATURE (audio-language quick buttons, MB badge ke bagal):
                 // yahi sabse pehla reliable point hai jahan player ke audio
                 // tracks pata chal chuke hote hain. Player.jsx isko sunke
@@ -838,6 +852,34 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE -> true
                 else -> false
+            }
+            // BUG FIX (see lastManualAudioOverride comment above): agar yeh
+            // error EK MANUAL audio-track switch ke turant baad aayi hai
+            // (aur genuine IO/network issue nahi hai), to us specific
+            // track ka override hata kar default audio par wapas laate
+            // hain — taaki user kam se kam kuch to sun/dekh sake, uss ek
+            // broken track pe hamesha ke liye atka na rahe. Sirf ek hi baar
+            // consume hoti hai (flag turant false).
+            if (!isIoError && lastManualAudioOverride) {
+                lastManualAudioOverride = false
+                val player = inlinePlayer
+                if (player != null && inlineIoRetryCount < maxInlineIoRetries) {
+                    inlineIoRetryCount += 1
+                    val resumePos = player.currentPosition
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                        .build()
+                    player.prepare()
+                    player.seekTo(resumePos)
+                    player.playWhenReady = true
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "Is audio track mein dikkat hai — default audio par wapas kar diya",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return
+                }
             }
             if (isIoError && inlineIoRetryCount < maxInlineIoRetries) {
                 inlineIoRetryCount += 1
@@ -3034,6 +3076,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         val tracks = audioTracksSnapshot()
         val (group, trackIndex, _) = tracks.getOrNull(index) ?: return
         audioManuallyDisabled = false
+        lastManualAudioOverride = true
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
             .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
