@@ -385,6 +385,19 @@ export default function Player() {
   function switchQuality(stream) {
     setDriveFallbackUrl(null)
     fallbackCheckedFor.current = null
+    // BUG FIX (user report: "English pe click kiya to English aur Persian
+    // dono ek sath selected dikhe, saath mein black screen bhi"): audioTracks
+    // pehle sirf episode (id) badalne par clear hote the — quality/language
+    // switch par (jahan `active` badalta hai, `id` nahi) purani file ke
+    // apne track-selection state (audioTracks[].selected) React state mein
+    // tab tak reh jaate the jab tak nayi file ka apna STATE_READY event
+    // fetchTracks() ko dobara na bula de. Is beech, naya `selectedLanguage`
+    // to turant set ho jaata (naya button turant gold), lekin PURANI file
+    // ka track-based button bhi (uska stale `.selected: true`) gold dikhta
+    // reh jaata — do buttons ek sath "selected" jaisa lagta. Ab yahan turant
+    // clear kar dete hain, taaki jab tak nayi file ke asli tracks na aa
+    // jaayein, koi bhi purana track-based highlight na dikhe.
+    setAudioTracks([])
     setActive(stream)
   }
 
