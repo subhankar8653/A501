@@ -31,8 +31,18 @@ _DEFAULTS: Dict[str, Any] = {
     # plan-selection text, and the free-trial/plan-expired blocking
     # messages below.
     "contact_username": "",
+    # FEATURE (user ask: "daily point system jispe roj free 10 point diya
+    # jaega, 1 point se ek episode chalega ... avi ki default 10 add
+    # karo"): this is the daily "points" allowance for non-subscribed
+    # users. free_trial_daily_limit IS the daily point count (kept under
+    # its original field name so existing deployments/DB values aren't
+    # broken) — one point is spent the first time a DISTINCT
+    # title/episode is opened each day (quality/language switches on
+    # something already opened today never cost another point — see
+    # db.check_and_consume_free_trial). Premium/subscribed users always
+    # bypass this entirely (unlimited points).
     "free_trial_enabled": True,
-    "free_trial_daily_limit": 3,
+    "free_trial_daily_limit": 10,
     "http_proxy_url": "",
     "show_proxy_and_non_proxy_both": False,
     "mediaflow_proxy": False,
@@ -253,10 +263,11 @@ class Settings:
 
     @property
     def free_trial_daily_limit(self) -> int:
+        #----- Daily point count for non-subscribed users (default 10)
         try:
-            return max(0, int(self._d.get("free_trial_daily_limit", 3)))
+            return max(0, int(self._d.get("free_trial_daily_limit", 10)))
         except (ValueError, TypeError):
-            return 3
+            return 10
 
     @property
     def fanart_shuffle_interval(self) -> int:

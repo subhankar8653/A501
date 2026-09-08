@@ -587,18 +587,39 @@ class Database:
     async def get_subscription_status(self, user_id: int) -> dict:
         enabled = SettingsManager.current().subscription
         if not enabled:
-            return {"enabled": False, "active": False, "expiry": None, "days_left": None}
+            return {"enabled": False, "active": False, "expiry": None, "days_left": None, "points": None}
         user = await self.get_user(user_id)
         now = datetime.utcnow()
         active = self.is_subscription_active(user, now)
         expiry = user.get("subscription_expiry") if user else None
         days_left = max(0, (expiry - now).days) if (active and expiry) else None
+
+        #----- Daily point balance card (Profile "My Plan"): only meaningful
+        #----- for non-premium users — premium/subscribed users have
+        #----- unlimited points, so this stays None for them.
+        points = None
+        settings = SettingsManager.current()
+        if not active and settings.free_trial_enabled and settings.free_trial_daily_limit > 0:
+            points = await self.get_free_trial_status(user_id, settings.free_trial_daily_limit)
+
         return {
             "enabled": True,
             "active": active,
             "expiry": expiry.isoformat() if expiry else None,
             "days_left": days_left,
+            "points": points,
         }
+
+    #----- Read-only peek at today's point balance — same accounting as
+    #----- check_and_consume_free_trial but never spends a point. Used for
+    #----- status displays (Profile "My Plan" card, bot /status command).
+    async def get_free_trial_status(self, user_id: int, daily_limit: int) -> dict:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        user = await self.get_user(user_id)
+        same_day = bool(user and user.get("free_trial_date") == today)
+        watched_today = list(user.get("free_trial_ids") or []) if same_day else []
+        used = len(watched_today)
+        return {"used": used, "remaining": max(0, daily_limit - used), "limit": daily_limit}
 
     #----- Whether a user doc represents a currently-active subscription
     @staticmethod
