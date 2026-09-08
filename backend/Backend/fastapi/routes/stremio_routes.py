@@ -790,10 +790,11 @@ async def get_streams(
                 if settings.contact_username else ""
             if settings.free_trial_enabled and settings.free_trial_daily_limit > 0:
                 title = (
-                    f"Aaj ka free trial khatam ho gaya ({settings.free_trial_daily_limit} "
-                    f"video/din). Kal phir try karein, ya abhi subscribe karein.{contact}"
+                    f"🔴 Aaj ka point khatam ho gaya ({settings.free_trial_daily_limit} "
+                    f"point/din). Dekhne ke liye subscription lein, ya kal phir free "
+                    f"points ke saath try karein.{contact}"
                 )
-                name = "🚫 Free Trial Over"
+                name = "🚫 Aaj Ka Point Khatam"
             else:
                 title = f"Your plan is expired.\nRenew it from the bot to continue watching.{contact}"
                 name = "🚫 Plan Expired"
