@@ -280,31 +280,44 @@ async def admin_review(client: Client, callback_query: CallbackQuery):
         await _apply_admin_captions(client, callback_query, admin_messages, f"❌ <b>Rejected by {admin_name}</b>\n\n{info_text}")
 
 
-#----- /status: report the caller's active subscription and time remaining
+#----- /status: report the caller's active subscription and time remaining,
+#----- or — for a non-subscribed user (FEATURE, user ask: "app or bot mai
+#----- achha se show karau subscription, free plan or baki ciz jo jo
+#----- jarurat hai") — their daily free-points balance instead of just a
+#----- flat "no subscription" line.
 @Client.on_message(filters.command("status"))
 async def check_status(client: Client, message: Message):
-    if not SettingsManager.current().subscription:
+    settings = SettingsManager.current()
+    if not settings.subscription:
         return
 
     user_id = (message.from_user.id if message.from_user else None) or (message.sender_chat.id if message.sender_chat else None) or message.chat.id
 
     user = await db.get_user(user_id)
-    if not user or user.get("subscription_status") != "active":
-        return await message.reply_text("You do not have an active subscription.")
-
-    expiry = user.get("subscription_expiry")
-    if not expiry:
-        return await message.reply_text("Error retrieving expiry date.")
-
     now = datetime.utcnow()
-    if now > expiry:
-        return await message.reply_text("Your subscription has expired.")
+    expiry = user.get("subscription_expiry") if user else None
+    active = bool(user and user.get("subscription_status") == "active" and expiry and expiry > now)
 
-    remaining = expiry - now
-    days = remaining.days
-    hours = remaining.seconds // 3600
-    await message.reply_text(
-        f"<b>Subscription Status:</b> Active ✅\n"
-        f"<b>Expiry Date:</b> {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
-        f"<b>Time Remaining:</b> {days} days and {hours} hours"
-    )
+    if active:
+        remaining = expiry - now
+        days = remaining.days
+        hours = remaining.seconds // 3600
+        return await message.reply_text(
+            f"<b>Plan:</b> Premium ✅\n"
+            f"<b>Points:</b> Unlimited ♾️\n"
+            f"<b>Expiry Date:</b> {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"<b>Time Remaining:</b> {days} days and {hours} hours"
+        )
+
+    #----- No active subscription — show the free daily-points balance
+    contact = f"\nSubscribe karne ke liye @{settings.contact_username} ko message karein." if settings.contact_username else ""
+    if settings.free_trial_enabled and settings.free_trial_daily_limit > 0:
+        trial = await db.get_free_trial_status(user_id, settings.free_trial_daily_limit)
+        await message.reply_text(
+            f"<b>Plan:</b> Free ⭐\n"
+            f"<b>Points Left Today:</b> {trial['remaining']}/{trial['limit']}\n"
+            f"1 point = 1 episode/movie (quality ya language badalne se point nahi katega). "
+            f"Points roz UTC midnight par reset hote hain.{contact}"
+        )
+    else:
+        await message.reply_text(f"<b>Plan:</b> Free ⭐\nYou do not have an active subscription.{contact}")
