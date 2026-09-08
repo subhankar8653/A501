@@ -35,6 +35,10 @@ async def start_services():
         app.add_middleware(SessionMiddleware, secret_key=SettingsManager.current().session_secret or secrets.token_hex(32))
         await asyncio.sleep(0.5)
 
+        # FEATURE (user ask: "plan hai 69rs 1month, 159rs 3 month, 499rs 1
+        # years — karo add"): one-time seed, no-op if plans already exist.
+        await db.seed_default_subscription_plans()
+
         await scan_manager.load(db)
         dbcheck_manager.bind_db(db)
         duplicate_manager.bind_db(db)
