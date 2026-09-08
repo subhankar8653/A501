@@ -93,6 +93,9 @@ async def plan_selection(client: Client, callback_query: CallbackQuery):
         f"<b>📋 How to Pay:</b>\n"
     )
     text += f"{payment_instructions}\n\n" if payment_instructions else f"Pay ₹{plan['price']} to the admin.\n\n"
+    contact = settings.contact_username
+    if contact:
+        text += f"<b>Need help?</b> Message @{contact} directly.\n\n"
     text += (
         "<b>After paying:</b> send your payment screenshot directly here "
         "(in this chat). The admin will review and activate your subscription."
