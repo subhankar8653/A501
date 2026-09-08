@@ -767,23 +767,47 @@ async def get_streams(
     token_data: dict = Depends(verify_token)
 ):
 
+    free_trial_active = False
     if token_data.get("subscription_expired"):
-        return {
-            "streams": [
-                {
-                    "name": "🚫 Plan Expired",
-                    "title": "Your plan is expired.\nRenew it from the bot to continue watching.",
-                    "url": get_streambot_url()
-                }
-            ]
-        }
+        settings = SettingsManager.current()
+        # FEATURE (user ask: "verify mein ek free trial vi rakhna jisse ek
+        # din mein default 3 video play kar payega, uske baad automatic
+        # unverified ho jaega"): before showing the hard "renew to
+        # continue" block, give an unsubscribed user their daily free-trial
+        # allowance — counted per DISTINCT title/episode, not per request,
+        # so switching quality/language on something they already opened
+        # today never costs them anything extra (see
+        # db.check_and_consume_free_trial).
+        user_id = token_data.get("user_id")
+        if settings.free_trial_enabled and settings.free_trial_daily_limit > 0 and user_id:
+            trial = await db.check_and_consume_free_trial(
+                int(user_id), f"{media_type}:{id}", settings.free_trial_daily_limit
+            )
+            free_trial_active = trial["allowed"]
+
+        if not free_trial_active:
+            contact = f"\nSubscribe karne ke liye @{settings.contact_username} ko message karein." \
+                if settings.contact_username else ""
+            if settings.free_trial_enabled and settings.free_trial_daily_limit > 0:
+                title = (
+                    f"Aaj ka free trial khatam ho gaya ({settings.free_trial_daily_limit} "
+                    f"video/din). Kal phir try karein, ya abhi subscribe karein.{contact}"
+                )
+                name = "🚫 Free Trial Over"
+            else:
+                title = f"Your plan is expired.\nRenew it from the bot to continue watching.{contact}"
+                name = "🚫 Plan Expired"
+            return {"streams": [{"name": name, "title": title, "url": get_streambot_url()}]}
 
     #----- Subscription users must currently be members of the configured group.
-    #----- Admin, lifetime and admin-set token-expiry grants skip this check.
+    #----- Admin, lifetime, admin-set token-expiry, and an active free-trial
+    #----- grant (see above — a trial user was never a paying group member
+    #----- to begin with) all skip this check.
     if (SettingsManager.current().subscription
             and not token_data.get("is_admin")
             and not token_data.get("subscription_exempt")
-            and not token_data.get("expires_at")):
+            and not token_data.get("expires_at")
+            and not free_trial_active):
         user_id = token_data.get("user_id")
         if user_id and not await _is_subscription_member(int(user_id)):
             return {
