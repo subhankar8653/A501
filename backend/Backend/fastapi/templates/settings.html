@@ -562,27 +562,28 @@
                     placeholder="Suhani_tg">
             </div>
 
-            <!-- Free trial -->
+            <!-- Daily points (free trial) -->
             <label class="toggle-wrap" style="margin-bottom:1.25rem">
                 <input type="checkbox" class="toggle-input" id="free_trial_enabled"
                     {% if settings.free_trial_enabled %}checked{% endif %}
                     onchange="toggleFreeTrialField()">
                 <span class="toggle-track"></span>
                 <span class="toggle-label">
-                    <strong>Enable Free Trial</strong>
+                    <strong>Enable Daily Points (Free Plan)</strong>
                     <span style="color:var(--text-sec);font-size:0.8rem;display:block">
-                        Let unsubscribed users watch a limited number of titles per day before being asked to subscribe
+                        Let unsubscribed users watch a limited number of titles per day using free daily points, before being asked to subscribe. Premium/subscribed users always get unlimited points.
                     </span>
                 </span>
             </label>
             <div id="free-trial-fields" style="{% if not settings.free_trial_enabled %}display:none{% endif %};margin-bottom:1rem">
-                <label class="s-label" for="free_trial_daily_limit">Free Videos Per Day
+                <label class="s-label" for="free_trial_daily_limit">Points Given Per Day
                     <span style="font-weight:400;text-transform:none;letter-spacing:0">
-                        — distinct titles/episodes opened per day; re-opening the same one again doesn't count twice</span>
+                        — every free user gets this many points daily. 1 point = 1 distinct title/episode opened;
+                        changing that episode's quality or language doesn't cost another point. Resets every day.</span>
                 </label>
                 <input type="number" id="free_trial_daily_limit" class="s-input" min="0"
                     value="{{ settings.free_trial_daily_limit }}"
-                    placeholder="3">
+                    placeholder="10">
             </div>
 
             <!-- Approver IDs -->
