@@ -340,6 +340,30 @@ export default function Profile() {
               {subscription.active ? t('profile_plan_renew') : t('profile_plan_subscribe')}
             </button>
           </div>
+
+          {/* Daily points balance — only shown for non-premium users when
+              the admin has daily points enabled (subscription.points is
+              null for premium users, who are unlimited). */}
+          {!subscription.active && subscription.points ? (
+            <div className="mt-3 pt-3 border-t border-reel-ink/5">
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <p className="text-xs text-reel-ink font-medium flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z" /></svg>
+                  {t('profile_points_today')}
+                </p>
+                <p className="text-xs font-bold text-reel-gold">
+                  {subscription.points.remaining}/{subscription.points.limit}
+                </p>
+              </div>
+              <div className="h-1.5 rounded-full bg-reel-ink/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-reel-gold transition-all"
+                  style={{ width: `${subscription.points.limit ? (subscription.points.remaining / subscription.points.limit) * 100 : 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-reel-muted mt-1.5">{t('profile_points_hint')}</p>
+            </div>
+          ) : null}
         </SectionCard>
       ) : null}
 
