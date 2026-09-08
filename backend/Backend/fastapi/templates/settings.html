@@ -552,6 +552,38 @@
                     value="{{ settings.payment_qr_url }}"
                     placeholder="https://.../upi-qr.png">
             </div>
+            <div style="margin-bottom:1rem">
+                <label class="s-label" for="contact_username">Support / Purchase Contact (Telegram username)
+                    <span style="font-weight:400;text-transform:none;letter-spacing:0">
+                        — shown (as @username) in the free-trial and plan-expired messages</span>
+                </label>
+                <input type="text" id="contact_username" class="s-input"
+                    value="{{ settings.contact_username }}"
+                    placeholder="Suhani_tg">
+            </div>
+
+            <!-- Free trial -->
+            <label class="toggle-wrap" style="margin-bottom:1.25rem">
+                <input type="checkbox" class="toggle-input" id="free_trial_enabled"
+                    {% if settings.free_trial_enabled %}checked{% endif %}
+                    onchange="toggleFreeTrialField()">
+                <span class="toggle-track"></span>
+                <span class="toggle-label">
+                    <strong>Enable Free Trial</strong>
+                    <span style="color:var(--text-sec);font-size:0.8rem;display:block">
+                        Let unsubscribed users watch a limited number of titles per day before being asked to subscribe
+                    </span>
+                </span>
+            </label>
+            <div id="free-trial-fields" style="{% if not settings.free_trial_enabled %}display:none{% endif %};margin-bottom:1rem">
+                <label class="s-label" for="free_trial_daily_limit">Free Videos Per Day
+                    <span style="font-weight:400;text-transform:none;letter-spacing:0">
+                        — distinct titles/episodes opened per day; re-opening the same one again doesn't count twice</span>
+                </label>
+                <input type="number" id="free_trial_daily_limit" class="s-input" min="0"
+                    value="{{ settings.free_trial_daily_limit }}"
+                    placeholder="3">
+            </div>
 
             <!-- Approver IDs -->
             <label class="s-label">APPROVER_IDS
@@ -946,6 +978,11 @@ function toggleSubFields() {
     document.getElementById('sub-fields').style.display = enabled ? '' : 'none';
 }
 
+function toggleFreeTrialField() {
+    const enabled = document.getElementById('free_trial_enabled').checked;
+    document.getElementById('free-trial-fields').style.display = enabled ? '' : 'none';
+}
+
 function toggleGlobalSearchFields() {
     const enabled = document.getElementById('global_search').checked;
     const fields = document.getElementById('global-search-fields');
@@ -1161,6 +1198,9 @@ async function saveSettings() {
         subscription_group_id:         parseInt(document.getElementById('subscription_group_id').value || '0', 10),
         payment_instructions:          document.getElementById('payment_instructions').value.trim(),
         payment_qr_url:                document.getElementById('payment_qr_url').value.trim(),
+        contact_username:              document.getElementById('contact_username').value.trim().replace(/^@/, ''),
+        free_trial_enabled:            document.getElementById('free_trial_enabled').checked,
+        free_trial_daily_limit:        parseInt(document.getElementById('free_trial_daily_limit').value || '0', 10),
         approver_ids:                  collectList('approver_ids').map(Number),
         http_proxy_url:                document.getElementById('http_proxy_url').value.trim(),
         show_proxy_and_non_proxy_both: document.getElementById('show_proxy_and_non_proxy_both').checked,
