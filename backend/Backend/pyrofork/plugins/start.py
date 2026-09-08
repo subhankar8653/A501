@@ -84,12 +84,17 @@ async def _handle_app_signup(client: Client, message: Message, code: str):
             LOGGER.warning(f"App sign-up: couldn't post to log channel: {e}")
 
 
-#----- /start: hand out the Stremio addon link, gated by subscription state
+#----- /start: welcome message, gated by subscription state. No backend/
+# addon links are ever shown here — the app gets its token through the
+# separate in-app "Sign up with Telegram" deep-link flow (APP_SIGNUP_PREFIX
+# above); this reply is just status/subscribe info for someone messaging
+# the bot directly. User ask: "website ka link kisi ko nahi milna chahiye,
+# Stremio ki jagah Huka Player ka use karo".
 @Client.on_message(filters.command('start') & filters.private, group=10)
 async def send_start_message(client: Client, message: Message):
     try:
         #----- App sign-up deep link (t.me/<bot>?start=su_<code>) takes over
-        #----- completely — it's a different flow from the normal addon-link
+        #----- completely — it's a different flow from the normal welcome
         #----- reply below, and must never fall through to it.
         payload = message.command[1] if len(message.command) > 1 else None
         if payload and payload.startswith(APP_SIGNUP_PREFIX):
@@ -97,8 +102,6 @@ async def send_start_message(client: Client, message: Message):
             return
 
         user_id = (message.from_user.id if message.from_user else None) or (message.sender_chat.id if message.sender_chat else None) or message.chat.id
-        base_url = SettingsManager.current().base_url
-        addon_url = f"{base_url}/stremio/manifest.json"
 
         #----- No subscription mode: owner-only, single personal token
         if not SettingsManager.current().subscription:
@@ -106,17 +109,13 @@ async def send_start_message(client: Client, message: Message):
                 return
             user_name = (message.from_user.first_name or message.from_user.username or f"User {user_id}") if message.from_user else f"Chat {user_id}"
             try:
-                token_doc = await db.add_api_token(name=user_name, user_id=user_id)
-                addon_url = f"{base_url}/stremio/{token_doc.get('token')}/manifest.json"
+                await db.add_api_token(name=user_name, user_id=user_id)
             except Exception as e:
                 LOGGER.error(f"Error ensuring token for free user: {e}")
 
             await message.reply_text(
-                '🎉 <b>Welcome to the Telegram Stremio Media Server!</b>\n\n'
-                'Here is your personal Stremio Addon link:\n\n'
-                '🎬 <b>Stremio Addon — Install Link:</b>\n'
-                f'<code>{addon_url}</code>\n\n'
-                'Tap the link above → <b>Install</b> in Stremio to start watching!',
+                '🎉 <b>Welcome to Huka Player!</b>\n\n'
+                'Open the Huka Player app and sign in with Telegram to start watching.',
                 quote=True,
                 parse_mode=enums.ParseMode.HTML
             )
@@ -141,7 +140,7 @@ async def send_start_message(client: Client, message: Message):
             plans = await db.get_subscription_plans()
             if not plans:
                 return await message.reply_text(
-                    '<b>Welcome to the Telegram Stremio Private Group!</b>\n\n'
+                    '<b>Welcome to Huka Player!</b>\n\n'
                     'Currently, no subscription plans are set up. Please contact the administrator.',
                     quote=True,
                     parse_mode=enums.ParseMode.HTML
@@ -152,26 +151,21 @@ async def send_start_message(client: Client, message: Message):
                 for plan in plans
             ])
             return await message.reply_text(
-                '<b>Welcome to the Telegram Stremio Private Group!</b>\n\n'
-                'Access to this bot and the Stremio Addon requires an active subscription.\n'
+                '<b>Welcome to Huka Player!</b>\n\n'
+                'Watching in the app requires an active subscription.\n'
                 'Please select a subscription plan below to continue:',
                 reply_markup=keyboard,
                 quote=True,
                 parse_mode=enums.ParseMode.HTML
             )
 
-        #----- Active subscriber: return their token link, creating one if missing
+        #----- Active subscriber: make sure their token exists (creating one if missing)
         user_name = (user.get("first_name") or user.get("username")) if user else None
-        token_doc = await db.ensure_api_token_for_user(user_id, user_name)
-        if token_doc and token_doc.get("token"):
-            addon_url = f"{base_url}/stremio/{token_doc['token']}/manifest.json"
+        await db.ensure_api_token_for_user(user_id, user_name)
 
         await message.reply_text(
-            '🎉 <b>Welcome back to the Telegram Stremio Subscription Manager!</b>\n\n'
-            'Your subscription is active. Here is your personal addon link:\n\n'
-            '🎬 <b>Stremio Addon — Install Link:</b>\n'
-            f'<code>{addon_url}</code>\n\n'
-            'Tap the link above → <b>Install</b> in Stremio to start watching!',
+            '🎉 <b>Welcome back!</b>\n\n'
+            'Your subscription is active — open the Huka Player app to continue watching.',
             quote=True,
             parse_mode=enums.ParseMode.HTML
         )

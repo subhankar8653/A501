@@ -233,11 +233,16 @@ async def admin_review(client: Client, callback_query: CallbackQuery):
         try:
             user_obj = await db.get_user(target_user_id)
             user_name = (user_obj.get("first_name") or user_obj.get("username") or str(target_user_id)) if user_obj else str(target_user_id)
-            token_doc = await db.add_api_token(name=user_name, user_id=target_user_id)
+            # BUG FIX (user ask: "kisi ko website ka link nahi milna
+            # chahiye"): ab sirf token exist karna chahiye (app ke apne
+            # sign-up flow se pehle se ban chuka hoga, ya yahan first-time
+            # ke liye ban jaayega) — koi manifest/website link ab kisi ko
+            # nahi dikhaya jaata, isliye ab uske liye ek NAYA token banane
+            # ki zaroorat hi nahi.
+            await db.ensure_api_token_for_user(target_user_id, user_name)
             await db.align_token_with_subscription(target_user_id)
-            addon_url = f"{SettingsManager.current().base_url}/stremio/{token_doc.get('token')}/manifest.json"
         except Exception:
-            addon_url = None
+            pass
 
         try:
             invite_link = await client.create_chat_invite_link(
@@ -254,13 +259,8 @@ async def admin_review(client: Client, callback_query: CallbackQuery):
             f"🎉 <b>Payment Approved!</b>\n\n"
             f"Your subscription is now active until <b>{expiry_str}</b>."
             f"{invite_text}"
+            f"\n\nOpen the Huka Player app to continue watching."
         )
-        if addon_url:
-            success_text += (
-                f"\n\n🎬 <b>Stremio Addon — Install Link:</b>\n"
-                f"<code>{addon_url}</code>\n\n"
-                f"Tap the link above → <b>Install</b> in Stremio to start watching!"
-            )
         await client.send_message(target_user_id, success_text)
 
         mention, username_str = await _resolve_target_info(client, target_user_id)
