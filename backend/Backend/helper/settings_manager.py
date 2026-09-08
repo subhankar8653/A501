@@ -25,6 +25,14 @@ _DEFAULTS: Dict[str, Any] = {
     "approver_ids": [],
     "payment_instructions": "",
     "payment_qr_url": "",
+    # FEATURE (user ask: "subscription kharidne ke liye @Suhani_tg pe msg
+    # karna hai" + free trial): one Telegram username shown wherever the
+    # app/bot needs to point someone at a human for subscription help —
+    # plan-selection text, and the free-trial/plan-expired blocking
+    # messages below.
+    "contact_username": "",
+    "free_trial_enabled": True,
+    "free_trial_daily_limit": 3,
     "http_proxy_url": "",
     "show_proxy_and_non_proxy_both": False,
     "mediaflow_proxy": False,
@@ -69,6 +77,7 @@ def _seed_from_env() -> Dict[str, Any]:
         "subscription":                 Telegram.SUBSCRIPTION,
         "subscription_group_id":        Telegram.SUBSCRIPTION_GROUP_ID,
         "approver_ids":                 list(Telegram.APPROVER_IDS),
+        "contact_username":             "Suhani_tg",
         "global_search_channels":       [],
         "http_proxy_url":               Telegram.HTTP_PROXY_URL,
         "show_proxy_and_non_proxy_both": Telegram.SHOW_PROXY_AND_NON_PROXY_BOTH,
@@ -198,6 +207,14 @@ class Settings:
         return str(self._d.get("payment_qr_url") or "")
 
     @property
+    def contact_username(self) -> str:
+        return str(self._d.get("contact_username") or "").lstrip("@").strip()
+
+    @property
+    def free_trial_enabled(self) -> bool:
+        return bool(self._d.get("free_trial_enabled", True))
+
+    @property
     def better_poster_enabled(self) -> bool:
         return bool(self._d.get("better_poster_enabled", False))
 
@@ -233,6 +250,13 @@ class Settings:
     @property
     def subscription_group_id(self) -> int:
         return int(self._d.get("subscription_group_id") or 0)
+
+    @property
+    def free_trial_daily_limit(self) -> int:
+        try:
+            return max(0, int(self._d.get("free_trial_daily_limit", 3)))
+        except (ValueError, TypeError):
+            return 3
 
     @property
     def fanart_shuffle_interval(self) -> int:
@@ -387,7 +411,8 @@ class SettingsManager:
                 results["subscription"] = f"error: {exc}"
         else:
             sub_keys = {"subscription_group_id", "approver_ids",
-                        "payment_instructions", "payment_qr_url"}
+                        "payment_instructions", "payment_qr_url",
+                        "contact_username", "free_trial_enabled", "free_trial_daily_limit"}
             if any(old.get(k) != new.get(k) for k in sub_keys):
                 results["subscription"] = "settings reloaded in-memory"
 

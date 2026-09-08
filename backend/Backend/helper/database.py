@@ -740,6 +740,52 @@ class Database:
         except Exception:
             return False
 
+    #----- FEATURE (user ask: "plan hai 69rs 1month, 159rs 3 month, 499rs
+    # 1 years — karo add"): one-time seed, mirroring how SettingsManager
+    # seeds its own defaults on first boot. Only runs when the sub_plans
+    # collection is empty — never overwrites/duplicates plans an admin has
+    # already customised via the panel.
+    async def seed_default_subscription_plans(self) -> None:
+        existing = await self.dbs["tracking"]["sub_plans"].count_documents({})
+        if existing > 0:
+            return
+        defaults = [
+            {"days": 30, "price": 69},
+            {"days": 90, "price": 159},
+            {"days": 365, "price": 499},
+        ]
+        for plan in defaults:
+            await self.add_subscription_plan(plan["days"], plan["price"])
+        LOGGER.info("Seeded default subscription plans (30/90/365 days).")
+
+    #----- FEATURE (user ask: "verify mein ek free trial vi rakhna jisse ek
+    # din mein default 3 video play kar payega, uske baad automatic
+    # unverified ho jaega, aur bot pe bhi kitne videos set karne ka option
+    # de dena"): free trial ka gate — counts DISTINCT titles/episodes
+    # opened per UTC day, not raw stream requests, so quality/language
+    # switches or resuming something already opened today never burn the
+    # daily allowance. Resets automatically the next day (old date's list
+    # just gets replaced, no separate cleanup job needed).
+    async def check_and_consume_free_trial(self, user_id: int, media_key: str, daily_limit: int) -> dict:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        user = await self.get_user(user_id)
+        same_day = bool(user and user.get("free_trial_date") == today)
+        watched_today = list(user.get("free_trial_ids") or []) if same_day else []
+
+        if media_key in watched_today:
+            return {"allowed": True, "remaining": max(0, daily_limit - len(watched_today))}
+
+        if len(watched_today) >= daily_limit:
+            return {"allowed": False, "remaining": 0}
+
+        watched_today.append(media_key)
+        await self.dbs["tracking"]["users"].update_one(
+            {"_id": user_id},
+            {"$set": {"free_trial_date": today, "free_trial_ids": watched_today}},
+            upsert=True,
+        )
+        return {"allowed": True, "remaining": max(0, daily_limit - len(watched_today))}
+
     async def get_all_subscribers(self) -> List[dict]:
         cursor = self.dbs["tracking"]["users"].find({
             "subscription_status": {"$in": ["active", "expired"]}
