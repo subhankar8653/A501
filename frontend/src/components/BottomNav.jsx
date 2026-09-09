@@ -4,6 +4,16 @@ import { useDownloadsList } from '../lib/downloadsStore'
 import { useOnlineStatus } from '../lib/connectivity'
 import { useLanguage } from '../i18n/LanguageContext'
 
+// FEATURE (user ask: "footer mein Saved category hata do aur usko profile
+// ke andar kisi jagah set kar do, aur footer mein Home - Search - New -
+// Downloads - Profile aisa add karo — New mein jo bhi recently database
+// mein add karunga vah sab dikhega"): footer ab 4 ki jagah 5 tabs hai.
+// Saved tab yahan se hata diya gaya hai (dekho Profile.jsx ka naya "Saved
+// Videos" section — /saved route khud abhi bhi zinda hai, sirf footer se
+// nikala hai), aur "Search" (pehle se maujood /search page, jo pehle sirf
+// Navbar ke search-icon → overlay se hi khulta tha) aur "New" (recent
+// uploads — dekho pages/New.jsx, jo Home ke "New to You" tab wala hi
+// loadNewToYou() data reuse karta hai) add kiye gaye hain.
 const TABS = [
   {
     to: '/',
@@ -16,11 +26,21 @@ const TABS = [
     ),
   },
   {
-    to: '/saved',
-    labelKey: 'nav_saved',
+    to: '/search',
+    labelKey: 'nav_search',
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.6 : 2.1} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m21 21-4.3-4.3" />
+      </svg>
+    ),
+  },
+  {
+    to: '/new',
+    labelKey: 'nav_new',
     icon: (active) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        <path d="M12 2l2.9 6.6L22 9.3l-5 4.9 1.2 7-6.2-3.4L5.8 21.2 7 14.2 2 9.3l7.1-.7L12 2z" />
       </svg>
     ),
   },
@@ -90,7 +110,7 @@ export default function BottomNav() {
           {t('nav_home_locked_hint')}
         </div>
       ) : null}
-      <div className="max-w-6xl mx-auto grid grid-cols-4 px-2">
+      <div className="max-w-6xl mx-auto grid grid-cols-5 px-2">
         {TABS.map((tab) => {
           const isHome = tab.to === '/'
           const locked = isHome && !isOnline
