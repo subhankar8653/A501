@@ -1013,39 +1013,36 @@ export default function Player() {
                 // kuch play kiye — 00:00/00:00 wali broken state). Iski
                 // jagah ek saaf locked-screen: sirf ek "Subscribe Premium
                 // Plan" button jo seedha Telegram khol deta hai.
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-14 h-14 rounded-full bg-reel-surface2/80 flex items-center justify-center">
-                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold">
-                        <rect x="5" y="11" width="14" height="9" rx="2" />
-                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                      </svg>
-                    </div>
-                    {/* BUG FIX (user report: "Your points reset tomorrow...
-                        wali line subscribe button ke upar overlap ho rahi
-                        hai"): yeh note pehle button ke upar absolute
-                        bottom-right position par tha, jo center-aligned
-                        button ke saath hi ja takrata tha. Ab normal flow
-                        mein, seedha lock icon ke neeche — jaisa user ne
-                        khud ask kiya. */}
-                    {lockedInfo?.note ? (
-                      <p className="max-w-[240px] text-[11px] leading-snug text-reel-ink/55">
-                        {lockedInfo.note}
-                      </p>
-                    ) : null}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
+                  <div className="w-11 h-11 rounded-full bg-reel-surface2/80 flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold">
+                      <rect x="5" y="11" width="14" height="9" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
                   </div>
-                  <div className="space-y-1.5 max-w-xs">
+                  <div className="space-y-1">
                     <p className="text-reel-ink font-semibold text-[15px]">{lockedInfo?.title}</p>
                     {lockedInfo?.body ? (
-                      <p className="text-reel-ink/70 text-[13px] leading-snug">{lockedInfo.body}</p>
+                      <p className="text-reel-ink/60 text-[12px]">{lockedInfo.body}</p>
                     ) : null}
                   </div>
                   <button
                     onClick={openSubscribeLink}
-                    className="mt-1 px-6 py-2.5 rounded-full bg-reel-gold text-reel-bg text-sm font-semibold active:scale-95 transition"
+                    className="px-6 py-2 rounded-full bg-reel-gold text-reel-bg text-sm font-semibold active:scale-95 transition"
                   >
                     {t('player_locked_subscribe_cta')}
                   </button>
+                  {/* BUG FIX (user report: "note button ke upar overlap ho
+                      rahi thi" + "screen ke niche ja raha hai, professional
+                      lage, kam shabd"): note ab ek chhota subtle caption
+                      hai — button ke NEECHE (na ki icon/button ke beech
+                      mein extra jagah ghere), aur poora copy (title/body/
+                      note) sabhi languages mein short kar diya taaki poora
+                      card ek 16:9 video-height mein hi aaraam se fit ho
+                      jaaye, kisi bhi cheez ko screen se bahar na dhakele. */}
+                  {lockedInfo?.note ? (
+                    <p className="text-[10px] text-reel-ink/40">{lockedInfo.note}</p>
+                  ) : null}
                 </div>
               ) : driveFallbackUrl ? (
                 // Direct extraction failed for this Drive file (Google restricts
