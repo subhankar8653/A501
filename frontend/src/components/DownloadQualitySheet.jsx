@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getStreams, qualityLabel } from '../api'
 import { startDownload, downloadId, useDownloadsList } from '../lib/downloadsStore'
 import { useLanguage } from '../i18n/LanguageContext'
@@ -53,6 +53,27 @@ function pickBestStream(streams, pickedLabel) {
 // grab the URL that best matches that label for THAT episode (falling back
 // to the next lower quality if this episode doesn't have the picked one),
 // and each one is handed off to the existing downloadsStore.
+// FEATURE (user ask: "agar koi download karne jaaye point khatm hone ke
+// baad to udhar quality ki jagah, jaise stream screen mein premium lene ke
+// liye button diya tha, vaise hi udhar button de dena aur baaki jo batana
+// hai jaise us stream mein bataya"): jab backend ke paas dene ke liye koi
+// asli stream nahi hota (aaj ka free-trial point khatam / plan expired /
+// channel join required / daily-monthly limit), to `getStreams()` ek
+// single fake "stream" bhejta hai jiska sirf `block_reason` (+ premium/
+// bot ka `url`) hota hai — dekho Player.jsx ka `isBlocked`/`lockedInfo` aur
+// backend/Backend/fastapi/routes/stremio_routes.py. Pehle yahan is fake
+// stream ko bhi ek normal "quality" (jaise "🚫 Aaj Ka Point Khatam") maan
+// kar list mein daal diya jaata tha — usko select karke "Download" dabane
+// par who premium/bot link hi ek "video" ke roop mein download hone lagta
+// tha. Ab is fake stream ko turant pehchan kar, uski jagah Player.jsx wala
+// hi locked-screen (subscribe premium button + wahi i18n text) dikhate
+// hain, taaki behavior stream screen jaisa hi rahe.
+function blockReasonOf(streams) {
+  if (!streams || !streams.length) return null
+  const blocked = streams.find((s) => s?.block_reason)
+  return blocked || null
+}
+
 export default function DownloadQualitySheet({ open, onClose, type, imdbId, showName, showPoster, episodes }) {
   const { t } = useLanguage()
   const [labels, setLabels] = useState(null) // null = loading, [] = none found
@@ -61,9 +82,37 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
   const [done, setDone] = useState(0)
   const [failed, setFailed] = useState(0)
   const [episodeStreams, setEpisodeStreams] = useState(null) // Map(episode.id -> streams[])
+  const [lockedStream, setLockedStream] = useState(null) // the fake block_reason "stream", if this title/season is locked
   const downloadsList = useDownloadsList()
 
   const isSeason = episodes.length > 1
+
+  const lockedInfo = useMemo(() => {
+    if (!lockedStream?.block_reason) return null
+    switch (lockedStream.block_reason) {
+      case 'trial_exhausted':
+        return {
+          title: t('player_locked_trial_title'),
+          body: t('player_locked_trial_body'),
+          note: t('player_locked_trial_note'),
+        }
+      case 'plan_expired':
+        return { title: t('player_locked_expired_title'), body: t('player_locked_expired_body'), note: '' }
+      case 'join_required':
+        return { title: t('player_locked_join_title'), body: t('player_locked_join_body'), note: '' }
+      case 'limit_daily':
+      case 'limit_monthly':
+        return { title: t('player_locked_limit_title'), body: t('player_locked_limit_body'), note: '' }
+      default:
+        return { title: lockedStream.name || '', body: lockedStream.title || '', note: '' }
+    }
+  }, [lockedStream, t])
+
+  // Same "open Telegram directly" pattern as Player.jsx's openSubscribeLink.
+  function openSubscribeLink() {
+    if (!lockedStream?.url) return
+    window.open(lockedStream.url, '_blank', 'noopener,noreferrer')
+  }
 
   useEffect(() => {
     if (!open) return
@@ -73,6 +122,7 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
     setDone(0)
     setFailed(0)
     setEpisodeStreams(null)
+    setLockedStream(null)
     if (!episodes.length) {
       setLabels([])
       return
@@ -81,11 +131,34 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
     Promise.all(episodes.map((ep) => getStreams(type, ep.id).catch(() => [])))
       .then((allStreams) => {
         if (cancelled) return
+        // Agar HAR episode ke paas sirf blocked/fake stream hai (koi bhi
+        // episode ki koi asli playable quality nahi), to poora sheet hi
+        // locked-screen dikhayega — jaise season-batch download ho ya
+        // single-episode, jab tak kam se kam ek episode mein real quality
+        // hai tab tak wahi dikhate rahenge (baaki blocked episodes
+        // download-time par apne aap skip/fail ho jaayenge).
+        const blockedPerEpisode = allStreams.map((s) => blockReasonOf(s))
+        const anyRealStream = allStreams.some(
+          (s, i) => (s || []).length && !(blockedPerEpisode[i] && (s || []).length === 1)
+        )
+        if (!anyRealStream) {
+          const firstBlocked = blockedPerEpisode.find(Boolean)
+          if (firstBlocked) {
+            setLockedStream(firstBlocked)
+            setLabels([])
+            return
+          }
+        }
         const streamMap = new Map()
         const seen = new Map() // label -> resolution, for sorting
         episodes.forEach((ep, i) => {
-          streamMap.set(ep.id, allStreams[i] || [])
-          for (const s of allStreams[i] || []) {
+          const streams = allStreams[i] || []
+          // Fake block_reason entries are never a real selectable quality —
+          // drop them here so they can never end up as a "Download · <label>"
+          // choice that actually downloads a premium/bot link.
+          const realStreams = streams.filter((s) => !s?.block_reason)
+          streamMap.set(ep.id, realStreams)
+          for (const s of realStreams) {
             const label = qualityLabel(s)
             if (!seen.has(label)) seen.set(label, resolutionOf(label))
           }
@@ -181,6 +254,29 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
         {labels === null ? (
           <div className="py-6 flex justify-center">
             <span className="w-6 h-6 border-2 border-reel-muted/30 border-t-reel-gold rounded-full animate-spin" />
+          </div>
+        ) : lockedInfo ? (
+          // FEATURE: same locked-screen as the stream/player screen —
+          // quality buttons ki jagah seedha "Subscribe Premium Plan"
+          // button, jo Telegram khol deta hai.
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <div className="w-11 h-11 rounded-full bg-reel-surface2/80 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold">
+                <rect x="5" y="11" width="14" height="9" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+            </div>
+            <div className="space-y-1">
+              <p className="text-reel-ink font-semibold text-[15px]">{lockedInfo.title}</p>
+              {lockedInfo.body ? <p className="text-reel-ink/60 text-[12px]">{lockedInfo.body}</p> : null}
+            </div>
+            <button
+              onClick={openSubscribeLink}
+              className="px-6 py-2 rounded-full bg-reel-gold text-reel-bg text-sm font-semibold active:scale-95 transition"
+            >
+              {t('player_locked_subscribe_cta')}
+            </button>
+            {lockedInfo.note ? <p className="text-[10px] text-reel-ink/40">{lockedInfo.note}</p> : null}
           </div>
         ) : labels.length === 0 ? (
           <p className="text-reel-rust text-sm py-4 text-center">{t('dl_sheet_no_stream')}</p>
