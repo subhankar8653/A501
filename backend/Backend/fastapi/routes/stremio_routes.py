@@ -800,6 +800,14 @@ async def get_streams(
         if not free_trial_active:
             contact = f"\nSubscribe karne ke liye @{settings.contact_username} ko message karein." \
                 if settings.contact_username else ""
+            # NOTE (user ask: "message system/app language ke hisab se
+            # dikhna chahiye, saara icon hata ke subscribe button dikhna
+            # chahiye"): `name`/`title` neeche sirf ek non-app Stremio
+            # client ke liye plain-English/Hindi fallback hain — humara apna
+            # React frontend ab in par depend nahi karta. Woh iski jagah
+            # `block_reason` (+ `daily_limit`/`contact_username`) padh kar
+            # apni i18n dictionary (jo app-wide language setting follow
+            # karti hai) se poora locked-screen UI khud banata hai.
             if settings.free_trial_enabled and settings.free_trial_daily_limit > 0:
                 title = (
                     f"🔴 Aaj ka point khatam ho gaya ({settings.free_trial_daily_limit} "
@@ -807,10 +815,19 @@ async def get_streams(
                     f"points ke saath try karein.{contact}"
                 )
                 name = "🚫 Aaj Ka Point Khatam"
+                block_reason = "trial_exhausted"
             else:
                 title = f"Your plan is expired.\nRenew it from the bot to continue watching.{contact}"
                 name = "🚫 Plan Expired"
-            return {"streams": [{"name": name, "title": title, "url": get_streambot_url()}]}
+                block_reason = "plan_expired"
+            return {"streams": [{
+                "name": name,
+                "title": title,
+                "url": get_streambot_url(),
+                "block_reason": block_reason,
+                "daily_limit": settings.free_trial_daily_limit,
+                "contact_username": settings.contact_username or "",
+            }]}
 
     #----- Subscription users must currently be members of the configured group.
     #----- Admin, lifetime, admin-set token-expiry, and an active free-trial
@@ -828,7 +845,8 @@ async def get_streams(
                     {
                         "name": "📢 Join Required",
                         "title": "First join the channel to stream it.\nThen wait for 2 min for verification",
-                        "url": get_streambot_url()
+                        "url": get_streambot_url(),
+                        "block_reason": "join_required",
                     }
                 ]
             }
@@ -847,7 +865,8 @@ async def get_streams(
                 {
                     "name": "Limit Reached",
                     "title": title,
-                    "url": f"tg://user?id={Telegram.OWNER_ID}"
+                    "url": f"tg://user?id={Telegram.OWNER_ID}",
+                    "block_reason": "limit_daily" if limit_type == "daily" else "limit_monthly",
                 }
             ]
         }
