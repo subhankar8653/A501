@@ -499,16 +499,56 @@ export default function Player() {
 
   const meta = useMemo(() => parseStreamMeta(active), [active])
 
+  // FEATURE (user ask: "Aaj ka point khatam wala message system/app
+  // language ke hisab se dikhna chahiye, saara icon hata ke bich mein
+  // subscribe premium plan ka button dikhna chahiye"): backend ab in
+  // "locked" states (free trial khatam / plan expired / channel join
+  // required / daily-monthly limit) ke liye ek machine-readable
+  // `block_reason` bhejta hai (dekho api.js -> getStreams / backend
+  // get_streams) — ismein koi hardcoded Hindi/English text nahi hota.
+  // Yahan hum us par se apni khud ki i18n dictionary (jo Profile ->
+  // Language setting follow karti hai) se poora locked-screen text
+  // banate hain, taaki jo bhi app-language select ki ho usi mein dikhe.
+  const isBlocked = !!active?.block_reason
+  const lockedInfo = useMemo(() => {
+    if (!active?.block_reason) return null
+    switch (active.block_reason) {
+      case 'trial_exhausted':
+        return {
+          title: t('player_locked_trial_title'),
+          body: t('player_locked_trial_body'),
+          note: t('player_locked_trial_note'),
+        }
+      case 'plan_expired':
+        return { title: t('player_locked_expired_title'), body: t('player_locked_expired_body'), note: '' }
+      case 'join_required':
+        return { title: t('player_locked_join_title'), body: t('player_locked_join_body'), note: '' }
+      case 'limit_daily':
+      case 'limit_monthly':
+        return { title: t('player_locked_limit_title'), body: t('player_locked_limit_body'), note: '' }
+      default:
+        return { title: active.name || '', body: active.title || '', note: '' }
+    }
+  }, [active, t])
+
+  // Same "open Telegram directly" pattern already used by Profile.jsx's
+  // subscribe/contact buttons — works both inside the app (native shell
+  // intercepts t.me/tg:// links) and in a plain browser (new tab).
+  function openSubscribeLink() {
+    if (!active?.url) return
+    window.open(active.url, '_blank', 'noopener,noreferrer')
+  }
+
   // Title-level info (used for the Save button + in-app Downloads list) —
   // whichever of series/movie meta is loaded for this page.
   const titleInfo = useMemo(() => {
     const m = isSeries ? seriesMeta : movieMeta
     return {
-      name: m?.name || meta.filename,
+      name: m?.name || (isBlocked ? '' : meta.filename),
       poster: m?.poster || null,
       releaseInfo: m?.releaseInfo || '',
     }
-  }, [isSeries, seriesMeta, movieMeta, meta.filename])
+  }, [isSeries, seriesMeta, movieMeta, meta.filename, isBlocked])
 
   function handleToggleSaved() {
     toggleSaved(type, imdbId, titleInfo)
@@ -722,8 +762,8 @@ export default function Player() {
   // hai. Quality live update hoti hai jab bhi user quality switch karta
   // hai (activeQualityObj change hone par yeh khud recompute ho jaata hai).
   const displayTitle = useMemo(
-    () => formatDisplayTitle(meta.filename, activeQualityObj?.label),
-    [meta.filename, activeQualityObj]
+    () => (isBlocked ? titleInfo.name : formatDisplayTitle(meta.filename, activeQualityObj?.label)),
+    [isBlocked, titleInfo.name, meta.filename, activeQualityObj]
   )
 
   // Every episode across every season, in watch order.
@@ -959,7 +999,46 @@ export default function Player() {
               </>
             ) : null}
             <div className="relative aspect-video bg-black overflow-hidden">
-              {driveFallbackUrl ? (
+              {isBlocked ? (
+                // FEATURE (user ask: "sara icon hata ke screen ke bich mein
+                // subscribe premium plan ka button add kar dena jo direct
+                // tg pe le jaega, aur side mein likh dena ki kal wapas se
+                // points milega tab free mein dekh sakte ho"): jab
+                // backend ne yeh title "locked" mark kiya ho (free trial
+                // khatam / plan expired / channel join required / limit
+                // khatam), to hum native/video player ko mount hi nahi
+                // karte (pehle yahan ek fake tg:// "stream" seedha native
+                // player ko de diya jaata tha, jo play/pause/prev/next
+                // jaisa normal control-set dikhata rehta tha bina kabhi
+                // kuch play kiye — 00:00/00:00 wali broken state). Iski
+                // jagah ek saaf locked-screen: sirf ek "Subscribe Premium
+                // Plan" button jo seedha Telegram khol deta hai.
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
+                  <div className="w-14 h-14 rounded-full bg-reel-surface2/80 flex items-center justify-center">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-gold">
+                      <rect x="5" y="11" width="14" height="9" rx="2" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                  </div>
+                  <div className="space-y-1.5 max-w-xs">
+                    <p className="text-reel-ink font-semibold text-[15px]">{lockedInfo?.title}</p>
+                    {lockedInfo?.body ? (
+                      <p className="text-reel-ink/70 text-[13px] leading-snug">{lockedInfo.body}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    onClick={openSubscribeLink}
+                    className="mt-1 px-6 py-2.5 rounded-full bg-reel-gold text-reel-bg text-sm font-semibold active:scale-95 transition"
+                  >
+                    {t('player_locked_subscribe_cta')}
+                  </button>
+                  {lockedInfo?.note ? (
+                    <p className="absolute bottom-3 right-3 max-w-[48%] text-left text-[11px] leading-snug text-reel-ink/55">
+                      {lockedInfo.note}
+                    </p>
+                  ) : null}
+                </div>
+              ) : driveFallbackUrl ? (
                 // Direct extraction failed for this Drive file (Google restricts
                 // the unofficial method per-file) — fall back to Drive's own
                 // embedded preview player, which always works but has no custom
@@ -1062,7 +1141,7 @@ export default function Player() {
                   doosri quality/file ke roop mein. Sirf tab dikhta hai jab
                   1 se zyada language ho (ek hi ho to choose karne ko kuch
                   hai hi nahi). */}
-              {unifiedLanguages.length > 1 && unifiedLanguages.map((lang) => (
+              {!isBlocked && unifiedLanguages.length > 1 && unifiedLanguages.map((lang) => (
                 <button
                   key={lang}
                   onClick={() => chooseLanguage(lang)}
@@ -1123,6 +1202,8 @@ export default function Player() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs shrink-0 bg-reel-surface2 text-reel-muted hover:text-reel-ink active:scale-95 transition"
               title={t('download')}
               aria-label={t('download')}
+              disabled={isBlocked}
+              style={isBlocked ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
             >
               {downloadEntry?.status === 'downloading' ? (
                 <>
