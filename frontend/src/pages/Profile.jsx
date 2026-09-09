@@ -294,20 +294,49 @@ export default function Profile() {
       ) : null}
 
       {/* ---- Stats ----
-          My Ratings/My Comments/My Reports removed on user request, so the
-          stat strip now only carries the two counts that still have a
-          section on the page (Saved, Downloads). */}
+          My Ratings/My Comments/My Reports removed on user request. Saved
+          moved out of this strip (see "Saved Videos" section right below —
+          user ask: "footer se Saved hata do, profile ke andar set kar
+          do"), so the strip now only carries Downloads. */}
       <div className="flex bg-reel-surface rounded-xl ring-1 ring-reel-ink/5 mb-6 overflow-hidden">
-        {[
-          [saved.length, t('profile_saved')],
-          [doneDownloads.length, t('profile_downloads')],
-        ].map(([value, label], i) => (
-          <div key={label} className={`flex-1 text-center py-3.5 px-1 ${i > 0 ? 'border-l border-reel-ink/5' : ''}`}>
+        {[[doneDownloads.length, t('profile_downloads')]].map(([value, label]) => (
+          <div key={label} className="flex-1 text-center py-3.5 px-1">
             <p className="font-display text-base sm:text-lg font-bold text-reel-gold">{value}</p>
             <p className="text-[10px] text-reel-muted mt-0.5 leading-tight">{label}</p>
           </div>
         ))}
       </div>
+
+      {/* ---- Saved Videos ----
+          FEATURE (user ask: "footer mein Saved category hata do aur usko
+          profile ke andar kisi jagah set kar do"): Saved used to be its
+          own bottom-nav tab (see BottomNav.jsx) — /saved route is
+          untouched, this is just its new entry point, styled the same
+          "icon + title/subtitle + count + chevron" row already used by
+          the Appearance/About sections below. */}
+      <SectionCard
+        title={t('profile_saved_title')}
+        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>}
+      >
+        <button
+          onClick={() => navigate('/saved')}
+          className="w-full flex items-center justify-between gap-3 py-1 active:scale-[0.99] transition"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="shrink-0 w-8 h-8 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-ink">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </span>
+            <span className="text-left min-w-0">
+              <span className="block text-sm text-reel-ink font-medium">{t('profile_saved')}</span>
+              <span className="block text-[11px] text-reel-muted truncate">{t('profile_saved_sub')}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-reel-muted">{saved.length}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-muted"><path d="m9 18 6-6-6-6" /></svg>
+          </div>
+        </button>
+      </SectionCard>
 
       {/* ---- My Plan ---- */}
       {subscription?.enabled ? (
