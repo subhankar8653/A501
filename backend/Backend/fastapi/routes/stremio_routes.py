@@ -823,7 +823,16 @@ async def get_streams(
             return {"streams": [{
                 "name": name,
                 "title": title,
-                "url": get_streambot_url(),
+                # user ask: "click karte hi bot pe le jae aur sara premium
+                # plan open kar de" — plain t.me/<bot> link only shows a
+                # "Start" button (and thus the plans list) automatically
+                # the FIRST time someone opens the bot; a returning user
+                # just lands on the existing chat with no auto action.
+                # `?start=premium` deep-link makes Telegram show a fresh
+                # Start button every time, which sends "/start premium" —
+                # falls through to the normal /start handler, which for a
+                # non-subscribed user already replies with the plans list.
+                "url": get_streambot_url("premium"),
                 "block_reason": block_reason,
                 "daily_limit": settings.free_trial_daily_limit,
                 "contact_username": settings.contact_username or "",
