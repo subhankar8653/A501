@@ -39,14 +39,20 @@ client_avg_mbps = {}
 
 
 #----- Resolve the bot's public t.me URL from cached username/me
-def get_streambot_url() -> str:
+# `payload`, if given, is appended as a Telegram deep-link start parameter
+# (?start=<payload>) — this makes Telegram show a "Start" button again even
+# for users who have already opened the bot before, so tapping it reliably
+# re-triggers /start (and, for a non-subscribed user, the plans list) —
+# a bare t.me/<bot> link only does that automatically the very first time.
+def get_streambot_url(payload: str | None = None) -> str:
     try:
         username = getattr(StreamBot, "username", None)
         if not username:
             me = getattr(StreamBot, "me", None)
             username = getattr(me, "username", None) if me else None
         if username:
-            return f"https://t.me/{username}"
+            base = f"https://t.me/{username}"
+            return f"{base}?start={payload}" if payload else base
     except Exception:
         pass
     return "https://t.me/"
