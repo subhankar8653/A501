@@ -8,6 +8,7 @@ import ToastHost from './components/ToastHost'
 import ConnectionOverlay from './components/ConnectionOverlay'
 import Home from './pages/Home'
 import Search from './pages/Search'
+import New from './pages/New'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
 import PlayerErrorBoundary from './components/PlayerErrorBoundary'
@@ -162,6 +163,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/search" element={<Search />} />
+                <Route path="/new" element={<New />} />
                 <Route path="/saved" element={<Saved />} />
                 <Route path="/downloads" element={<Downloads />} />
                 <Route path="/profile" element={<Profile />} />
