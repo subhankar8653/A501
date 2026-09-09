@@ -93,8 +93,20 @@ def _token_can_view(mode: str, allowed_tokens: list, token_data: dict) -> bool:
         return False
     if mode == "tokens":
         return token_data.get("token") in (allowed_tokens or [])
-    if SettingsManager.current().subscription:
-        return not token_data.get("subscription_expired")
+    # NOTE (bug fix — user report: "premium ke bina koi bhi content ke upar
+    # click karta hun to 'This title wasn't found' aata hai, subscribe karne
+    # ke baad sahi chalta hai"): yeh function sirf VISIBILITY decide karta
+    # hai (owner-only / token-locked / public) — asli subscription-expired
+    # gating (free trial count, "join channel", "renew plan" jaisa proper
+    # messaging) already get_streams() mein sahi se hoti hai (upar dekho).
+    # Pehle yahan bhi ek extra "subscription active hai to expired token
+    # kuch bhi na dekh paaye" check tha, jo har "public" title (yaani almost
+    # sab kuch) ko bhi meta/detail stage par hi 404 (`{"meta": {}}`) bana
+    # deta tha — isi wajah se Detail page "This title wasn't found" dikhata
+    # tha bina subscription ke, jabki catalog/homepage load ho jaata tha
+    # (wahan yeh check lagta hi nahin, sirf DB visibility filter lagta hai).
+    # Ab detail hamesha dikhega; play/stream par hi expired-subscription
+    # gate lagega, jaisa design mein already intended tha.
     return True
 
 
