@@ -2251,6 +2251,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
      *  isi se decide karta hai ki koi active download turant pause/resume
      *  karna hai ya nahi. */
     fun notifyWatchingChanged(isPlaying: Boolean) {
+        // Download ab watch ke time pause nahi hota — native side par bas
+        // bandwidth split (70% download / 30% video) badalta hai.
+        com.suhani.videoplayer.TdlibClient.setWatching(isPlaying)
         if (isFinishing || isDestroyed) return
         webView.evaluateJavascript(
             "window.__nativeWatchingChanged?.($isPlaying)", null

@@ -247,10 +247,19 @@ object NativeDownloadManager {
                         val buffer = ByteArray(64 * 1024)
                         var lastEmit = 0L
                         while (keepGoing.get() && !pauseFlag.get()) {
+                            val chunkStart = System.nanoTime()
                             val read = input.read(buffer)
                             if (read == -1) break
                             output.write(buffer, 0, read)
                             received += read
+                            // Video chal rahi ho to is (non-Telegram) HTTP path par bhi
+                            // download ~70% duty cycle par chalta hai (30% waqt video ke
+                            // liye chhod dete hain); video nahi chal rahi to 100%.
+                            if (com.suhani.videoplayer.TdlibClient.isWatching()) {
+                                val busyMs = (System.nanoTime() - chunkStart) / 1_000_000L
+                                val sleepMs = (busyMs * 3L / 7L).coerceIn(0L, 500L)
+                                if (sleepMs > 0) Thread.sleep(sleepMs)
+                            }
                             val now = System.currentTimeMillis()
                             if (now - lastEmit > 300) {
                                 lastEmit = now
