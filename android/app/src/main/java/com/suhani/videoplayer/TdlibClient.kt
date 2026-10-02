@@ -288,6 +288,35 @@ object TdlibClient {
     // Lifecycle
     // ------------------------------------------------------------------
 
+    // Stable per-install random id; backend uses it to give this device a
+    // sticky bot from the phone-bot pool (spreads sessions across many bots).
+    private fun deviceId(): String {
+        val ctx = resolveAppContext() ?: return "unknown-device"
+        val prefs = ctx.getSharedPreferences("tdlib_device", Context.MODE_PRIVATE)
+        var id = prefs.getString("id", null)
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString().replace("-", "")
+            prefs.edit().putString("id", id).apply()
+        }
+        return id
+    }
+
+    private fun tokenFingerprint(token: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+            .take(10)
+
+    // Bot failover: if the assigned phone bot is rejected/revoked/flood-banned
+    // at login, ask the backend for the next bot in the pool (rotate+1) and log
+    // in again with a fresh client + its own database dir.
+    private const val MAX_FAILOVERS = 3
+    private val failoverLock = Any()
+    @Volatile private var rotation = 0
+    @Volatile private var failoverCount = 0
+    @Volatile private var lastStreamUrl: String? = null
+    @Volatile private var activeBotFingerprint: String = "default"
+
     /** Fetches api_id/api_hash/bot_token from Railway's `/tdlib-config` and
      *  populates [TdlibConfig] — must happen before [ensureClient] since
      *  the auth flow (triggered automatically once the client starts
@@ -299,14 +328,16 @@ object TdlibClient {
         if (configLoaded) return
         synchronized(configLoadLock) {
             if (configLoaded) return
+            lastStreamUrl = streamUrl
             val creds = try {
-                TdlibRemoteConfigClient.fetch(streamUrl)
+                TdlibRemoteConfigClient.fetch(streamUrl, deviceId(), rotation)
             } catch (e: Exception) {
-                throw TdlibException("Could not fetch Telegram API credentials from backend", e)
+                throw TdlibException("Could not fetch Telegram API credentials from backend: ${e.message}", e)
             }
             TdlibConfig.API_ID = creds.apiId
             TdlibConfig.API_HASH = creds.apiHash
             TdlibConfig.BOT_TOKEN = creds.botToken
+            activeBotFingerprint = tokenFingerprint(creds.botToken)
             configLoaded = true
         }
     }
@@ -370,13 +401,18 @@ object TdlibClient {
                 return // don't keep spinning on a fatal native error
             } ?: continue
 
-            lastRawSeen = raw.take(120) // diagnostic only, truncate to be badge-friendly
+            lastRawSeen = raw.take(120)
 
             val json = try {
                 JSONObject(raw)
             } catch (e: Exception) {
                 continue
             }
+
+            // After a bot failover the abandoned client may still emit events —
+            // ignore anything not from the current client (when TDLib tags it).
+            val msgClientId = json.optInt("@client_id", -1)
+            if (msgClientId >= 0 && clientId >= 0 && msgClientId != clientId) continue
 
             when (json.optString("@type")) {
                 "updateAuthorizationState" -> handleAuthUpdate(json.optJSONObject("authorization_state"))
@@ -423,7 +459,17 @@ object TdlibClient {
             "authorizationStateWaitTdlibParameters" -> {
                 if (tdlibParametersSent) return // already sent — see sendGuard doc above
                 tdlibParametersSent = true
-                val dbDir = resolveAppContext()?.filesDir?.let { File(it, "tdlib").absolutePath }
+                // One TDLib database per bot (keyed by token fingerprint): a TDLib
+                // db stays logged in as the bot it first used, so after a bot
+                // rotation / token change we must not reuse the old one.
+                resolveAppContext()?.filesDir?.let { fd ->
+                    val legacy = File(fd, "tdlib")
+                    if (legacy.exists()) {
+                        // Old single-bot (main-bot) session + cache — remove once.
+                        Thread { runCatching { legacy.deleteRecursively() } }.apply { isDaemon = true }.start()
+                    }
+                }
+                val dbDir = resolveAppContext()?.filesDir?.let { File(it, "tdlib_$activeBotFingerprint").absolutePath }
                     ?: run {
                         // Genuinely couldn't get any Context (extremely
                         // unlikely) — fail loudly instead of silently
@@ -510,18 +556,52 @@ object TdlibClient {
         if (!configLoaded) {
             throw TdlibException("TdlibClient.ensureConfigLoaded(streamUrl) must be called before any TDLib request")
         }
+        val failure = awaitAuth() ?: return
+        if (!failoverToNextBot(failure)) throw TdlibException(failure)
+        awaitAuth()?.let { throw TdlibException(it) }
+    }
+
+    /** Waits for login; returns the auth failure message, or null if ready. */
+    private fun awaitAuth(): String? {
         ensureClient()
-        if (authReadyLatch.count == 0L) {
-            authFailure?.let { throw TdlibException(it) }
-            return
-        }
-        if (!authReadyLatch.await(TdlibConfig.AUTH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+        if (authReadyLatch.count > 0L && !authReadyLatch.await(TdlibConfig.AUTH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             throw TdlibException(
                 "TDLib login timed out (connection state: $lastConnectionState) — " +
-                    "check BOT_TOKEN / API_ID / API_HASH in TdlibConfig, or network access to Telegram"
+                    "check network access to Telegram"
             )
         }
-        authFailure?.let { throw TdlibException(it) }
+        return authFailure
+    }
+
+    /** Only bot-level auth problems justify switching bots (token rejected /
+     *  revoked / session killed) — not network timeouts or native crashes. */
+    private fun isBotAuthFailure(failure: String): Boolean =
+        failure.startsWith("TDLib checkAuthenticationBotToken failed") ||
+            failure.startsWith("TDLib authorization closed")
+
+    private fun failoverToNextBot(failure: String): Boolean {
+        if (!isBotAuthFailure(failure)) return false
+        synchronized(failoverLock) {
+            // Another thread already failed over while we waited on the lock.
+            if (authFailure != failure) return true
+            if (failoverCount >= MAX_FAILOVERS) return false
+            val url = lastStreamUrl ?: return false
+            failoverCount++
+            rotation++
+            Log.w(TAG, "Bot auth failed ($failure) — failing over to next phone bot (rotate=$rotation)")
+            configLoaded = false
+            authFailure = null
+            authReadyLatch = CountDownLatch(1)
+            tdlibParametersSent = false
+            botTokenSent = false
+            clientId = -1 // abandon old client (no close() so no stale Closed event)
+            messageFileCache.clear()
+            latestFileState.clear()
+            activeWindow.clear()
+            ensureConfigLoaded(url)
+            ensureClient()
+            return true
+        }
     }
 
     /** True once TDLib has logged in (authorizationStateReady) at least once

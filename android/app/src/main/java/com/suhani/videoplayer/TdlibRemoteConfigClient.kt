@@ -19,7 +19,7 @@ import org.json.JSONObject
  */
 object TdlibRemoteConfigClient {
 
-    data class Credentials(val apiId: Int, val apiHash: String, val botToken: String)
+    data class Credentials(val apiId: Int, val apiHash: String, val botToken: String, val slot: Int)
 
     /** "https://host/dl/{token}/{id}/{name}" -> "https://host/tdlib-config/{token}",
      *  or null if [streamUrl] doesn't look like a `/dl/` proxy URL at all. */
@@ -38,9 +38,12 @@ object TdlibRemoteConfigClient {
      *  thread. Throws on any failure; caller decides how that should
      *  surface (fallback to Railway proxy, in practice). */
     @Throws(Exception::class)
-    fun fetch(streamUrl: String): Credentials {
-        val configUrl = deriveConfigUrl(streamUrl)
+    fun fetch(streamUrl: String, deviceId: String, rotate: Int): Credentials {
+        val baseUrl = deriveConfigUrl(streamUrl)
             ?: throw IOException("Cannot derive tdlib-config URL from $streamUrl")
+        // Device id + rotate: backend assigns each device a sticky bot from its
+        // phone-bot pool; rotate>0 asks for the next one if this one is failing.
+        val configUrl = "$baseUrl?d=${java.net.URLEncoder.encode(deviceId, "UTF-8")}&rotate=$rotate"
 
         val conn = (URL(configUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -57,6 +60,7 @@ object TdlibRemoteConfigClient {
                 apiId = json.getInt("api_id"),
                 apiHash = json.getString("api_hash"),
                 botToken = json.getString("bot_token"),
+                slot = json.optInt("slot", 0),
             )
         } finally {
             conn.disconnect()
