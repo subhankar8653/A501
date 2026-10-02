@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import math
 import mimetypes
+import re
 import secrets
 import time
 from collections import deque
@@ -314,15 +316,88 @@ async def subtitle_handler(token: str, id: str, name: str, token_data: dict = De
 # new to configure on Railway. Gated behind the same token verification as
 # every other endpoint here, so only authorized app installs can read it.
 #======================================================================
+# SECURITY (fixes: "bot token + api_hash har phone ko mil jaata hai" and
+# "ek hi bot token bahut saare phones par"):
+#   1. Phones NEVER get the main BOT_TOKEN. They get a token from a pool of
+#      dedicated "phone bots" (env PHONE_BOT_TOKENS, comma separated; falls
+#      back to the helper bots in Settings -> multi_tokens). If a phone bot
+#      token leaks, you revoke just that one in BotFather and replace it in
+#      env — the main bot is untouched and the app picks up the new token on
+#      its next login with no app update (config is fetched at runtime).
+#   2. Each device gets a STICKY bot from the pool (hash of api-token +
+#      device id), so load/sessions are spread across many bots instead of
+#      one token being logged in on every phone. `rotate` lets a phone ask
+#      for the next bot if its assigned one is failing/flood-limited.
+#   3. Abuse limits per API token: max requests/hour and max distinct
+#      devices per 24h (admins exempt) — stops scraping the pool.
+# If no pool exists at all this FAILS CLOSED (503) rather than leaking the
+# main bot, unless ALLOW_MAIN_BOT_FOR_PHONES=true is set explicitly.
+#======================================================================
+_PHONE_CFG_HITS: Dict[str, deque] = {}
+_PHONE_CFG_DEVICES: Dict[str, Dict[str, float]] = {}
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _phone_bot_pool() -> list:
+    pool = list(Config.PHONE_BOT_TOKENS)
+    if not pool:
+        try:
+            from Backend.helper.settings_manager import SettingsManager
+            pool = [t.strip() for t in (SettingsManager.current().multi_tokens or []) if t and t.strip()]
+        except Exception:
+            pool = []
+    if not pool and Config.ALLOW_MAIN_BOT_FOR_PHONES and Config.BOT_TOKEN:
+        LOGGER.warning("tdlib-config: no phone bot pool configured, handing out MAIN bot token (ALLOW_MAIN_BOT_FOR_PHONES=true)")
+        pool = [Config.BOT_TOKEN]
+    return list(dict.fromkeys(pool))  # de-dupe, keep order
+
+
 @router.get("/tdlib-config/{token}")
-async def tdlib_config_handler(token: str, token_data: dict = Depends(verify_token)):
-    if not Config.API_ID or not Config.API_HASH or not Config.BOT_TOKEN:
+async def tdlib_config_handler(
+    token: str,
+    d: str = "",
+    rotate: int = 0,
+    token_data: dict = Depends(verify_token),
+):
+    if not Config.API_ID or not Config.API_HASH:
         raise HTTPException(status_code=503, detail="Server-side Telegram API credentials not configured")
-    return JSONResponse({
-        "api_id": Config.API_ID,
-        "api_hash": Config.API_HASH,
-        "bot_token": Config.BOT_TOKEN,
-    })
+    if not _DEVICE_ID_RE.match(d or ""):
+        raise HTTPException(status_code=400, detail="Missing or invalid device id")
+
+    is_admin = bool(token_data.get("is_admin"))
+    now = time.time()
+
+    if not is_admin:
+        hits = _PHONE_CFG_HITS.setdefault(token, deque())
+        while hits and now - hits[0] > 3600:
+            hits.popleft()
+        if len(hits) >= max(1, Config.PHONE_CONFIG_RATE_PER_HOUR):
+            raise HTTPException(status_code=429, detail="Too many config requests, try again later")
+        hits.append(now)
+
+        devices = _PHONE_CFG_DEVICES.setdefault(token, {})
+        for dev, seen in list(devices.items()):
+            if now - seen > 86400:
+                devices.pop(dev, None)
+        if d not in devices and len(devices) >= max(1, Config.PHONE_MAX_DEVICES_PER_TOKEN):
+            raise HTTPException(status_code=429, detail="Device limit reached for this account")
+        devices[d] = now
+
+    pool = _phone_bot_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="No phone bot pool configured (set PHONE_BOT_TOKENS)")
+
+    base = int(hashlib.sha256(f"{token}:{d}".encode()).hexdigest(), 16)
+    slot = (base + max(0, min(int(rotate), 50))) % len(pool)
+    return JSONResponse(
+        {
+            "api_id": Config.API_ID,
+            "api_hash": Config.API_HASH,
+            "bot_token": pool[slot],
+            "slot": slot,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 #======================================================================
