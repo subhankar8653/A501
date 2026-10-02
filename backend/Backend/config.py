@@ -20,6 +20,18 @@ class Telegram:
     BOT_TOKEN           = getenv("BOT_TOKEN", "")
     USER_SESSION_STRING = getenv("USER_SESSION_STRING", "")
 
+    #----- Phone (on-device TDLib) bot pool — see /tdlib-config in stream_routes.py.
+    #----- Phones NEVER receive BOT_TOKEN (the main bot). They get a token from this
+    #----- comma-separated pool of throwaway "phone bots" instead, so a leaked token
+    #----- can be revoked in BotFather without touching the main bot.
+    PHONE_BOT_TOKENS = [t.strip() for t in (getenv("PHONE_BOT_TOKENS") or "").split(",") if t.strip()]
+    #----- Emergency opt-in only: hand the MAIN bot token to phones when no pool is
+    #----- configured (the old, insecure behaviour). Leave unset/false.
+    ALLOW_MAIN_BOT_FOR_PHONES = (getenv("ALLOW_MAIN_BOT_FOR_PHONES", "") or "").strip().lower() in ("1", "true", "yes")
+    #----- Abuse limits for /tdlib-config (per API token)
+    PHONE_MAX_DEVICES_PER_TOKEN = _int_env("PHONE_MAX_DEVICES_PER_TOKEN", 3)
+    PHONE_CONFIG_RATE_PER_HOUR  = _int_env("PHONE_CONFIG_RATE_PER_HOUR", 30)
+
     #----- Required: Database URIs
     DATABASE = [db.strip() for db in (getenv("DATABASE") or "").split(",") if db.strip()]
 
