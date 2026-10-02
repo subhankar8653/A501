@@ -261,61 +261,29 @@ export function isWatchingNow() {
 }
 
 export function setWatching(isPlaying) {
+  // Download ab watch ke time pause/queue NAHI hota. Watching ka state sirf
+  // UI ke liye (toast text) track hota hai; asli bandwidth split (video 30% /
+  // download 70%, video nahi chal rahi to download 100%) native side par
+  // TdlibClient.setWatching() se hota hai.
   if (isPlaying) {
     if (watchStopTimer) {
       clearTimeout(watchStopTimer)
       watchStopTimer = null
     }
-    if (watching) return
     watching = true
-    pauseActiveDownloadForWatch()
     return
   }
-  // Already waiting to flip to "not watching" — let that timer run, don't
-  // reset it (avoids indefinitely postponing resume on rapid pause/resume).
   if (watchStopTimer || !watching) return
   watchStopTimer = setTimeout(() => {
     watchStopTimer = null
     watching = false
-    processQueue()
   }, WATCH_STOP_DEBOUNCE_MS)
-}
-
-// Whatever download is currently 'downloading' gets stopped RIGHT NOW
-// (native bridge pause, or in-memory pause for the plain-browser JS-fetch
-// fallback) and put back at the FRONT of the queue — so it's the very next
-// thing that resumes once watching stops, ahead of anything freshly queued
-// meanwhile.
-function pauseActiveDownloadForWatch() {
-  const list = readMeta()
-  const activeEntry = list.find((d) => d.status === 'downloading')
-  if (!activeEntry) return
-
-  if (hasNativeDownloader() && typeof window.AndroidDownloader.pauseDownload === 'function') {
-    // Native side reports back via window.__nativeDownloadPaused once it's
-    // genuinely stopped — that's what actually re-queues the entry (keeps
-    // a single source of truth for "is this id really stopped yet").
-    window.AndroidDownloader.pauseDownload(activeEntry.id)
-    return
-  }
-
-  pauseJsDownload(activeEntry.id)
-  upsert({ id: activeEntry.id, status: 'queued' })
-  const queue = readQueue()
-  const idx = queue.findIndex((q) => q.id === activeEntry.id)
-  const item = idx >= 0 ? queue.splice(idx, 1)[0] : { id: activeEntry.id, url: activeEntry.url, meta: activeEntry }
-  queue.unshift(item)
-  writeQueue(queue)
 }
 
 // Jab bhi ek download khatam (done/error/cancelled) hota hai, yeh queue mein
 // se agla item nikaal kar shuru karta hai — agar koi aur pehle se active na ho.
 function processQueue() {
   if (isAnyDownloadActive()) return
-  // FEATURE: watching chal rahi ho to koi naya/queued download shuru mat
-  // karo — watching band hote hi (setWatching(false) ke debounce ke baad)
-  // yeh khud phir se call hoga.
-  if (watching) return
   const queue = readQueue()
   const next = queue.shift()
   if (!next) return
@@ -433,7 +401,7 @@ export async function startDownload(url, meta) {
     return id
   }
 
-  const shouldQueue = isAnyDownloadActive() || watching
+  const shouldQueue = isAnyDownloadActive()
 
   upsert({
     id,
