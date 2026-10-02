@@ -298,11 +298,6 @@ class PlayerActivity : AppCompatActivity() {
     private var usingSharedPlayer = false
     private lateinit var playerView: PlayerView
     private lateinit var playerContainer: FrameLayout
-    // A501 — direct phone<->Telegram migration, TESTING AID ONLY. See
-    // TdlibDebugState.kt doc comment. null when TdlibConfig.ENABLED is
-    // false (real users never see this).
-    private var tdlibDebugBadge: TextView? = null
-    private val tdlibDebugHandler = Handler(Looper.getMainLooper())
     // BUG FIX (user report: "skip karte hi pause aur buffering ka icon ek
     // saath dikhta hai"): apna themed buffering indicator (dekho
     // activity_player.xml — Media3 ka default spinner ab band hai). Isko
@@ -876,7 +871,6 @@ class PlayerActivity : AppCompatActivity() {
         themeAccentColor = intent.getStringExtra("theme_color")?.let {
             try { Color.parseColor(it) } catch (_: IllegalArgumentException) { null }
         } ?: Color.parseColor("#FFD700")
-        setupTdlibDebugBadge()
         gestureIndicator = findViewById(R.id.gestureIndicator)
         gestureText = findViewById(R.id.gestureText)
         speedIndicatorBadge = findViewById(R.id.speedIndicatorBadge)
@@ -2144,6 +2138,9 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            // Download/stream bandwidth split (70% download / 30% video) —
+            // see TdlibClient.setWatching().
+            TdlibClient.setWatching(isPlaying)
             syncPlayPauseIcon()
             rescheduleControlsHideIfVisible()
         }
@@ -7529,71 +7526,8 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // A501 — direct phone<->Telegram migration, TESTING AID ONLY (see
-    // TdlibDebugState.kt). Adds a small top-left overlay showing whether
-    // THIS playback's Telegram content is going straight through TDLib
-    // (the only path now — no Railway proxy fallback left) — and why, if
-    // it genuinely failed after its internal retry. Only added while
-    // TdlibConfig.ENABLED is true, so it's completely invisible for real
-    // users / once this feature ships for real. Remove this call (and this
-    // function) once TDLib testing is done.
-    private fun setupTdlibDebugBadge() {
-        if (!TdlibConfig.ENABLED) return
-
-        val badge = TextView(this).apply {
-            setTextColor(Color.YELLOW)
-            setBackgroundColor(Color.argb(230, 0, 0, 0))
-            textSize = 13f
-            setPadding(20, 10, 20, 10)
-            typeface = Typeface.MONOSPACE
-            text = "[${TdlibDebugState.BUILD_MARKER}] ${TdlibDebugState.lastStatus}"
-            elevation = 999f
-        }
-        val params = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            topMargin = 260
-            leftMargin = 16
-        }
-        playerContainer.addView(badge, params)
-        badge.bringToFront()
-        tdlibDebugBadge = badge
-
-        var lastToasted = ""
-        val poller = object : Runnable {
-            override fun run() {
-                val rawStatus = TdlibDebugState.lastStatus
-                var current = "[${TdlibDebugState.BUILD_MARKER}] $rawStatus"
-                val toastKey = current // base status only, before live connection-state append
-                if (rawStatus.startsWith("TDLib: opening") && !TdlibClient.isAuthReady()) {
-                    current = "$current\nconn: ${TdlibClient.getConnectionState()}" +
-                        "\ndiag: ${TdlibClient.getDiagnostics()}"
-                }
-                tdlibDebugBadge?.let {
-                    it.text = current
-                    it.bringToFront()
-                }
-                // Backup path: a Toast is drawn by the system WindowManager,
-                // not inside our view hierarchy, so it can't get hidden
-                // behind the video surface / controls overlay the way the
-                // badge theoretically could. Only fire once per distinct
-                // BASE status (not the live connection-state append, which
-                // changes every poll) so it doesn't spam.
-                if (toastKey != lastToasted && rawStatus != "TDLib: idle") {
-                    lastToasted = toastKey
-                    Toast.makeText(this@PlayerActivity, toastKey, Toast.LENGTH_LONG).show()
-                }
-                tdlibDebugHandler.postDelayed(this, 1000)
-            }
-        }
-        tdlibDebugHandler.post(poller)
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        tdlibDebugHandler.removeCallbacksAndMessages(null)
         if (pipReceiverRegistered) {
             try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
             pipReceiverRegistered = false
@@ -7653,6 +7587,7 @@ class PlayerActivity : AppCompatActivity() {
                 // orphaned/broken instance ko reuse na kiya jaaye.
                 playerView.player = null
                 player.release()
+                TdlibClient.setWatching(false)
             }
         }
     }

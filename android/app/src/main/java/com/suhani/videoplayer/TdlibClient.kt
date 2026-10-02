@@ -60,6 +60,48 @@ object TdlibClient {
      */
     class TdlibDownloadPausedException(message: String) : Exception(message)
 
+    // ---------------------------------------------------------------------
+    // BANDWIDTH SPLIT (user ask: "video dekhte dekhte bhi download ho, video
+    // par 30% focus aur download par 70%; video nahi dekh rahe to poora 100%
+    // download par"). Download ab watch ke time pause/queue NAHI hota.
+    //
+    // TDLib exact percentage split nahi deta — sirf per-file priority (1..32),
+    // jisme zyada priority wali file ko pehle bandwidth milti hai. Isliye
+    // watching ke dauraan download ki priority ek 10s ke cycle mein badalti
+    // hai: pehle 7s (70%) download > stream, baaki 3s (30%) stream > download.
+    // Video ke paas ExoPlayer ka buffer hota hai, to 7s ke download-window mein
+    // bhi playback nahi rukta, aur 3s ke window mein buffer wapas bhar jaata
+    // hai. Watching nahi hai to download hamesha max priority (100%) par.
+    // ---------------------------------------------------------------------
+    private const val STREAM_PRIORITY = 16
+    private const val DOWNLOAD_PRIORITY_HIGH = 32
+    private const val DOWNLOAD_PRIORITY_LOW = 8
+    private const val SPLIT_CYCLE_MS = 10_000L
+    private const val DOWNLOAD_SHARE_PERCENT = 70L
+    private const val WATCH_STOP_GRACE_MS = 1_500L
+
+    @Volatile private var watchingPlaying = false
+    @Volatile private var watchingStoppedAt = 0L
+
+    /** Player (inline overlay ya fullscreen) ke play/pause par bulao. Short
+     *  buffering/pause blips par split baar-baar na badle, isliye stop ke baad
+     *  [WATCH_STOP_GRACE_MS] tak abhi bhi "watching" maana jaata hai. */
+    fun setWatching(isPlaying: Boolean) {
+        watchingPlaying = isPlaying
+        if (!isPlaying) watchingStoppedAt = System.currentTimeMillis()
+    }
+
+    fun isWatching(): Boolean =
+        watchingPlaying || (System.currentTimeMillis() - watchingStoppedAt) < WATCH_STOP_GRACE_MS
+
+    /** Download ki abhi ki priority: watching nahi -> hamesha max (100%);
+     *  watching -> cycle ke pehle 70% waqt high, baaki 30% low. */
+    private fun desiredDownloadPriority(): Int {
+        if (!isWatching()) return DOWNLOAD_PRIORITY_HIGH
+        val phase = System.currentTimeMillis() % SPLIT_CYCLE_MS
+        return if (phase < SPLIT_CYCLE_MS * DOWNLOAD_SHARE_PERCENT / 100) DOWNLOAD_PRIORITY_HIGH else DOWNLOAD_PRIORITY_LOW
+    }
+
     data class ResolvedFile(val fileId: Int, val totalSize: Long)
 
     @Volatile private var clientId: Int = -1
@@ -639,7 +681,7 @@ object TdlibClient {
                     // active hon, taaki download jaldi/steady poora ho, aur
                     // streaming (jo chal to rahi hai, bas kam priority par)
                     // thoda zyada dheere buffer ho.
-                    put("priority", 16)
+                    put("priority", STREAM_PRIORITY)
                     put("synchronous", false)
                 },
             )
@@ -746,6 +788,19 @@ object TdlibClient {
         }
     }
 
+    private fun sendDownloadRequest(fileId: Int, priority: Int) {
+        send(
+            JSONObject().apply {
+                put("@type", "downloadFile")
+                put("file_id", fileId)
+                put("offset", 0)
+                put("limit", 0) // 0 = no limit — download the whole file
+                put("priority", priority)
+                put("synchronous", false)
+            },
+        )
+    }
+
     private fun downloadFullAttempt(
         fileId: Int,
         total: Long,
@@ -754,37 +809,22 @@ object TdlibClient {
         shouldPause: () -> Boolean,
         onProgress: (progressPct: Int, sizeBytes: Long) -> Unit,
     ) {
-        send(
-            JSONObject().apply {
-                put("@type", "downloadFile")
-                put("file_id", fileId)
-                put("offset", 0)
-                put("limit", 0) // 0 = no limit — download the whole file
-                // FEATURE (user ask: "download ko zyada power milna chahiye,
-                // streaming ko kam jab download ho"): max priority (32) —
-                // yeh ensureRangeDownloadedAttempt() (streaming, ab priority
-                // 16) se hamesha zyada hai, isliye jab dono ek saath TDLib se
-                // active hon, download ko bandwidth mein preference milti
-                // hai aur woh jaldi/steady poora hota hai.
-                //
-                // FEATURE (user ask: "single download ya watch, dono ek
-                // saath kabhi nahi"): ab dono kabhi ek saath TDLib se active
-                // hi nahi hote — jab watching shuru hoti hai, download ka
-                // shouldPause() true ho jaata hai aur yeh cancelDownloadFile
-                // bhej kar poori tarah ruk jaata hai (priority ab irrelevant,
-                // koi contention hi nahi bachta). Priority yahan sirf us
-                // chhoti window ke liye maayne rakhti hai jab dono ka state
-                // transition abhi-abhi hua ho.
-                put("priority", 32)
-                put("synchronous", false)
-            },
-        )
+        // Watching ke time download rukta nahi — sirf priority badalti hai
+        // (dekho desiredDownloadPriority()). Same downloadFile dobara bhejne se
+        // TDLib download restart nahi karta, bas priority update hoti hai.
+        var currentPriority = desiredDownloadPriority()
+        sendDownloadRequest(fileId, currentPriority)
 
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (shouldPause()) {
                 cancelDownloadFileQuiet(fileId)
-                throw TdlibDownloadPausedException("download paused (watching started) for file_id=$fileId")
+                throw TdlibDownloadPausedException("download paused for file_id=$fileId")
+            }
+            val wanted = desiredDownloadPriority()
+            if (wanted != currentPriority) {
+                currentPriority = wanted
+                sendDownloadRequest(fileId, wanted)
             }
             val local = latestFileState[fileId]?.optJSONObject("local")
             if (local != null) {
