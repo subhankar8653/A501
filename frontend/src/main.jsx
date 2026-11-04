@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
+import { installFetchFailover, rebaseStoredConfig } from './lib/endpoints'
+
+// Must run before the first request: moves old saved logins onto the current
+// domain and makes every backend call fail over to a mirror domain if needed.
+rebaseStoredConfig()
+installFetchFailover()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

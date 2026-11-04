@@ -2,6 +2,8 @@
 // The backend already speaks the Stremio addon protocol
 // (manifest / catalog / meta / stream), so we just consume it as JSON.
 
+import { activeBackend } from './lib/endpoints'
+
 const STORAGE_KEY = 'suhani-screen:config'
 
 export function getConfig() {
@@ -26,13 +28,13 @@ export function clearConfig() {
   localStorage.removeItem(STORAGE_KEY)
 }
 
-// The one backend this build of the app talks to. Set this before building
-// the app (or override at build time with VITE_BACKEND_URL in a .env file)
-// so the in-app "Sign up with Telegram" button knows where to reach the
-// bot/backend — the user is never asked to type a backend URL anymore.
-export const DEFAULT_BACKEND_URL = (
-  import.meta.env.VITE_BACKEND_URL || 'https://a501-production.up.railway.app'
-).replace(/\/+$/, '')
+// The backend this build talks to is a DOMAIN (behind Cloudflare Tunnel),
+// injected at build time via VITE_BACKEND_URL (GitHub secret BACKEND_URL) —
+// it is no longer hard-coded in the source. See lib/endpoints.js: it also
+// handles mirror domains + automatic failover, so a server/VPS change never
+// needs an app update. `activeBackend()` is the live value; the const below
+// is kept only so older imports keep working.
+export const DEFAULT_BACKEND_URL = activeBackend()
 
 // ---------------------------------------------------------------------
 // Signed-in profile (name/username/photo pulled from Telegram during the
@@ -93,13 +95,13 @@ export function saveLanguage(code) {
 // "Sign up with Telegram" flow — see backend routes under /api/app/*.
 // ---------------------------------------------------------------------
 export async function getBotUsername() {
-  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/bot-username`)
+  const data = await fetchJson(`${activeBackend()}/api/app/bot-username`)
   if (data.status !== 'success') throw new Error(data.message || 'Bot not reachable')
   return data.data.username
 }
 
 export async function createSignupCode() {
-  const res = await fetch(`${DEFAULT_BACKEND_URL}/api/app/signup/create`, { method: 'POST' })
+  const res = await fetch(`${activeBackend()}/api/app/signup/create`, { method: 'POST' })
   if (!res.ok) throw new Error(`Request failed (${res.status})`)
   const data = await res.json()
   if (data.status !== 'success') throw new Error(data.message || 'Could not start sign-up')
@@ -108,14 +110,14 @@ export async function createSignupCode() {
 
 // Returns { state: 'pending' | 'verified' | 'expired' | 'invalid', ... }
 export async function getSignupStatus(code) {
-  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/signup/${code}`)
+  const data = await fetchJson(`${activeBackend()}/api/app/signup/${code}`)
   if (data.status !== 'success') throw new Error(data.message || 'Could not check sign-up status')
   return data.data
 }
 
 export function avatarUrl(userId) {
   if (!userId) return null
-  return `${DEFAULT_BACKEND_URL}/api/app/avatar/${userId}`
+  return `${activeBackend()}/api/app/avatar/${userId}`
 }
 
 // Search history for the full-screen search overlay (YouTube-style "recent

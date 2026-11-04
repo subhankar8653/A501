@@ -17,6 +17,7 @@ import Downloads from './pages/Downloads'
 import { LanguageProvider } from './i18n/LanguageContext'
 import { ThemeModeProvider } from './theme/ThemeContext'
 import Profile from './pages/Profile'
+import UpdatePrompt from './components/UpdatePrompt'
 
 // FEATURE (user ask: "app bina login/verify ke seedha khul jaaye — Saved
 // aur Downloads hamesha khule rahein, chahe user verify na kiya ho; sirf
@@ -151,6 +152,7 @@ export default function App() {
     <LanguageProvider>
       <ConnectionOverlay />
       <ToastHost />
+      <UpdatePrompt />
       <Routes>
         {/* Direct-link fallback only — normal flow ab kabhi yahan force
             redirect nahi karta (upar comment dekho). "/setup" jaate hi seedha
