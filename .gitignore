@@ -5,3 +5,10 @@ android/app/src/main/assets/
 # TDLib .so files download fresh from the "tdlib-libs" GitHub Release
 # before every APK build (see build-apk.yml) — too big to commit (25MB+).
 android/app/src/main/jniLibs/
+
+# Server secrets / runtime data — never commit
+backend/config.env
+backend/.env
+backend/data/
+*.jks
+*.keystore

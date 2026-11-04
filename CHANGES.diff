@@ -1,0 +1,2182 @@
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/.github/workflows/build-apk.yml a501src/A501-main/.github/workflows/build-apk.yml
+--- orig/A501-main/.github/workflows/build-apk.yml	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/.github/workflows/build-apk.yml	2026-11-04 08:20:34.375842750 +0000
+@@ -1,5 +1,12 @@
+ name: Build APK
+ 
++# Required GitHub repo secrets (Settings -> Secrets and variables -> Actions):
++#   BACKEND_URL          your API domain, e.g. https://api.yourdomain.com   (NOT an IP / railway / vps hostname)
++#   BACKEND_FALLBACKS    optional, comma separated extra domains
++#   KEYSTORE_B64         your release keystore, base64 encoded   (see DEPLOY guide: keytool + base64 -w0)
++#   KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
++# Keep the repo PRIVATE.
++
+ on:
+   push:
+     branches: [ main ]
+@@ -9,6 +16,11 @@
+       - '.github/workflows/build-apk.yml'
+   workflow_dispatch: {}
+ 
++env:
++  # Strictly increasing -> becomes Android versionCode AND the OTA bundle version.
++  VERSION_CODE: ${{ github.run_number }}
++  VERSION_NAME: 1.${{ github.run_number }}
++
+ jobs:
+   build:
+     runs-on: ubuntu-latest
+@@ -16,10 +28,16 @@
+       - name: Checkout repo
+         uses: actions/checkout@v4
+ 
+-      # App-shell (HTML/JS/CSS) ab APK ke andar bundled assets se serve hota
+-      # hai (MainActivity.kt -> WebViewAssetLoader), koi live URL fetch nahi —
+-      # isliye har APK build se pehle frontend ko yahin build karke Android
+-      # assets folder mein copy karna zaroori hai.
++      - name: Check secrets
++        env:
++          BACKEND_URL: ${{ secrets.BACKEND_URL }}
++          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
++        run: |
++          [ -n "$BACKEND_URL" ] || { echo "::error::Secret BACKEND_URL is missing"; exit 1; }
++          [ -n "$KEYSTORE_B64" ] || { echo "::error::Secret KEYSTORE_B64 is missing (APK updates need a fixed signing key)"; exit 1; }
++
++      # The UI is bundled inside the APK (MainActivity -> loadDataWithBaseURL),
++      # so the frontend is built here and copied into the Android assets.
+       - name: Set up Node
+         uses: actions/setup-node@v4
+         with:
+@@ -27,6 +45,9 @@
+ 
+       - name: Build frontend
+         working-directory: frontend
++        env:
++          VITE_BACKEND_URL: ${{ secrets.BACKEND_URL }}
++          VITE_BACKEND_FALLBACKS: ${{ secrets.BACKEND_FALLBACKS }}
+         run: |
+           npm install
+           npm run build
+@@ -36,6 +57,8 @@
+           rm -rf android/app/src/main/assets
+           mkdir -p android/app/src/main/assets
+           cp -r frontend/dist/. android/app/src/main/assets/
++          # Version of the UI that ships inside this APK (OTA only replaces it with a NEWER one).
++          echo -n "$VERSION_CODE" > android/app/src/main/assets/bundle_version.txt
+ 
+       - name: Set up JDK 17
+         uses: actions/setup-java@v4
+@@ -43,15 +66,7 @@
+           distribution: temurin
+           java-version: '17'
+ 
+-      # BUG FIX (build failure at this step: "Warning: Failed to find package
+-      # 'tools'" -> sdkmanager exit code 1): android-actions/setup-android@v3
+-      # downloads cmdline-tools and then runs `sdkmanager tools`, but the legacy
+-      # "tools" package no longer exists in Google's repository, so the step
+-      # always fails before Gradle even starts (project code ka fault nahi).
+-      # ubuntu-latest runner par Android SDK pehle se installed hai
+-      # (ANDROID_HOME), isliye action ki zaroorat nahi — bas licenses accept
+-      # kar dete hain; Gradle (AGP) baaki platform/build-tools khud download
+-      # kar leta hai.
++      # ubuntu-latest already has the Android SDK; just accept licenses.
+       - name: Set up Android SDK
+         run: |
+           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+@@ -60,8 +75,6 @@
+           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+           if [ -x "$SDKMANAGER" ]; then
+             yes | "$SDKMANAGER" --licenses > /dev/null || true
+-          else
+-            echo "sdkmanager not found at $SDKMANAGER, relying on Gradle to auto-accept/download"
+           fi
+ 
+       - name: Set up Gradle
+@@ -69,44 +82,38 @@
+         with:
+           gradle-version: '8.11.1'
+ 
+-      # libtdjson.so files (TDLib) 25MB+ ke hai isliye repo mein commit nahi
+-      # kiye — inhe ek GitHub Release ke assets ke roop mein rakha hai, aur
+-      # har build se pehle yahan download karke jniLibs mein daal rahe hain.
+-      # Naya .so upload karna ho to bas Release "tdlib-libs" ke assets update
+-      # kar do, ye step khud-ba-khud latest file utha lega.
++      # libtdjson.so (TDLib, 25MB+) lives in the GitHub Release "tdlib-libs".
++      # `gh` authenticates, so this also works when the repo is private.
+       - name: Download TDLib native libs
++        env:
++          GH_TOKEN: ${{ github.token }}
+         run: |
+-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+-          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+-          curl -L -o android/app/src/main/jniLibs/arm64-v8a/libtdjson.so \
+-            https://github.com/${{ github.repository }}/releases/download/tdlib-libs/libtdjson-arm64-v8a.so
+-          curl -L -o android/app/src/main/jniLibs/armeabi-v7a/libtdjson.so \
+-            https://github.com/${{ github.repository }}/releases/download/tdlib-libs/libtdjson-armeabi-v7a.so
++          for abi in arm64-v8a armeabi-v7a; do
++            mkdir -p "android/app/src/main/jniLibs/$abi"
++            gh release download tdlib-libs --repo "$GITHUB_REPOSITORY" \
++              --pattern "libtdjson-$abi.so" --output "android/app/src/main/jniLibs/$abi/libtdjson.so" --clobber
++          done
+ 
+-      - name: Build debug APK
++      - name: Decode signing keystore
++        env:
++          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
++        run: |
++          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
++          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
++
++      # Retries with growing waits: Maven Central / Gradle plugin portal sometimes
++      # answer 429 or drop TLS on shared runners (not a project bug).
++      - name: Build signed release APK
+         working-directory: android
+-        # dl.google.com se kabhi-kabhi TLS handshake fail ho jata hai (GitHub
+-        # Actions runner ka transient network issue, project code ka fault
+-        # nahi) — isliye retry karte hain.
+-        # BUG FIX (build failure: "Received status code 429 from server: Too
+-        # Many Requests" from repo.maven.apache.org / plugins.gradle.org):
+-        # yeh Maven Central/Gradle Plugin Portal ka apna transient rate-limit
+-        # hai, humara code/config ka fault nahi. Pehle sirf 3 attempts, har
+-        # ek ke beech 15s ka fixed wait — lekin har attempt khud hi 2-3
+-        # minute leta hai (poori dependency resolution phir se), aur agar
+-        # rate-limit abhi bhi active hai to 15s ka gap kaafi nahi hota, agla
+-        # attempt turant phir 429 khaata hai (yehi is build mein hua — teeno
+-        # attempts fail). Ab attempts badha kar 5 kar diye hain aur beech ka
+-        # wait badhta hua (30s, 60s, 120s, 240s) rakha hai, taaki rate-limit
+-        # window ko genuinely thandा hone ka waqt mile. gradle.properties
+-        # mein Gradle ke apne internal resource-retry/backoff bhi badhaye
+-        # gaye hain (dekho uska comment) — taaki ek hi attempt ke andar bhi
+-        # yeh khud recover kar sake, poora build restart kiye bina.
++        env:
++          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
++          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
++          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+         run: |
+           delays=(30 60 120 240)
+           for attempt in 1 2 3 4 5; do
+             echo "Attempt $attempt of 5..."
+-            if gradle assembleDebug --no-daemon; then
++            if gradle assembleRelease --no-daemon; then
+               exit 0
+             fi
+             if [ "$attempt" -lt 5 ]; then
+@@ -118,9 +125,33 @@
+           echo "All attempts failed."
+           exit 1
+ 
++      - name: Name the files for the Telegram bot
++        run: |
++          mkdir -p out
++          cp android/app/build/outputs/apk/release/app-release.apk "out/HukaTube_${VERSION_NAME}_${VERSION_CODE}.apk"
++          cp frontend/dist/index.html out/index.html
++          {
++            echo "### Build ${VERSION_CODE} ready"
++            echo
++            echo "Send the artifact files to your bot, then reply to them with:"
++            echo
++            echo '```'
++            echo "/setapk code=${VERSION_CODE} name=${VERSION_NAME}"
++            echo "What's new..."
++            echo
++            echo "/setbundle version=${VERSION_CODE}"
++            echo "What's new..."
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++
+       - name: Upload APK
+         uses: actions/upload-artifact@v4
+         with:
+-          name: suhani-screen-debug-apk
+-          path: android/app/build/outputs/apk/debug/app-debug.apk
++          name: huka-apk
++          path: out/HukaTube_*.apk
+ 
++      - name: Upload OTA UI bundle
++        uses: actions/upload-artifact@v4
++        with:
++          name: huka-ui-bundle
++          path: out/index.html
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/.gitignore a501src/A501-main/.gitignore
+--- orig/A501-main/.gitignore	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/.gitignore	2026-11-04 08:21:59.015847781 +0000
+@@ -5,3 +5,10 @@
+ # TDLib .so files download fresh from the "tdlib-libs" GitHub Release
+ # before every APK build (see build-apk.yml) — too big to commit (25MB+).
+ android/app/src/main/jniLibs/
++
++# Server secrets / runtime data — never commit
++backend/config.env
++backend/.env
++backend/data/
++*.jks
++*.keystore
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/DEPLOY_GUIDE.md a501src/A501-main/DEPLOY_GUIDE.md
+--- orig/A501-main/DEPLOY_GUIDE.md	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/DEPLOY_GUIDE.md	2026-11-04 08:21:59.021400680 +0000
+@@ -0,0 +1,113 @@
++# A501 / Huka Tube — VPS deploy, hidden origin, Telegram se updates
++
++## Kya badla (short)
++
++| Cheez | Pehle | Ab |
++|---|---|---|
++| App ka server address | Railway URL source mein hardcoded | **Tumhara domain** (GitHub secret `BACKEND_URL` se, source mein nahi) |
++| Server kahan hai | Railway/VPS IP | **Cloudflare Tunnel** — VPS par koi port khula nahi, IP kahin nahi dikhta |
++| VPS badalna | app update ya URL change | **Sirf tunnel naye VPS par chalao** — app ko kuch pata nahi chalta |
++| Domain badalna | app dead | Bot se `/endpoints add` — app khud naya domain seekh leta hai, purana mare to switch kar leta hai |
++| App update | GitHub se APK manually | **Telegram bot se**: `/setapk` (naya APK), `/setbundle` (naya UI/features, bina reinstall) |
++| Notification | — | App ke andar popup + 🔔 bell mein card |
++
++## 1. Ek baar ka setup
++
++### 1.1 Domain + Cloudflare
++1. Domain lo (WHOIS privacy ON), Cloudflare (free) mein add karo, nameservers badlo.
++2. Cloudflare → **Zero Trust → Networks → Tunnels → Create tunnel → Cloudflared**. Naam: `a501`.
++3. **Token copy karo** (lamba `eyJ...` text) — yehi VPS ki `.env` mein jayega.
++4. Tunnel ke **Public hostname** mein add karo: `api.yourdomain.com` → Service type **HTTP** → URL `app:8000`.
++
++### 1.2 GitHub (repo **PRIVATE** rakho)
++Settings → Secrets and variables → Actions → New secret:
++
++| Secret | Value |
++|---|---|
++| `BACKEND_URL` | `https://api.yourdomain.com` |
++| `BACKEND_FALLBACKS` | (optional) `https://backup.example.com` |
++| `KEYSTORE_B64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` | neeche |
++
++**Signing key (bahut zaroori)** — Android sirf usi key se signed APK ko update ki tarah install karta hai. Ek baar banao aur **backup rakho** (kho gayi to sab users ko reinstall karna padega):
++```bash
++keytool -genkeypair -v -keystore release.jks -alias huka -keyalg RSA -keysize 2048 -validity 10000
++base64 -w0 release.jks      # is output ko KEYSTORE_B64 secret mein daalo
++```
++
++## 2. VPS par deploy (Ubuntu/Debian)
++
++```bash
++# apne computer se zip upload karo, phir VPS par:
++unzip A501-update.zip -d /opt && cd /opt/A501-main
++sudo bash deploy/vps-setup.sh            # docker + firewall (sirf SSH khula)
++
++cd backend
++cp sample_config.env config.env && nano config.env   # API_ID, API_HASH, BOT_TOKEN, DATABASE, OWNER_ID, PHONE_BOT_TOKENS ... (wahi purani values)
++cp .env.example .env && nano .env                    # TUNNEL_TOKEN=eyJ...
++```
++
++⚠️ **Pehle purana Railway service band karo** (stop/pause). Same bot token / userbot session do jagah ek saath chalane se Telegram session kharab ho sakta hai aur messages double process hote hain.
++
++```bash
++docker compose up -d --build
++docker compose logs -f app        # "Started Successfully" dikhe
++```
++
++Phir browser mein `https://api.yourdomain.com/login` → admin login → **Settings → Base URL** = `https://api.yourdomain.com` → Save.
++(Base URL database mein save hota hai, config.env se sirf pehli baar leta hai — isliye yahin badalna zaroori hai, nahi to stream links purane address ke aayenge.)
++
++Database (MongoDB) wahi rahega, to users/tokens/library sab jaise the waise.
++
++## 3. App build
++
++1. Is zip ki files apne GitHub repo mein replace karo, push karo.
++2. **Actions → Build APK** chalega → artifacts: `huka-apk` (APK) aur `huka-ui-bundle` (index.html). Run ke summary mein ready-made bot commands bhi likhe aate hain.
++3. **Pehli baar** naya APK manually install karo (purana app **uninstall** karna padega — purani APK alag key se signed thi). Uske baad sab update bot se.
++
++## 4. Telegram se update bhejna (sirf OWNER_ID wale ko chalte hain)
++
++**Naya UI / features (reinstall nahi, sabse aasaan):**
++1. Actions artifact `huka-ui-bundle` se `index.html` bot ko bhejo.
++2. Us file par reply karke:
++```
++/setbundle version=93
++✨ Naya theme
++🐞 Fixes
++```
++App background mein download karta hai → 🔔 aur popup: **"Naye features ready — Restart"**. (`force` likho to bina puche apply ho jaata hai.) Naya UI agar 2 baar boot nahi hua to app khud purane UI par wapas aa jaata hai.
++
++`min=` : sabse purana APK code jis par yeh UI chalta hai. Default = abhi live APK ka code. Agar UI ke saath native (Kotlin) change bhi hai to pehle `/setapk`, phir `/setbundle`.
++
++**Naya APK (native change):**
++```
++/setapk code=93 name=1.93        (file ka naam HukaTube_1.93_93.apk ho to code/name apne aap mil jaate hain)
++Naya player controls
++```
++Reply karo APK file par. Users ko popup aata hai → **Update now** → download → Android installer. `force` likho to popup band nahi hota.
++
++Baaki: `/updateinfo` (kya live hai), `/clearupdate apk|bundle` (wapas lena), `/endpoints` (mirror domains).
++
++## 5. VPS badalna (app ko kuch pata nahi chalta)
++
++Naye VPS par: `vps-setup.sh` → repo/`backend` folder copy (`config.env`, `.env`, aur `data/` — `rsync -a olduser@oldvps:/opt/A501-main/backend/ /opt/A501-main/backend/`).
++1. Purane VPS par: `docker compose stop app` (bot sirf ek jagah chalna chahiye)
++2. Naye VPS par: `docker compose up -d --build`
++3. Cloudflare Tunnel same token se naye VPS par connect ho jaata hai → domain wahi, app wahi. ~1 minute ka downtime.
++4. Purane VPS par `docker compose down`. 
++
++`data/` copy na karo to bhi chalega: APK/bundle Telegram se dobara utar jaate hain (nahi to `/setapk` dobara bhejo).
++
++## 6. Railway ya kahin aur chalana
++Wahi Dockerfile chalta hai. Domain Cloudflare par rakho aur:
++- jis host par Docker Compose chale (VPS, Oracle, etc.) wahan upar wala compose = best (IP bilkul nahi dikhta);
++- Railway par: custom domain `api.yourdomain.com` Cloudflare DNS mein **orange-cloud (proxied)** CNAME se Railway ko point karo. App/users ko sirf Cloudflare dikhta hai, Railway ka naam nahi.
++Server badalne ka matlab hamesha: *sirf domain/tunnel ka target badlo*.
++
++## 7. Privacy — sach kitna chhupta hai
++- ✅ App/users/network inspection mein sirf `api.yourdomain.com` (Cloudflare IPs) dikhta hai; VPS IP, Railway, hosting provider nahi.
++- ✅ Source mein koi server address nahi; `/docs`, `/openapi.json`, `Server:` header band; `HIDE_PUBLIC_PAGES=true` se `/status`, `/stremio` bhi 404.
++- ⚠️ APK decompile karne par domain mil jaata hai (koi bhi app ise chhupa nahi sakta). Isliye domain ke peeche sirf Cloudflare rakho, WHOIS privacy ON, domain pe personal website/email mat jodo.
++- ⚠️ Purani APK (jisme Railway URL bundled hai) ab bhi Railway par hi jaayegi — unhe naya APK manually install karwana padega; tab tak Railway chalu rakhna padega agar unhe chalana hai.
++- ⚠️ Purani git history mein Railway URL ho sakta hai — repo private rakho.
++- ⚠️ Cloudflare ko origin pata hota hai (wahi tunnel chalata hai). Cloudflare free plan ki shartein bade video-proxy traffic ko restrict karti hain; is app mein video phone ke andar TDLib se seedha Telegram se aata hai (backend sirf chhota `/resolve` JSON deta hai), isliye abhi theek hai — sirf split/Drive wale fallback `/dl` proxy se jaate hain.
++- ⚠️ OTA UI bundle ka bharosa tumhare backend par hai (HTTPS + checksum). Backend/bot token surakshit rakho — OWNER_ID ke alawa koi `/setbundle` nahi chala sakta.
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/android/app/build.gradle a501src/A501-main/android/app/build.gradle
+--- orig/A501-main/android/app/build.gradle	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/android/app/build.gradle	2026-11-04 08:20:11.460310412 +0000
+@@ -18,16 +18,44 @@
+         // mat karna, warna PlayerActivity random crash karega.
+         minSdk 24
+         targetSdk 36
+-        versionCode 1
+-        versionName "1.0"
++        // CI passes VERSION_CODE (must go UP with every APK you ship) and VERSION_NAME.
++        versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
++        versionName System.getenv("VERSION_NAME") ?: "1.0"
++    }
++
++    // IMPORTANT for in-app updates: Android only installs an APK over the
++    // installed app when BOTH are signed with the SAME key. Debug builds on
++    // CI get a fresh random key every run, so updates would fail with
++    // "App not installed". Release builds are therefore signed with your own
++    // permanent keystore, supplied through env vars (GitHub secrets):
++    //   KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
++    signingConfigs {
++        release {
++            def ksPath = System.getenv("KEYSTORE_PATH")
++            if (ksPath) {
++                storeFile file(ksPath)
++                storePassword System.getenv("KEYSTORE_PASSWORD")
++                keyAlias System.getenv("KEY_ALIAS")
++                keyPassword System.getenv("KEY_PASSWORD")
++            }
++        }
+     }
+ 
+     buildTypes {
+         release {
+             minifyEnabled false
++            if (System.getenv("KEYSTORE_PATH")) {
++                signingConfig signingConfigs.release
++            }
+         }
+     }
+ 
++    // CI release builds should not fail on lint opinions (debug builds never ran lint).
++    lint {
++        checkReleaseBuilds false
++        abortOnError false
++    }
++
+     compileOptions {
+         sourceCompatibility JavaVersion.VERSION_17
+         targetCompatibility JavaVersion.VERSION_17
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/android/app/src/main/AndroidManifest.xml a501src/A501-main/android/app/src/main/AndroidManifest.xml
+--- orig/A501-main/android/app/src/main/AndroidManifest.xml	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/android/app/src/main/AndroidManifest.xml	2026-11-04 08:20:03.407594815 +0000
+@@ -28,6 +28,10 @@
+          liye "dataSync" sahi type hai, aur usse match karti permission bhi. -->
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+ 
++    <!-- In-app updates: lets the app hand a downloaded APK (pushed from the
++         owner's Telegram bot) to Android's package installer. See AppUpdater.kt. -->
++    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
++
+     <application
+         android:allowBackup="true"
+         android:label="Huka Tube"
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/android/app/src/main/java/com/suhani/screen/AppUpdater.kt a501src/A501-main/android/app/src/main/java/com/suhani/screen/AppUpdater.kt
+--- orig/A501-main/android/app/src/main/java/com/suhani/screen/AppUpdater.kt	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/android/app/src/main/java/com/suhani/screen/AppUpdater.kt	2026-11-04 08:19:53.599010549 +0000
+@@ -0,0 +1,273 @@
++package com.suhani.screen
++
++import android.content.Context
++import android.content.Intent
++import android.net.Uri
++import android.os.Build
++import android.provider.Settings
++import android.webkit.JavascriptInterface
++import androidx.core.content.FileProvider
++import androidx.core.content.pm.PackageInfoCompat
++import org.json.JSONObject
++import java.io.File
++import java.io.FileOutputStream
++import java.net.HttpURLConnection
++import java.net.URL
++import java.security.MessageDigest
++import java.util.concurrent.Executors
++
++/**
++ * Over-the-air updates, driven from the owner's Telegram bot via the backend
++ * (`/setbundle` and `/setapk` there).
++ *
++ *  - OTA UI bundle: the whole React UI is one `index.html`. A newer one is
++ *    downloaded into `filesDir/ota/` and used on the next start (or right
++ *    away on [WebUpdateInterface.applyBundle]). If a new UI fails to boot
++ *    twice in a row, it is thrown away and the UI that shipped inside the
++ *    APK is used again (rollback guard, see [OtaBundle.loadHtml]).
++ *  - APK: downloaded to `cacheDir/updates/` and handed to Android's package
++ *    installer. This only works as an in-place update if every APK is signed
++ *    with the SAME key (see android/app/build.gradle + the GitHub workflow).
++ *
++ * The web UI talks to this through `window.AndroidUpdater` and gets progress
++ * back through `window.__nativeUpdate(kind, state, pct, message)`.
++ */
++object OtaBundle {
++    private const val PREFS = "ota_prefs"
++    private const val K_VERSION = "version"
++    private const val K_FAILS = "boot_fail_count"
++
++    /** Bundle version of the UI that is on screen right now. */
++    @Volatile
++    var loadedVersion: Int = 0
++        private set
++
++    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++    private fun dir(ctx: Context) = File(ctx.filesDir, "ota")
++    fun file(ctx: Context) = File(dir(ctx), "index.html")
++
++    /** Version of the UI baked into this APK (assets/bundle_version.txt, written by CI). */
++    fun assetVersion(ctx: Context): Int = try {
++        ctx.assets.open("bundle_version.txt").bufferedReader().use { it.readText().trim().toInt() }
++    } catch (e: Exception) {
++        0
++    }
++
++    private fun discard(ctx: Context) {
++        file(ctx).delete()
++        prefs(ctx).edit().remove(K_VERSION).putInt(K_FAILS, 0).apply()
++    }
++
++    /**
++     * HTML the WebView should load. Prefers a downloaded UI that is newer than
++     * the one inside the APK; otherwise (or after two unconfirmed boots, or
++     * after an APK update that already contains something newer) uses the
++     * bundled assets/index.html.
++     */
++    fun loadHtml(ctx: Context): String {
++        val p = prefs(ctx)
++        val assetV = assetVersion(ctx)
++        val f = file(ctx)
++        val v = p.getInt(K_VERSION, 0)
++
++        if (f.exists() && v > assetV) {
++            val fails = p.getInt(K_FAILS, 0)
++            if (fails >= 2) {
++                discard(ctx)
++            } else {
++                try {
++                    val html = f.readText()
++                    if (html.contains("id=\"root\"")) {
++                        p.edit().putInt(K_FAILS, fails + 1).apply()
++                        loadedVersion = v
++                        return html
++                    }
++                } catch (e: Exception) {
++                    // fall through to the bundled UI
++                }
++                discard(ctx)
++            }
++        } else if (f.exists()) {
++            discard(ctx) // APK now ships a UI at least as new — drop the stale download
++        }
++
++        loadedVersion = assetV
++        return ctx.assets.open("index.html").bufferedReader().use { it.readText() }
++    }
++
++    /** The UI reported it booted fine — cancel the rollback countdown. */
++    fun markBootOk(ctx: Context) {
++        prefs(ctx).edit().putInt(K_FAILS, 0).apply()
++    }
++
++    fun install(ctx: Context, tmp: File, version: Int) {
++        dir(ctx).mkdirs()
++        val dest = file(ctx)
++        dest.delete()
++        if (!tmp.renameTo(dest)) {
++            tmp.copyTo(dest, overwrite = true)
++            tmp.delete()
++        }
++        prefs(ctx).edit().putInt(K_VERSION, version).putInt(K_FAILS, 0).apply()
++    }
++
++    fun tmpFile(ctx: Context): File {
++        dir(ctx).mkdirs()
++        return File(dir(ctx), "download.part")
++    }
++}
++
++class WebUpdateInterface(private val activity: MainActivity) {
++
++    private val io = Executors.newFixedThreadPool(2)
++
++    // One running job per kind, so a background UI-bundle download can never
++    // block the user's "Update now" tap (and vice versa).
++    private val running = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
++
++    @JavascriptInterface
++    fun getAppInfo(): String {
++        val pi = activity.packageManager.getPackageInfo(activity.packageName, 0)
++        return JSONObject()
++            .put("versionCode", PackageInfoCompat.getLongVersionCode(pi))
++            .put("versionName", pi.versionName ?: "")
++            .put("bundleVersion", OtaBundle.loadedVersion)
++            .toString()
++    }
++
++    @JavascriptInterface
++    fun markBootOk() {
++        OtaBundle.markBootOk(activity)
++    }
++
++    @JavascriptInterface
++    fun applyBundle() {
++        activity.runOnUiThread { activity.reloadShell() }
++    }
++
++    @JavascriptInterface
++    fun downloadBundle(url: String, sha256: String, version: Int) {
++        if (!isAllowedUrl(url)) return
++        runJob("bundle") {
++            val tmp = OtaBundle.tmpFile(activity)
++            download(url, tmp, sha256) { pct -> emit("bundle", "progress", pct) }
++            val head = tmp.readText()
++            if (!head.contains("id=\"root\"")) {
++                tmp.delete()
++                throw IllegalStateException("bad bundle")
++            }
++            OtaBundle.install(activity, tmp, version)
++            emit("bundle", "ready", 100)
++        }
++    }
++
++    @JavascriptInterface
++    fun downloadApk(url: String, sha256: String, versionCode: Int) {
++        if (!isAllowedUrl(url)) return
++
++        // Android needs a one-time "install unknown apps" permission for this app.
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
++            !activity.packageManager.canRequestPackageInstalls()
++        ) {
++            emit("apk", "needs_permission", 0)
++            activity.runOnUiThread {
++                try {
++                    activity.startActivity(
++                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}"))
++                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++                    )
++                } catch (e: Exception) {
++                    // no such settings screen on this ROM — the in-app hint is still shown
++                }
++            }
++            return
++        }
++
++        runJob("apk") {
++            val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
++            dir.listFiles()?.forEach { it.delete() }
++            val apk = File(dir, "update.apk")
++            val tmp = File(dir, "update.part")
++            download(url, tmp, sha256) { pct -> emit("apk", "progress", pct) }
++            if (!tmp.renameTo(apk)) throw IllegalStateException("rename failed")
++
++            val uri = FileProvider.getUriForFile(activity, activity.packageName + ".downloads.fileprovider", apk)
++            emit("apk", "installing", 100)
++            activity.runOnUiThread {
++                val i = Intent(Intent.ACTION_VIEW)
++                    .setDataAndType(uri, "application/vnd.android.package-archive")
++                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
++                activity.startActivity(i)
++            }
++        }
++    }
++
++    // ------------------------------------------------------------ internals
++
++    /** Only https, and only our own update endpoints — never an arbitrary URL. */
++    private fun isAllowedUrl(url: String): Boolean {
++        val u = try { Uri.parse(url) } catch (e: Exception) { return false }
++        return u.scheme == "https" && !u.host.isNullOrEmpty() && (u.path ?: "").startsWith("/api/app/")
++    }
++
++    private fun runJob(kind: String, job: () -> Unit) {
++        if (!running.add(kind)) return
++        io.execute {
++            try {
++                job()
++            } catch (e: Exception) {
++                emit(kind, "error", 0, e.message ?: "")
++            } finally {
++                running.remove(kind)
++            }
++        }
++    }
++
++    private fun emit(kind: String, state: String, pct: Int, message: String = "") {
++        activity.postUpdateEvent(kind, state, pct, message)
++    }
++
++    private fun download(url: String, dest: File, expectedSha256: String, onProgress: (Int) -> Unit) {
++        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
++            connectTimeout = 15_000
++            readTimeout = 30_000
++            requestMethod = "GET"
++            setRequestProperty("Accept", "*/*")
++        }
++        try {
++            if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
++            val total = conn.contentLengthLong
++            val md = MessageDigest.getInstance("SHA-256")
++            var done = 0L
++            var lastPct = -1
++            conn.inputStream.use { input ->
++                FileOutputStream(dest).use { out ->
++                    val buf = ByteArray(64 * 1024)
++                    while (true) {
++                        val n = input.read(buf)
++                        if (n < 0) break
++                        out.write(buf, 0, n)
++                        md.update(buf, 0, n)
++                        done += n
++                        if (total > 0) {
++                            val pct = (done * 100 / total).toInt()
++                            if (pct != lastPct) {
++                                lastPct = pct
++                                onProgress(pct)
++                            }
++                        }
++                    }
++                }
++            }
++            if (expectedSha256.isNotBlank()) {
++                val got = md.digest().joinToString("") { "%02x".format(it) }
++                if (!got.equals(expectedSha256.trim(), ignoreCase = true)) {
++                    dest.delete()
++                    throw IllegalStateException("checksum mismatch")
++                }
++            }
++        } finally {
++            conn.disconnect()
++        }
++    }
++}
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/android/app/src/main/java/com/suhani/screen/MainActivity.kt a501src/A501-main/android/app/src/main/java/com/suhani/screen/MainActivity.kt
+--- orig/A501-main/android/app/src/main/java/com/suhani/screen/MainActivity.kt	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/android/app/src/main/java/com/suhani/screen/MainActivity.kt	2026-11-04 08:19:53.600683718 +0000
+@@ -1318,6 +1318,8 @@
+         // Offline downloads ke liye native file-download bridge — dekho WebDownloadInterface
+         // aur NativeDownloadManager ke doc comments (blob: URL vs content:// URI ka issue).
+         webView.addJavascriptInterface(WebDownloadInterface(this), "AndroidDownloader")
++        // Over-the-air updates (APK + UI bundle) pushed from the Telegram bot — see AppUpdater.kt.
++        webView.addJavascriptInterface(WebUpdateInterface(this), "AndroidUpdater")
+ 
+         // BUG FIX (user report): pull-to-refresh (neeche-swipe-se-reload) hi
+         // "upar scroll nahi ho raha" issue ki asli wajah nikla — SwipeRefreshLayout
+@@ -1352,7 +1354,9 @@
+         // khulega — lekin app HAMESHA khulega, offline ho ya online, yeahi
+         // asli maang thi.
+         try {
+-            val html = assets.open("index.html").bufferedReader().use { it.readText() }
++            // OtaBundle.loadHtml(): a downloaded (OTA) UI if there is a newer, healthy
++            // one, otherwise the UI bundled inside the APK (assets/index.html).
++            val html = OtaBundle.loadHtml(this)
+             webView.loadDataWithBaseURL(
+                 "https://appassets.androidplatform.net/",
+                 html,
+@@ -1368,6 +1372,28 @@
+         }
+     }
+ 
++    /** Reload the WebView with the newest UI (used after an OTA bundle finished downloading). */
++    fun reloadShell() {
++        if (isFinishing || isDestroyed) return
++        try {
++            val html = OtaBundle.loadHtml(this)
++            webView.loadDataWithBaseURL("https://appassets.androidplatform.net/", html, "text/html", "UTF-8", null)
++        } catch (e: Exception) {
++            webView.loadUrl(APP_URL)
++        }
++    }
++
++    /** Progress/result of an update download -> window.__nativeUpdate(kind, state, pct, message). */
++    fun postUpdateEvent(kind: String, state: String, pct: Int, message: String) {
++        runOnUiThread {
++            if (isFinishing || isDestroyed) return@runOnUiThread
++            webView.evaluateJavascript(
++                "window.__nativeUpdate?.(${JSONObject.quote(kind)}, ${JSONObject.quote(state)}, $pct, ${JSONObject.quote(message)})",
++                null
++            )
++        }
++    }
++
+     private fun startLoadingLabelPulse() {
+         loadingLabelPulse?.cancel()
+         val label = findViewById<View>(R.id.initialLoadingLabel) ?: return
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/android/app/src/main/res/xml/downloads_file_paths.xml a501src/A501-main/android/app/src/main/res/xml/downloads_file_paths.xml
+--- orig/A501-main/android/app/src/main/res/xml/downloads_file_paths.xml	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/android/app/src/main/res/xml/downloads_file_paths.xml	2026-11-04 08:20:03.408086873 +0000
+@@ -8,4 +8,6 @@
+ -->
+ <paths>
+     <files-path name="native_downloads" path="native_downloads/" />
++    <!-- In-app APK updates (AppUpdater.kt) are staged here before install. -->
++    <cache-path name="app_updates" path="updates/" />
+ </paths>
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/.env.example a501src/A501-main/backend/.env.example
+--- orig/A501-main/backend/.env.example	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/backend/.env.example	2026-11-04 08:21:08.512035360 +0000
+@@ -0,0 +1,3 @@
++# Copy to ".env" (same folder as docker-compose.yaml). Never commit it.
++# Cloudflare dashboard -> Zero Trust -> Networks -> Tunnels -> your tunnel -> token
++TUNNEL_TOKEN=
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/Backend/fastapi/__init__.py a501src/A501-main/backend/Backend/fastapi/__init__.py
+--- orig/A501-main/backend/Backend/fastapi/__init__.py	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/backend/Backend/fastapi/__init__.py	2026-11-04 08:15:01.045877939 +0000
+@@ -11,6 +11,11 @@
+     port=Port,
+     loop="uvloop",
+     http="httptools",
++    #----- Behind Cloudflare Tunnel / a reverse proxy: trust X-Forwarded-* so
++    #      client IPs and https scheme are right, and don't send "server: uvicorn".
++    proxy_headers=True,
++    forwarded_allow_ips="*",
++    server_header=False,
+     timeout_keep_alive=30,
+     timeout_graceful_shutdown=5,
+ )
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/Backend/fastapi/main.py a501src/A501-main/backend/Backend/fastapi/main.py
+--- orig/A501-main/backend/Backend/fastapi/main.py	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/backend/Backend/fastapi/main.py	2026-11-04 08:15:01.044861567 +0000
+@@ -1,8 +1,9 @@
+ import asyncio
++import os
+ 
+ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+ from fastapi.middleware.cors import CORSMiddleware
+-from fastapi.responses import HTMLResponse, RedirectResponse
++from fastapi.responses import HTMLResponse, RedirectResponse, Response
+ from fastapi.staticfiles import StaticFiles
+ from fastapi.templating import Jinja2Templates
+ 
+@@ -110,6 +111,7 @@
+ from Backend.fastapi.routes.stream_routes import decay_client_failures
+ from Backend.fastapi.routes.stream_routes import router as stream_router
+ from Backend.fastapi.routes.stremio_routes import router as stremio_router
++from Backend.fastapi.routes.app_update_routes import router as app_update_router
+ from Backend.fastapi.routes.template_routes import (
+     admin_access_page,
+     admin_dashboard_page,
+@@ -137,7 +139,11 @@
+ app = FastAPI(
+     title="Telegram Stremio Media Server",
+     description="A powerful, self-hosted Telegram Stremio Media Server built with FastAPI, MongoDB, and PyroFork seamlessly integrated with Stremio for automated media streaming and discovery.",
+-    version=__version__
++    version=__version__,
++    #----- Don't advertise what this server is: no /docs, /redoc, /openapi.json
++    docs_url=None,
++    redoc_url=None,
++    openapi_url=None,
+ )
+ 
+ #----- Middleware
+@@ -149,6 +155,18 @@
+     allow_headers=["*"],
+ )
+ 
++#----- Optional: make the public info pages look like nothing is here.
++#      Set HIDE_PUBLIC_PAGES=true in config.env (recommended for the app-only setup).
++_HIDE_PUBLIC = (os.environ.get("HIDE_PUBLIC_PAGES", "false") or "").strip().lower() in ("1", "true", "yes")
++
++
++@app.middleware("http")
++async def _hide_public_pages(request: Request, call_next):
++    if _HIDE_PUBLIC and request.url.path.rstrip("/") in ("/status", "/stremio"):
++        return Response(status_code=404)
++    return await call_next(request)
++
++
+ try:
+     app.mount("/static", StaticFiles(directory="Backend/fastapi/static"), name="static")
+ except Exception:
+@@ -163,6 +181,7 @@
+ #----- Streaming and Stremio routers
+ app.include_router(stream_router)
+ app.include_router(stremio_router)
++app.include_router(app_update_router)
+ 
+ 
+ #----- Public routes (no authentication)
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/Backend/fastapi/routes/app_update_routes.py a501src/A501-main/backend/Backend/fastapi/routes/app_update_routes.py
+--- orig/A501-main/backend/Backend/fastapi/routes/app_update_routes.py	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/backend/Backend/fastapi/routes/app_update_routes.py	2026-11-04 08:14:22.447820641 +0000
+@@ -0,0 +1,43 @@
++from fastapi import APIRouter, HTTPException, Query
++from fastapi.responses import FileResponse, JSONResponse
++
++from Backend.helper import app_update as au
++
++router = APIRouter(tags=["App"])
++
++_NO_STORE = {"Cache-Control": "no-store"}
++
++
++#----- Public: the app asks "is there anything newer than what I run?"
++@router.get("/api/app/update")
++async def app_update_check(vc: int = Query(0, ge=0), bv: int = Query(0, ge=0)):
++    data = await au.build_manifest(vc, bv)
++    return JSONResponse({"status": "success", "data": data}, headers=_NO_STORE)
++
++
++#----- Tiny reachability probe used by the app's endpoint failover
++@router.get("/api/app/ping")
++async def app_ping():
++    return JSONResponse({"ok": True}, headers=_NO_STORE)
++
++
++async def _serve(kind: str, key: str, media_type: str, filename: str):
++    rel = await au.get_release(kind)
++    if not rel or rel.get("key") != key:
++        raise HTTPException(status_code=404, detail="Not found")
++    path = await au.ensure_file(kind)
++    if not path:
++        raise HTTPException(status_code=404, detail="Not found")
++    return FileResponse(path, media_type=media_type, filename=filename, headers=_NO_STORE)
++
++
++#----- APK download (key is a per-release random secret handed out by /update)
++@router.get("/api/app/update/file/{key}")
++async def app_update_file(key: str):
++    return await _serve("apk", key, "application/vnd.android.package-archive", "update.apk")
++
++
++#----- OTA UI bundle (single-file index.html built by `npm run build`)
++@router.get("/api/app/bundle/{key}")
++async def app_bundle_file(key: str):
++    return await _serve("bundle", key, "text/html; charset=utf-8", "bundle.html")
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/Backend/helper/app_update.py a501src/A501-main/backend/Backend/helper/app_update.py
+--- orig/A501-main/backend/Backend/helper/app_update.py	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/backend/Backend/helper/app_update.py	2026-11-04 08:14:18.547820409 +0000
+@@ -0,0 +1,168 @@
++"""
++In-app update system (APK + OTA UI bundle) and endpoint pool.
++
++Everything is controlled from the owner's Telegram bot (see
++Backend/pyrofork/plugins/app_update_admin.py). State lives in MongoDB
++(tracking.app_update) so it survives a VPS change; the actual files live in
++UPDATE_DIR (a Docker volume) and are re-downloadable from Telegram if the
++volume is lost.
++"""
++
++import asyncio
++import hashlib
++import os
++import re
++import secrets
++from datetime import datetime
++from pathlib import Path
++from typing import Optional
++
++from Backend import db
++from Backend.logger import LOGGER
++
++UPDATE_DIR = Path(os.environ.get("UPDATE_DIR", "data/app_updates"))
++_COLL = "app_update"
++_download_lock = asyncio.Lock()
++
++
++def _col():
++    return db.dbs["tracking"][_COLL]
++
++
++def apk_path() -> Path:
++    return UPDATE_DIR / "app.apk"
++
++
++def bundle_path() -> Path:
++    return UPDATE_DIR / "bundle.html"
++
++
++def sha256_file(path: Path) -> str:
++    h = hashlib.sha256()
++    with open(path, "rb") as f:
++        for chunk in iter(lambda: f.read(1024 * 1024), b""):
++            h.update(chunk)
++    return h.hexdigest()
++
++
++async def sha256_file_async(path: Path) -> str:
++    return await asyncio.get_running_loop().run_in_executor(None, sha256_file, path)
++
++
++async def get_release(kind: str) -> Optional[dict]:
++    return await _col().find_one({"_id": kind})
++
++
++async def save_release(kind: str, data: dict) -> dict:
++    doc = dict(data)
++    doc["key"] = secrets.token_urlsafe(18)
++    doc["created_at"] = datetime.utcnow()
++    await _col().replace_one({"_id": kind}, {"_id": kind, **doc}, upsert=True)
++    return doc
++
++
++async def clear_release(kind: str) -> bool:
++    res = await _col().delete_one({"_id": kind})
++    for p in ((apk_path(),) if kind == "apk" else (bundle_path(),) if kind == "bundle" else ()):
++        try:
++            p.unlink()
++        except FileNotFoundError:
++            pass
++    return res.deleted_count > 0
++
++
++# ---------------------------------------------------------------- endpoints
++_URL_RE = re.compile(r"^https://[a-z0-9.-]+(:\d+)?$", re.I)
++
++
++def clean_endpoint(url: str) -> Optional[str]:
++    url = (url or "").strip().rstrip("/")
++    return url if _URL_RE.match(url) else None
++
++
++async def get_endpoints() -> list:
++    doc = await _col().find_one({"_id": "endpoints"})
++    return list((doc or {}).get("list", []))
++
++
++async def set_endpoints(urls: list) -> list:
++    cleaned = []
++    for u in urls:
++        c = clean_endpoint(u)
++        if c and c not in cleaned:
++            cleaned.append(c)
++    await _col().replace_one({"_id": "endpoints"}, {"_id": "endpoints", "list": cleaned}, upsert=True)
++    return cleaned
++
++
++# ---------------------------------------------------------------- manifest
++def _int(v, default=0):
++    try:
++        return int(v)
++    except (TypeError, ValueError):
++        return default
++
++
++async def build_manifest(app_vc: int, bundle_v: int) -> dict:
++    """What the app should know right now, given the versions it runs."""
++    apk = await get_release("apk")
++    bundle = await get_release("bundle")
++
++    apk_out = None
++    apk_needed = False
++    if apk and _int(apk.get("version_code")) > app_vc and (apk_path().exists() or apk.get("file_id")):
++        apk_needed = True
++        apk_out = {
++            "version_code": _int(apk.get("version_code")),
++            "version_name": apk.get("version_name", ""),
++            "changelog": apk.get("changelog", ""),
++            "force": bool(apk.get("force")),
++            "url": f"/api/app/update/file/{apk['key']}",
++            "sha256": apk.get("sha256", ""),
++            "size": _int(apk.get("size")),
++        }
++
++    bundle_out = None
++    if bundle and _int(bundle.get("version")) > bundle_v:
++        # A bundle that needs a newer native shell is skipped until the APK
++        # update is installed (apk_out above then carries the notice).
++        if _int(bundle.get("min_apk")) <= app_vc:
++            bundle_out = {
++                "version": _int(bundle.get("version")),
++                "changelog": bundle.get("changelog", ""),
++                "force": bool(bundle.get("force")),
++                "url": f"/api/app/bundle/{bundle['key']}",
++                "sha256": bundle.get("sha256", ""),
++                "size": _int(bundle.get("size")),
++            }
++
++    return {"apk": apk_out, "bundle": bundle_out, "endpoints": await get_endpoints()}
++
++
++# ------------------------------------------------- self-healing file fetch
++async def ensure_file(kind: str) -> Optional[Path]:
++    """Return the file on disk; if the volume was lost, re-pull it from Telegram."""
++    path = apk_path() if kind == "apk" else bundle_path()
++    if path.exists():
++        return path
++    rel = await get_release(kind)
++    if not rel or not rel.get("file_id"):
++        return None
++    async with _download_lock:
++        if path.exists():
++            return path
++        try:
++            from Backend.pyrofork.bot import StreamBot
++
++            UPDATE_DIR.mkdir(parents=True, exist_ok=True)
++            tmp = path.with_suffix(".part")
++            await StreamBot.download_media(rel["file_id"], file_name=str(tmp))
++            if rel.get("sha256") and await sha256_file_async(tmp) != rel["sha256"]:
++                tmp.unlink(missing_ok=True)
++                LOGGER.error(f"app_update: re-downloaded {kind} failed checksum")
++                return None
++            tmp.replace(path)
++            return path
++        except Exception as e:
++            LOGGER.error(f"app_update: could not restore {kind} from Telegram: {e}")
++            return None
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/Backend/pyrofork/plugins/app_update_admin.py a501src/A501-main/backend/Backend/pyrofork/plugins/app_update_admin.py
+--- orig/A501-main/backend/Backend/pyrofork/plugins/app_update_admin.py	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/backend/Backend/pyrofork/plugins/app_update_admin.py	2026-11-04 08:14:50.863822330 +0000
+@@ -0,0 +1,203 @@
++"""
++Owner-only Telegram commands that control in-app updates.
++
++  /setapk      reply to (or caption) an .apk file  -> publish a new APK update
++  /setbundle   reply to (or caption) index.html    -> publish an OTA UI update
++  /updateinfo                                      -> show what is live now
++  /clearupdate apk|bundle                          -> withdraw a release
++  /endpoints   [add|rm|set <https://domain> ...]   -> mirror-domain pool
++
++Arguments are `key=value` words on the first line; every following line is
++the changelog the user sees in the app. Examples:
++
++  /setapk code=12 name=1.2.0 force
++  ✨ Naya player
++  🐞 Bug fixes
++
++  /setbundle version=12 min=10
++  Naya theme + fixes
++"""
++
++import re
++from pathlib import Path
++
++from pyrogram import Client, enums, filters
++from pyrogram.types import Message
++
++from Backend.config import Telegram
++from Backend.helper import app_update as au
++from Backend.helper.custom_filter import CustomFilters
++from Backend.logger import LOGGER
++
++_OWNER_PRIVATE = filters.private & CustomFilters.owner
++_APK_NAME_RE = re.compile(r"_(?P<name>\d+(?:\.\d+)*)_(?P<code>\d+)\.apk$", re.I)
++
++
++def _parse(message: Message):
++    raw = message.text or message.caption or ""
++    lines = raw.splitlines()
++    head = lines[0].split()[1:] if lines else []
++    changelog = "\n".join(lines[1:]).strip()
++    kv, flags = {}, set()
++    for w in head:
++        if "=" in w:
++            k, v = w.split("=", 1)
++            kv[k.lower()] = v
++        else:
++            flags.add(w.lower())
++    return kv, flags, changelog
++
++
++def _doc_message(message: Message):
++    """The message that actually carries the file (this one, or the replied-to one)."""
++    if message.document:
++        return message
++    if message.reply_to_message and message.reply_to_message.document:
++        return message.reply_to_message
++    return None
++
++
++async def _reply(message: Message, text: str):
++    await message.reply_text(text, quote=True, parse_mode=enums.ParseMode.DISABLED, disable_web_page_preview=True)
++
++
++@Client.on_message((filters.command("setapk") | filters.caption & filters.regex(r"^/setapk\b")) & _OWNER_PRIVATE, group=5)
++async def set_apk(client: Client, message: Message):
++    try:
++        carrier = _doc_message(message)
++        if not carrier:
++            return await _reply(message, "Pehle .apk file bhejo, phir uspar reply karke:\n/setapk code=12 name=1.2.0 [force]\n(changelog agli lines mein)")
++        doc = carrier.document
++        if not (doc.file_name or "").lower().endswith(".apk"):
++            return await _reply(message, "Yeh .apk file nahi hai.")
++
++        kv, flags, changelog = _parse(message)
++        m = _APK_NAME_RE.search(doc.file_name or "")
++        code = kv.get("code") or (m.group("code") if m else None)
++        name = kv.get("name") or (m.group("name") if m else None)
++        if not (code and code.isdigit() and name):
++            return await _reply(message, "versionCode / versionName nahi mila. Aise likho:\n/setapk code=12 name=1.2.0 [force]")
++        code = int(code)
++
++        current = await au.get_release("apk")
++        if current and code < int(current.get("version_code", 0)):
++            return await _reply(message, f"Live version ({current['version_code']}) se purana code ({code}) nahi laga sakte. Pehle /clearupdate apk karo.")
++
++        status = await message.reply_text("⬇️ APK download ho rahi hai...", quote=True)
++        au.UPDATE_DIR.mkdir(parents=True, exist_ok=True)
++        tmp = au.apk_path().with_suffix(".part")
++        await client.download_media(carrier, file_name=str(tmp))
++
++        with open(tmp, "rb") as f:
++            if f.read(2) != b"PK":
++                tmp.unlink(missing_ok=True)
++                return await status.edit_text("❌ File valid APK (zip) nahi lagti.")
++        digest = await au.sha256_file_async(Path(tmp))
++        tmp.replace(au.apk_path())
++
++        rel = await au.save_release("apk", {
++            "version_code": code,
++            "version_name": name,
++            "changelog": changelog,
++            "force": "force" in flags,
++            "sha256": digest,
++            "size": au.apk_path().stat().st_size,
++            "file_id": doc.file_id,
++        })
++        await status.edit_text(
++            f"✅ APK update live\nVersion: {name} ({code})\nSize: {rel['size'] / 1048576:.1f} MB\n"
++            f"Force: {'haan' if rel['force'] else 'nahi'}\nUsers ko app khulte hi notification milega."
++        )
++    except Exception as e:
++        LOGGER.error(f"/setapk failed: {e}")
++        await _reply(message, f"⚠️ Error: {e}")
++
++
++@Client.on_message((filters.command("setbundle") | filters.caption & filters.regex(r"^/setbundle\b")) & _OWNER_PRIVATE, group=5)
++async def set_bundle(client: Client, message: Message):
++    try:
++        carrier = _doc_message(message)
++        if not carrier:
++            return await _reply(message, "Pehle frontend ki dist/index.html file bhejo, phir uspar reply karke:\n/setbundle version=12 [min=10] [force]\n(changelog agli lines mein)")
++        doc = carrier.document
++        kv, flags, changelog = _parse(message)
++        ver = kv.get("version") or kv.get("v")
++        if not (ver and ver.isdigit()):
++            return await _reply(message, "version nahi mila. Aise likho:\n/setbundle version=12 [min=10] [force]")
++        ver = int(ver)
++
++        current = await au.get_release("bundle")
++        if current and ver < int(current.get("version", 0)):
++            return await _reply(message, f"Live bundle ({current['version']}) se purana version nahi laga sakte. Pehle /clearupdate bundle karo.")
++        apk = await au.get_release("apk")
++        min_apk = int(kv["min"]) if kv.get("min", "").isdigit() else int((apk or {}).get("version_code", 0))
++
++        status = await message.reply_text("⬇️ Bundle download ho raha hai...", quote=True)
++        au.UPDATE_DIR.mkdir(parents=True, exist_ok=True)
++        tmp = au.bundle_path().with_suffix(".part")
++        await client.download_media(carrier, file_name=str(tmp))
++
++        head = tmp.read_text(encoding="utf-8", errors="ignore")
++        if "<html" not in head.lower() or 'id="root"' not in head:
++            tmp.unlink(missing_ok=True)
++            return await status.edit_text("❌ Yeh frontend ka built index.html nahi lagta (id=\"root\" nahi mila).")
++        digest = await au.sha256_file_async(Path(tmp))
++        tmp.replace(au.bundle_path())
++
++        rel = await au.save_release("bundle", {
++            "version": ver,
++            "min_apk": min_apk,
++            "changelog": changelog,
++            "force": "force" in flags,
++            "sha256": digest,
++            "size": au.bundle_path().stat().st_size,
++            "file_id": doc.file_id,
++        })
++        await status.edit_text(
++            f"✅ UI update live (bundle {ver})\nSize: {rel['size'] / 1048576:.2f} MB\nMinimum APK: {min_apk}\n"
++            f"Force: {'haan' if rel['force'] else 'nahi'}\nApp background mein download karke 'restart' ka notification dikhayega."
++        )
++    except Exception as e:
++        LOGGER.error(f"/setbundle failed: {e}")
++        await _reply(message, f"⚠️ Error: {e}")
++
++
++@Client.on_message(filters.command("updateinfo") & _OWNER_PRIVATE, group=5)
++async def update_info(client: Client, message: Message):
++    apk = await au.get_release("apk")
++    bundle = await au.get_release("bundle")
++    eps = await au.get_endpoints()
++    lines = ["📦 Live updates"]
++    lines.append(f"APK: {apk['version_name']} ({apk['version_code']}), force={bool(apk.get('force'))}" if apk else "APK: —")
++    lines.append(f"Bundle: {bundle['version']} (min apk {bundle.get('min_apk', 0)}), force={bool(bundle.get('force'))}" if bundle else "Bundle: —")
++    lines.append("Mirrors: " + (", ".join(eps) if eps else "—"))
++    await _reply(message, "\n".join(lines))
++
++
++@Client.on_message(filters.command("clearupdate") & _OWNER_PRIVATE, group=5)
++async def clear_update(client: Client, message: Message):
++    kind = (message.command[1].lower() if len(message.command) > 1 else "")
++    if kind not in ("apk", "bundle"):
++        return await _reply(message, "Use: /clearupdate apk  ya  /clearupdate bundle")
++    ok = await au.clear_release(kind)
++    await _reply(message, "🗑️ Hata diya." if ok else "Kuch live nahi tha.")
++
++
++@Client.on_message(filters.command("endpoints") & _OWNER_PRIVATE, group=5)
++async def endpoints_cmd(client: Client, message: Message):
++    args = message.command[1:]
++    eps = await au.get_endpoints()
++    if not args:
++        return await _reply(message, "Mirror domains (app inhe har update-check par seekhta hai):\n" + ("\n".join(eps) if eps else "—") +
++                            "\n\n/endpoints add https://x.com\n/endpoints rm https://x.com\n/endpoints set https://a.com https://b.com")
++    action, urls = args[0].lower(), args[1:]
++    if action == "add":
++        eps = await au.set_endpoints(eps + urls)
++    elif action == "rm":
++        gone = {u.rstrip("/") for u in urls}
++        eps = await au.set_endpoints([e for e in eps if e not in gone])
++    elif action == "set":
++        eps = await au.set_endpoints(urls)
++    else:
++        return await _reply(message, "add / rm / set use karo.")
++    await _reply(message, "✅ Ab pool:\n" + ("\n".join(eps) if eps else "—"))
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/docker-compose.yaml a501src/A501-main/backend/docker-compose.yaml
+--- orig/A501-main/backend/docker-compose.yaml	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/backend/docker-compose.yaml	2026-11-04 08:21:08.510052455 +0000
+@@ -1,14 +1,39 @@
++# Backend + Cloudflare Tunnel.
++#
++# - NO ports are published: nothing on this VPS listens to the internet, so
++#   scanning the VPS IP finds nothing and the IP is never tied to your domain.
++# - `cloudflared` dials OUT to Cloudflare and carries your domain's traffic to
++#   the `app` container. Moving to another VPS = run this same file there with
++#   the same TUNNEL_TOKEN (see DEPLOY_GUIDE.md).
++#
++# Files next to this one:  config.env  (bot/db secrets)   .env  (TUNNEL_TOKEN=...)
+ services:
+-  telegram-stremio:
++  app:
+     build: .
+-    container_name: tg_stremio  
+-    ports:
+-      - "8000:8000"
++    container_name: tg_stremio
++    restart: unless-stopped
++    expose:
++      - "8000"
+     volumes:
+-      - ./config.env:/app/config.env
++      - ./config.env:/app/config.env:ro
++      - ./data:/app/data          # uploaded APK / UI bundle for in-app updates
++    logging:
++      driver: "json-file"
++      options:
++        max-size: "1m"
++        max-file: "3"
++
++  cloudflared:
++    image: cloudflare/cloudflared:latest
++    container_name: tg_tunnel
+     restart: unless-stopped
++    command: tunnel --no-autoupdate run
++    environment:
++      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
++    depends_on:
++      - app
+     logging:
+       driver: "json-file"
+       options:
+-        max-size: "1m"     
+-        max-file: "3"      
+\ No newline at end of file
++        max-size: "1m"
++        max-file: "2"
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/backend/sample_config.env a501src/A501-main/backend/sample_config.env
+--- orig/A501-main/backend/sample_config.env	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/backend/sample_config.env	2026-11-04 08:21:08.525437482 +0000
+@@ -46,3 +46,13 @@
+ # where a log message gets posted every time someone signs up in the app
+ # (name, username, Telegram id, time). Leave blank to disable.
+ APP_SIGNUP_LOG_CHANNEL=""
++
++# --- Hosting / privacy -------------------------------------------------------
++# Public address of this server = your DOMAIN behind Cloudflare Tunnel (never the
++# VPS IP). NOTE: only used on the FIRST start; afterwards change it in the admin
++# panel -> Settings -> Base URL (it is stored in the database).
++BASE_URL="https://api.yourdomain.com"
++# Return 404 for the public /status and /stremio info pages.
++HIDE_PUBLIC_PAGES="true"
++# Where the APK / UI bundle for in-app updates is kept (a Docker volume).
++# UPDATE_DIR="data/app_updates"
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/deploy/vps-setup.sh a501src/A501-main/deploy/vps-setup.sh
+--- orig/A501-main/deploy/vps-setup.sh	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/deploy/vps-setup.sh	2026-11-04 08:21:08.527844780 +0000
+@@ -0,0 +1,21 @@
++#!/usr/bin/env bash
++# One-time VPS prep (Ubuntu/Debian). Run as root:  bash vps-setup.sh
++# Installs Docker and closes every inbound port except SSH. The backend needs
++# NO inbound port at all (Cloudflare Tunnel connects outwards).
++set -euo pipefail
++
++if ! command -v docker >/dev/null 2>&1; then
++  curl -fsSL https://get.docker.com | sh
++fi
++
++apt-get update -y
++apt-get install -y ufw rsync
++
++SSH_PORT="${SSH_PORT:-22}"
++ufw default deny incoming
++ufw default allow outgoing
++ufw allow "${SSH_PORT}/tcp"
++ufw --force enable
++
++systemctl enable --now docker
++echo "Done. Docker installed, firewall: only SSH (${SSH_PORT}) open."
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/App.jsx a501src/A501-main/frontend/src/App.jsx
+--- orig/A501-main/frontend/src/App.jsx	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/App.jsx	2026-11-04 08:18:25.540760427 +0000
+@@ -17,6 +17,7 @@
+ import { LanguageProvider } from './i18n/LanguageContext'
+ import { ThemeModeProvider } from './theme/ThemeContext'
+ import Profile from './pages/Profile'
++import UpdatePrompt from './components/UpdatePrompt'
+ 
+ // FEATURE (user ask: "app bina login/verify ke seedha khul jaaye — Saved
+ // aur Downloads hamesha khule rahein, chahe user verify na kiya ho; sirf
+@@ -151,6 +152,7 @@
+     <LanguageProvider>
+       <ConnectionOverlay />
+       <ToastHost />
++      <UpdatePrompt />
+       <Routes>
+         {/* Direct-link fallback only — normal flow ab kabhi yahan force
+             redirect nahi karta (upar comment dekho). "/setup" jaate hi seedha
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/api.js a501src/A501-main/frontend/src/api.js
+--- orig/A501-main/frontend/src/api.js	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/api.js	2026-11-04 08:17:11.539415484 +0000
+@@ -2,6 +2,8 @@
+ // The backend already speaks the Stremio addon protocol
+ // (manifest / catalog / meta / stream), so we just consume it as JSON.
+ 
++import { activeBackend } from './lib/endpoints'
++
+ const STORAGE_KEY = 'suhani-screen:config'
+ 
+ export function getConfig() {
+@@ -26,13 +28,13 @@
+   localStorage.removeItem(STORAGE_KEY)
+ }
+ 
+-// The one backend this build of the app talks to. Set this before building
+-// the app (or override at build time with VITE_BACKEND_URL in a .env file)
+-// so the in-app "Sign up with Telegram" button knows where to reach the
+-// bot/backend — the user is never asked to type a backend URL anymore.
+-export const DEFAULT_BACKEND_URL = (
+-  import.meta.env.VITE_BACKEND_URL || 'https://a501-production.up.railway.app'
+-).replace(/\/+$/, '')
++// The backend this build talks to is a DOMAIN (behind Cloudflare Tunnel),
++// injected at build time via VITE_BACKEND_URL (GitHub secret BACKEND_URL) —
++// it is no longer hard-coded in the source. See lib/endpoints.js: it also
++// handles mirror domains + automatic failover, so a server/VPS change never
++// needs an app update. `activeBackend()` is the live value; the const below
++// is kept only so older imports keep working.
++export const DEFAULT_BACKEND_URL = activeBackend()
+ 
+ // ---------------------------------------------------------------------
+ // Signed-in profile (name/username/photo pulled from Telegram during the
+@@ -93,13 +95,13 @@
+ // "Sign up with Telegram" flow — see backend routes under /api/app/*.
+ // ---------------------------------------------------------------------
+ export async function getBotUsername() {
+-  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/bot-username`)
++  const data = await fetchJson(`${activeBackend()}/api/app/bot-username`)
+   if (data.status !== 'success') throw new Error(data.message || 'Bot not reachable')
+   return data.data.username
+ }
+ 
+ export async function createSignupCode() {
+-  const res = await fetch(`${DEFAULT_BACKEND_URL}/api/app/signup/create`, { method: 'POST' })
++  const res = await fetch(`${activeBackend()}/api/app/signup/create`, { method: 'POST' })
+   if (!res.ok) throw new Error(`Request failed (${res.status})`)
+   const data = await res.json()
+   if (data.status !== 'success') throw new Error(data.message || 'Could not start sign-up')
+@@ -108,14 +110,14 @@
+ 
+ // Returns { state: 'pending' | 'verified' | 'expired' | 'invalid', ... }
+ export async function getSignupStatus(code) {
+-  const data = await fetchJson(`${DEFAULT_BACKEND_URL}/api/app/signup/${code}`)
++  const data = await fetchJson(`${activeBackend()}/api/app/signup/${code}`)
+   if (data.status !== 'success') throw new Error(data.message || 'Could not check sign-up status')
+   return data.data
+ }
+ 
+ export function avatarUrl(userId) {
+   if (!userId) return null
+-  return `${DEFAULT_BACKEND_URL}/api/app/avatar/${userId}`
++  return `${activeBackend()}/api/app/avatar/${userId}`
+ }
+ 
+ // Search history for the full-screen search overlay (YouTube-style "recent
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/components/Navbar.jsx a501src/A501-main/frontend/src/components/Navbar.jsx
+--- orig/A501-main/frontend/src/components/Navbar.jsx	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/components/Navbar.jsx	2026-11-04 08:18:25.541500429 +0000
+@@ -4,6 +4,7 @@
+ import ThemeSheet from './ThemeSheet'
+ import NotificationSheet from './NotificationSheet'
+ import { useNotifications } from '../lib/notificationsStore'
++import { useUpdate } from '../lib/useUpdate'
+ import logo from '../assets/logo.png'
+ 
+ // REDESIGN (user ask: "Home ko or jada professional or stylist... header or
+@@ -23,6 +24,7 @@
+   const [themeOpen, setThemeOpen] = useState(false)
+   const [notificationsOpen, setNotificationsOpen] = useState(false)
+   const { unreadCount } = useNotifications()
++  const upd = useUpdate()
+ 
+   return (
+     <div className="sticky top-0 z-30">
+@@ -68,7 +70,7 @@
+                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+               </svg>
+-              {unreadCount > 0 ? (
++              {unreadCount > 0 || (upd.notice && upd.unseen) ? (
+                 <span
+                   className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-reel-gold ring-2 ring-reel-surface"
+                   aria-hidden="true"
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/components/NotificationSheet.jsx a501src/A501-main/frontend/src/components/NotificationSheet.jsx
+--- orig/A501-main/frontend/src/components/NotificationSheet.jsx	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/components/NotificationSheet.jsx	2026-11-04 08:18:25.541173706 +0000
+@@ -3,6 +3,8 @@
+ import { useEffect } from 'react'
+ import { useNotifications, markNotificationsSeen } from '../lib/notificationsStore'
+ import { useLanguage } from '../i18n/LanguageContext'
++import { useUpdate } from '../lib/useUpdate'
++import { applyBundle, markNoticeSeen, startApkDownload } from '../lib/updateStore'
+ 
+ // FEATURE (user ask: "theme mode change bala icon hai uske pass main
+ // notification option vi add karo"): same bottom-sheet chrome/portal
+@@ -13,11 +15,15 @@
+ export default function NotificationSheet({ open, onClose }) {
+   const { items, loading } = useNotifications()
+   const { t } = useLanguage()
++  const u = useUpdate()
+ 
+   // Opening the sheet is the "I've seen these" moment — clears the bell's
+   // unread badge, same idea as opening an inbox.
+   useEffect(() => {
+-    if (open) markNotificationsSeen()
++    if (open) {
++      markNotificationsSeen()
++      markNoticeSeen()
++    }
+   }, [open])
+ 
+   if (!open) return null
+@@ -33,6 +39,33 @@
+ 
+         <p className="text-reel-ink font-semibold mb-3">{t('notifications_title')}</p>
+ 
++        {/* Update card — shown above the uploads list while an APK update is
++            available or a UI update has finished downloading. */}
++        {u.notice ? (
++          <div className="mb-3 rounded-xl bg-reel-surface2 ring-1 ring-reel-gold/30 p-3.5">
++            <p className="text-sm font-semibold text-reel-ink">
++              {u.apk ? `${t('update_title')} · v${u.apk.version_name}` : t('update_features_ready')}
++            </p>
++            {(u.apk ? u.apk.changelog : u.bundle && u.bundle.changelog) ? (
++              <p className="text-xs text-reel-muted mt-1 whitespace-pre-line max-h-28 overflow-y-auto">
++                {u.apk ? u.apk.changelog : u.bundle.changelog}
++              </p>
++            ) : null}
++            {u.apk && u.apkStatus === 'downloading' ? (
++              <div className="mt-2 h-1.5 rounded-full bg-reel-ink/10 overflow-hidden">
++                <div className="h-full bg-reel-gold" style={{ width: `${u.apkPct}%` }} />
++              </div>
++            ) : null}
++            <button
++              onClick={u.apk ? startApkDownload : applyBundle}
++              disabled={u.apk && (u.apkStatus === 'downloading' || u.apkStatus === 'installing')}
++              className="mt-3 w-full rounded-lg py-2.5 text-xs font-semibold bg-reel-gold text-reel-bg hover:brightness-110 disabled:opacity-60 active:scale-[0.98] transition"
++            >
++              {u.apk ? t('update_now') : t('update_restart')}
++            </button>
++          </div>
++        ) : null}
++
+         {loading ? (
+           <div className="space-y-2.5 mb-1">
+             {Array.from({ length: 4 }).map((_, i) => (
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/components/TelegramSignup.jsx a501src/A501-main/frontend/src/components/TelegramSignup.jsx
+--- orig/A501-main/frontend/src/components/TelegramSignup.jsx	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/components/TelegramSignup.jsx	2026-11-04 08:17:16.553686312 +0000
+@@ -1,12 +1,12 @@
+ import { useEffect, useRef, useState } from 'react'
+ import {
+   saveConfig,
+-  DEFAULT_BACKEND_URL,
+   getBotUsername,
+   createSignupCode,
+   getSignupStatus,
+   saveProfile,
+ } from '../api'
++import { activeBackend } from '../lib/endpoints'
+ import { useLanguage } from '../i18n/LanguageContext'
+ 
+ const POLL_MS = 2500
+@@ -47,7 +47,7 @@
+ 
+   async function finishSignup(status) {
+     stopPolling()
+-    saveConfig({ backendUrl: DEFAULT_BACKEND_URL, token: status.token })
++    saveConfig({ backendUrl: activeBackend(), token: status.token })
+     saveProfile({
+       userId: status.user_id,
+       name: status.name,
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/components/UpdatePrompt.jsx a501src/A501-main/frontend/src/components/UpdatePrompt.jsx
+--- orig/A501-main/frontend/src/components/UpdatePrompt.jsx	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/frontend/src/components/UpdatePrompt.jsx	2026-11-04 08:18:16.167834534 +0000
+@@ -0,0 +1,122 @@
++import { useEffect } from 'react'
++import { createPortal } from 'react-dom'
++import { useLanguage } from '../i18n/LanguageContext'
++import { useUpdate } from '../lib/useUpdate'
++import {
++  applyBundle,
++  dismissNotice,
++  markBootOk,
++  startApkDownload,
++  startUpdateChecks,
++} from '../lib/updateStore'
++
++// Mounted once in App.jsx. Does three things:
++//  1. tells the native shell "this UI booted fine" (OTA rollback guard),
++//  2. starts the periodic update check,
++//  3. shows the update popup (new APK) / "restart to get new features"
++//     banner (OTA UI bundle that finished downloading).
++// The same info also appears as a card inside the notification bell
++// (see NotificationSheet.jsx).
++export default function UpdatePrompt() {
++  const { t } = useLanguage()
++  const u = useUpdate()
++
++  useEffect(() => {
++    const id = window.setTimeout(markBootOk, 2500)
++    startUpdateChecks()
++    return () => window.clearTimeout(id)
++  }, [])
++
++  const apkForce = !!(u.apk && u.apk.force)
++  const showApk = !!u.apk && (apkForce || !u.dismissed)
++  const showBundle = !u.apk && u.bundleStatus === 'ready' && !!u.bundle && !u.bundle.force && !u.dismissed
++
++  if (showApk) {
++    const busy = u.apkStatus === 'downloading' || u.apkStatus === 'installing'
++    return createPortal(
++      <div className="fixed inset-0 z-[96] flex items-center justify-center px-5">
++        <div className="absolute inset-0 bg-black/70" />
++        <div className="relative w-full max-w-sm bg-reel-surface rounded-2xl p-5 ring-1 ring-reel-ink/10 shadow-[0_16px_48px_rgba(0,0,0,0.7)]">
++          <p className="text-reel-ink font-semibold text-base">{t('update_title')}</p>
++          <p className="text-reel-gold text-xs mt-0.5">v{u.apk.version_name}</p>
++
++          {u.apk.changelog ? (
++            <div className="mt-3">
++              <p className="text-[11px] uppercase tracking-wide text-reel-muted mb-1">{t('update_whats_new')}</p>
++              <p className="text-sm text-reel-ink/90 whitespace-pre-line max-h-40 overflow-y-auto">{u.apk.changelog}</p>
++            </div>
++          ) : null}
++
++          {u.apkStatus === 'downloading' ? (
++            <div className="mt-4">
++              <div className="h-1.5 rounded-full bg-reel-ink/10 overflow-hidden">
++                <div className="h-full bg-reel-gold transition-[width] duration-200" style={{ width: `${u.apkPct}%` }} />
++              </div>
++              <p className="text-[11px] text-reel-muted mt-1.5">
++                {t('update_downloading')} {u.apkPct}%
++              </p>
++            </div>
++          ) : null}
++          {u.apkStatus === 'installing' ? (
++            <p className="text-[11px] text-reel-muted mt-4">{t('update_installing')}</p>
++          ) : null}
++          {u.apkStatus === 'needs_permission' ? (
++            <p className="text-xs text-reel-gold mt-4">{t('update_allow_install')}</p>
++          ) : null}
++          {u.apkStatus === 'error' ? <p className="text-xs text-reel-rust mt-4">{t('update_failed')}</p> : null}
++
++          <div className="mt-5 flex gap-2.5">
++            {!apkForce ? (
++              <button
++                onClick={dismissNotice}
++                disabled={busy}
++                className="flex-1 rounded-lg py-3 text-sm font-medium text-reel-ink bg-reel-surface2 ring-1 ring-reel-ink/10 disabled:opacity-50 active:scale-[0.98] transition"
++              >
++                {t('update_later')}
++              </button>
++            ) : null}
++            <button
++              onClick={startApkDownload}
++              disabled={busy}
++              className="flex-1 rounded-lg py-3 text-sm font-semibold bg-reel-gold text-reel-bg hover:brightness-110 disabled:opacity-60 active:scale-[0.98] transition"
++            >
++              {t('update_now')}
++            </button>
++          </div>
++        </div>
++      </div>,
++      document.body
++    )
++  }
++
++  if (showBundle) {
++    return createPortal(
++      <div
++        className="fixed left-3 right-3 z-[96] flex justify-center"
++        style={{ bottom: 'calc(84px + env(safe-area-inset-bottom))' }}
++      >
++        <div className="w-full max-w-md bg-reel-surface2 ring-1 ring-reel-gold/30 rounded-xl px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.7)]">
++          <p className="text-sm font-semibold text-reel-ink">{t('update_features_ready')}</p>
++          <p className="text-[11px] text-reel-muted mt-0.5">{t('update_ready_sub')}</p>
++          <div className="mt-2.5 flex gap-2">
++            <button
++              onClick={dismissNotice}
++              className="flex-1 rounded-lg py-2 text-xs font-medium text-reel-ink bg-reel-surface ring-1 ring-reel-ink/10 active:scale-[0.98] transition"
++            >
++              {t('update_later')}
++            </button>
++            <button
++              onClick={applyBundle}
++              className="flex-1 rounded-lg py-2 text-xs font-semibold bg-reel-gold text-reel-bg hover:brightness-110 active:scale-[0.98] transition"
++            >
++              {t('update_restart')}
++            </button>
++          </div>
++        </div>
++      </div>,
++      document.body
++    )
++  }
++
++  return null
++}
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/i18n/translations.js a501src/A501-main/frontend/src/i18n/translations.js
+--- orig/A501-main/frontend/src/i18n/translations.js	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/i18n/translations.js	2026-11-04 08:17:33.719832011 +0000
+@@ -34,6 +34,17 @@
+     'home_no_content': 'Is category mein abhi content nahi hai.',
+     'notifications_title': 'Notifications',
+     'notifications_empty': 'Abhi koi notification nahi hai.',
++    'update_title': 'Update available',
++    'update_features_ready': 'Naye features ready hain',
++    'update_now': 'Update karo',
++    'update_later': 'Baad mein',
++    'update_downloading': 'Download ho raha hai…',
++    'update_installing': 'Installer khul raha hai…',
++    'update_allow_install': 'Settings mein is app ko installs ki permission do, phir dobara Update dabao.',
++    'update_restart': 'Abhi restart karo',
++    'update_ready_sub': 'Naye features use karne ke liye app restart karo.',
++    'update_whats_new': 'Naya kya hai',
++    'update_failed': 'Update fail ho gaya. Dobara try karo.',
+     'detail_not_found': 'Ye title nahi mila.',
+     'detail_load_failed': 'Details load nahi hue.',
+     'detail_verify_message': 'Yeh title dekhne ke liye pehle khud ko verify karo.',
+@@ -219,6 +230,17 @@
+     'home_no_content': 'इस केटेगरी में अभी कंटेंट नहीं है।',
+     'notifications_title': 'सूचनाएं',
+     'notifications_empty': 'अभी कोई सूचना नहीं है।',
++    'update_title': 'अपडेट उपलब्ध है',
++    'update_features_ready': 'नए फ़ीचर तैयार हैं',
++    'update_now': 'अभी अपडेट करें',
++    'update_later': 'बाद में',
++    'update_downloading': 'डाउनलोड हो रहा है…',
++    'update_installing': 'इंस्टॉलर खुल रहा है…',
++    'update_allow_install': 'सेटिंग्स में इस ऐप को इंस्टॉल की अनुमति दें, फिर दोबारा अपडेट दबाएँ।',
++    'update_restart': 'अभी रीस्टार्ट करें',
++    'update_ready_sub': 'नए फ़ीचर इस्तेमाल करने के लिए ऐप रीस्टार्ट करें।',
++    'update_whats_new': 'क्या नया है',
++    'update_failed': 'अपडेट नहीं हो पाया। फिर कोशिश करें।',
+     'detail_not_found': 'यह टाइटल नहीं मिला।',
+     'detail_load_failed': 'डिटेल्स लोड नहीं हुए।',
+     'detail_verify_message': 'यह टाइटल देखने के लिए पहले खुद को वेरिफाई करो।',
+@@ -366,6 +388,17 @@
+     'home_no_content': 'No content in this category yet.',
+     'notifications_title': 'Notifications',
+     'notifications_empty': 'No notifications yet.',
++    'update_title': 'Update available',
++    'update_features_ready': 'New features are ready',
++    'update_now': 'Update now',
++    'update_later': 'Later',
++    'update_downloading': 'Downloading…',
++    'update_installing': 'Opening installer…',
++    'update_allow_install': 'Allow installs from this app in Settings, then tap Update again.',
++    'update_restart': 'Restart now',
++    'update_ready_sub': 'Restart the app to use the new features.',
++    'update_whats_new': 'What\'s new',
++    'update_failed': 'Update failed. Please try again.',
+     'detail_not_found': "This title wasn't found.",
+     'detail_load_failed': "Details couldn't load.",
+     'detail_verify_message': 'Verify yourself first to see this title.',
+@@ -551,6 +584,17 @@
+     'home_no_content': 'এই ক্যাটাগরিতে এখনো কনটেন্ট নেই।',
+     'notifications_title': 'বিজ্ঞপ্তি',
+     'notifications_empty': 'এখনো কোনো বিজ্ঞপ্তি নেই।',
++    'update_title': 'আপডেট পাওয়া যাচ্ছে',
++    'update_features_ready': 'নতুন ফিচার তৈরি',
++    'update_now': 'এখনই আপডেট করুন',
++    'update_later': 'পরে',
++    'update_downloading': 'ডাউনলোড হচ্ছে…',
++    'update_installing': 'ইনস্টলার খুলছে…',
++    'update_allow_install': 'সেটিংসে এই অ্যাপকে ইনস্টলের অনুমতি দিন, তারপর আবার আপডেট চাপুন।',
++    'update_restart': 'এখনই রিস্টার্ট করুন',
++    'update_ready_sub': 'নতুন ফিচার ব্যবহার করতে অ্যাপ রিস্টার্ট করুন।',
++    'update_whats_new': 'নতুন কী আছে',
++    'update_failed': 'আপডেট হয়নি। আবার চেষ্টা করুন।',
+     'detail_not_found': 'এই টাইটেল পাওয়া যায়নি।',
+     'detail_load_failed': 'বিস্তারিত লোড হয়নি।',
+     'detail_verify_message': 'এই টাইটেল দেখতে আগে নিজেকে যাচাই করো।',
+@@ -698,6 +742,17 @@
+     'home_no_content': 'اس کیٹیگری میں ابھی کوئی مواد نہیں ہے۔',
+     'notifications_title': 'اطلاعات',
+     'notifications_empty': 'ابھی کوئی اطلاع نہیں ہے۔',
++    'update_title': 'اپ ڈیٹ دستیاب ہے',
++    'update_features_ready': 'نئے فیچرز تیار ہیں',
++    'update_now': 'ابھی اپ ڈیٹ کریں',
++    'update_later': 'بعد میں',
++    'update_downloading': 'ڈاؤن لوڈ ہو رہا ہے…',
++    'update_installing': 'انسٹالر کھل رہا ہے…',
++    'update_allow_install': 'سیٹنگز میں اس ایپ کو انسٹال کی اجازت دیں، پھر دوبارہ اپ ڈیٹ دبائیں۔',
++    'update_restart': 'ابھی ری اسٹارٹ کریں',
++    'update_ready_sub': 'نئے فیچرز استعمال کرنے کے لیے ایپ ری اسٹارٹ کریں۔',
++    'update_whats_new': 'نیا کیا ہے',
++    'update_failed': 'اپ ڈیٹ نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
+     'detail_not_found': 'یہ ٹائٹل نہیں ملا۔',
+     'detail_load_failed': 'تفصیلات لوڈ نہیں ہوئیں۔',
+     'detail_verify_message': 'یہ ٹائٹل دیکھنے کے لیے پہلے اپنی تصدیق کرو۔',
+@@ -845,6 +900,17 @@
+     'home_no_content': 'இந்த வகையில் இன்னும் உள்ளடக்கம் இல்லை.',
+     'notifications_title': 'அறிவிப்புகள்',
+     'notifications_empty': 'இன்னும் அறிவிப்புகள் இல்லை.',
++    'update_title': 'புதுப்பிப்பு உள்ளது',
++    'update_features_ready': 'புதிய அம்சங்கள் தயார்',
++    'update_now': 'இப்போது புதுப்பிக்கவும்',
++    'update_later': 'பின்னர்',
++    'update_downloading': 'பதிவிறக்கப்படுகிறது…',
++    'update_installing': 'நிறுவி திறக்கிறது…',
++    'update_allow_install': 'அமைப்புகளில் இந்த ஆப்பிற்கு நிறுவ அனுமதி அளித்து, மீண்டும் புதுப்பிக்கவும்.',
++    'update_restart': 'இப்போது மறுதொடக்கம்',
++    'update_ready_sub': 'புதிய அம்சங்களைப் பயன்படுத்த ஆப்பை மறுதொடக்கம் செய்யவும்.',
++    'update_whats_new': 'புதிதாக என்ன',
++    'update_failed': 'புதுப்பிப்பு தோல்வி. மீண்டும் முயற்சிக்கவும்.',
+     'detail_not_found': 'இந்தத் தலைப்பு கிடைக்கவில்லை.',
+     'detail_load_failed': 'விவரங்கள் ஏற்றப்படவில்லை.',
+     'detail_verify_message': 'இந்தத் தலைப்பைப் பார்க்க முதலில் உங்களைச் சரிபார்க்கவும்.',
+@@ -992,6 +1058,17 @@
+     'home_no_content': 'ఈ కేటగిరీలో ఇంకా కంటెంట్ లేదు.',
+     'notifications_title': 'నోటిఫికేషన్‌లు',
+     'notifications_empty': 'ఇంకా నోటిఫికేషన్‌లు లేవు.',
++    'update_title': 'అప్‌డేట్ అందుబాటులో ఉంది',
++    'update_features_ready': 'కొత్త ఫీచర్లు సిద్ధం',
++    'update_now': 'ఇప్పుడే అప్‌డేట్ చేయండి',
++    'update_later': 'తర్వాత',
++    'update_downloading': 'డౌన్‌లోడ్ అవుతోంది…',
++    'update_installing': 'ఇన్‌స్టాలర్ తెరుచుకుంటోంది…',
++    'update_allow_install': 'సెట్టింగ్స్‌లో ఈ యాప్‌కు ఇన్‌స్టాల్ అనుమతి ఇచ్చి, మళ్లీ అప్‌డేట్ నొక్కండి.',
++    'update_restart': 'ఇప్పుడే రీస్టార్ట్ చేయండి',
++    'update_ready_sub': 'కొత్త ఫీచర్లు వాడటానికి యాప్‌ను రీస్టార్ట్ చేయండి.',
++    'update_whats_new': 'కొత్తగా ఏముంది',
++    'update_failed': 'అప్‌డేట్ విఫలమైంది. మళ్లీ ప్రయత్నించండి.',
+     'detail_not_found': 'ఈ టైటిల్ కనిపించలేదు.',
+     'detail_load_failed': 'వివరాలు లోడ్ కాలేదు.',
+     'detail_verify_message': 'ఈ టైటిల్ చూడటానికి ముందు మిమ్మల్ని మీరు వెరిఫై చేసుకోండి.',
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/lib/endpoints.js a501src/A501-main/frontend/src/lib/endpoints.js
+--- orig/A501-main/frontend/src/lib/endpoints.js	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/frontend/src/lib/endpoints.js	2026-11-04 08:17:11.538663587 +0000
+@@ -0,0 +1,127 @@
++// Backend address book + automatic failover.
++//
++// Why this exists: the app must never be tied to one server. It talks to a
++// DOMAIN (put behind Cloudflare Tunnel), never to an IP / railway.app /
++// VPS hostname. When you move the backend to a new VPS, you just point the
++// same domain/tunnel at it and nothing in the app changes. If you ever need
++// a NEW domain, add it from the Telegram bot (/endpoints add https://...);
++// every app learns it on its next update-check, and this file silently
++// switches over when the current domain stops answering.
++//
++// Build-time (GitHub secret -> env):
++//   VITE_BACKEND_URL        primary domain, e.g. https://api.example.com
++//   VITE_BACKEND_FALLBACKS  optional, comma separated extra domains
++// Runtime: extra domains pushed by the bot are stored in localStorage.
++
++const CONFIG_KEY = 'suhani-screen:config' // same key api.js uses
++const REMOTE_KEY = 'huka:endpoints'
++const ACTIVE_KEY = 'huka:active-endpoint'
++
++const clean = (u) => String(u || '').trim().replace(/\/+$/, '')
++const isHttps = (u) => /^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(u)
++
++const BUILD_PRIMARY = clean(import.meta.env.VITE_BACKEND_URL || '')
++const BUILD_FALLBACKS = String(import.meta.env.VITE_BACKEND_FALLBACKS || '')
++  .split(',')
++  .map(clean)
++  .filter(Boolean)
++
++function readJson(key) {
++  try {
++    const raw = localStorage.getItem(key)
++    return raw ? JSON.parse(raw) : null
++  } catch {
++    return null
++  }
++}
++
++function writeJson(key, value) {
++  try {
++    localStorage.setItem(key, JSON.stringify(value))
++  } catch {
++    /* storage unavailable — failover still works for this session */
++  }
++}
++
++export function getEndpoints() {
++  const remote = readJson(REMOTE_KEY)
++  const all = [BUILD_PRIMARY, ...BUILD_FALLBACKS, ...(Array.isArray(remote) ? remote : [])]
++  return [...new Set(all.map(clean).filter(isHttps))]
++}
++
++// Called with the list the server sent along with an update-check.
++export function setRemoteEndpoints(list) {
++  if (!Array.isArray(list)) return
++  writeJson(REMOTE_KEY, list.map(clean).filter(isHttps))
++}
++
++export function activeBackend() {
++  const eps = getEndpoints()
++  const active = clean(readJson(ACTIVE_KEY))
++  if (active && eps.includes(active)) return active
++  const cfg = readJson(CONFIG_KEY)
++  const saved = clean(cfg && cfg.backendUrl)
++  if (saved && eps.includes(saved)) return saved
++  return eps[0] || ''
++}
++
++function setActive(url) {
++  writeJson(ACTIVE_KEY, url)
++  const cfg = readJson(CONFIG_KEY)
++  if (cfg && cfg.token) writeJson(CONFIG_KEY, { ...cfg, backendUrl: url })
++}
++
++// Old installs saved whatever backend URL they signed up against (e.g. the
++// previous railway.app address). If that address is not in this build's
++// list any more, move the saved login onto the current domain. The token
++// itself keeps working because it lives in the database, not on the server.
++export function rebaseStoredConfig() {
++  const cfg = readJson(CONFIG_KEY)
++  if (!cfg || !cfg.token) return
++  const eps = getEndpoints()
++  if (!eps.length) return
++  if (!eps.includes(clean(cfg.backendUrl))) {
++    writeJson(CONFIG_KEY, { ...cfg, backendUrl: activeBackend() })
++  }
++}
++
++// Cloudflare answers 52x/530 when the tunnel/origin behind a domain is down.
++const isOriginDown = (status) => status >= 520 && status <= 530
++
++export function installFetchFailover() {
++  if (window.__hukaFailoverInstalled) return
++  window.__hukaFailoverInstalled = true
++  const origFetch = window.fetch.bind(window)
++
++  window.fetch = async (input, init) => {
++    const url = typeof input === 'string' ? input : null
++    const eps = getEndpoints()
++    const cur = url ? eps.find((e) => url.startsWith(e + '/')) : null
++    if (!cur || eps.length < 2) return origFetch(input, init)
++
++    let firstError = null
++    let firstResponse = null
++    try {
++      const res = await origFetch(input, init)
++      if (!isOriginDown(res.status)) return res
++      firstResponse = res
++    } catch (err) {
++      if (err && err.name === 'AbortError') throw err
++      firstError = err
++    }
++
++    for (const alt of eps) {
++      if (alt === cur) continue
++      try {
++        const res = await origFetch(alt + url.slice(cur.length), init)
++        if (isOriginDown(res.status)) continue
++        setActive(alt)
++        return res
++      } catch (err) {
++        if (err && err.name === 'AbortError') throw err
++      }
++    }
++    if (firstResponse) return firstResponse
++    throw firstError
++  }
++}
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/lib/updateStore.js a501src/A501-main/frontend/src/lib/updateStore.js
+--- orig/A501-main/frontend/src/lib/updateStore.js	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/frontend/src/lib/updateStore.js	2026-11-04 08:17:57.031833397 +0000
+@@ -0,0 +1,207 @@
++// In-app update logic (pure module — the React hook lives in useUpdate.js).
++//
++// Two kinds of updates, both pushed from the owner's Telegram bot:
++//   * bundle (OTA)  – a new UI (index.html). Downloaded silently in the
++//                     background by the native shell, applied on next start
++//                     or when the user taps "Restart now".
++//   * apk           – a new native build. User taps "Update now", the APK is
++//                     downloaded by the native shell and Android's installer
++//                     opens.
++//
++// Native contract (see android .../AppUpdater.kt, JS name "AndroidUpdater"):
++//   getAppInfo() -> JSON {versionCode, versionName, bundleVersion}
++//   downloadBundle(url, sha256, version) / downloadApk(url, sha256, code)
++//   applyBundle()     reload the WebView with the downloaded bundle
++//   markBootOk()      tell native this UI booted fine (auto-rollback guard)
++// and native calls back: window.__nativeUpdate(kind, state, pct, message)
++//   kind: 'apk' | 'bundle'
++//   state: 'progress' | 'ready' | 'installing' | 'needs_permission' | 'error'
++
++import { activeBackend, setRemoteEndpoints } from './endpoints'
++
++const EVENT = 'huka-update-changed'
++const DISMISSED_KEY = 'huka:update-dismissed' // version the user said "later" to
++const SEEN_KEY = 'huka:update-seen' // version whose notification card was opened
++const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
++const MIN_GAP_MS = 20 * 60 * 1000
++
++let state = {
++  apk: null, // {version_code, version_name, changelog, force, url, sha256, size}
++  bundle: null, // {version, changelog, force, url, sha256, size}
++  apkStatus: 'idle', // idle | downloading | installing | needs_permission | error
++  apkPct: 0,
++  bundleStatus: 'idle', // idle | downloading | ready | error
++  lastCheck: 0,
++}
++
++export function getUpdateState() {
++  return state
++}
++
++function set(patch) {
++  state = { ...state, ...patch }
++  window.dispatchEvent(new CustomEvent(EVENT))
++}
++
++export const UPDATE_EVENT = EVENT
++
++function native() {
++  const u = window.AndroidUpdater
++  return u && typeof u.getAppInfo === 'function' ? u : null
++}
++
++export function hasNativeUpdater() {
++  return !!native()
++}
++
++function appInfo() {
++  try {
++    const n = native()
++    return n ? JSON.parse(n.getAppInfo()) : null
++  } catch {
++    return null
++  }
++}
++
++const absolute = (rel) => (/^https?:\/\//i.test(rel) ? rel : `${activeBackend()}${rel}`)
++
++function lsGet(k) {
++  try {
++    return localStorage.getItem(k)
++  } catch {
++    return null
++  }
++}
++function lsSet(k, v) {
++  try {
++    localStorage.setItem(k, v)
++  } catch {
++    /* ignore */
++  }
++}
++
++// ---------------------------------------------------------------- native -> JS
++window.__nativeUpdate = (kind, status, pct, message) => {
++  if (kind === 'bundle') {
++    if (status === 'ready') {
++      set({ bundleStatus: 'ready' })
++      // A "force" UI update applies itself right away.
++      if (state.bundle && state.bundle.force) applyBundle()
++    } else if (status === 'progress') set({ bundleStatus: 'downloading' })
++    else if (status === 'error') set({ bundleStatus: 'error' })
++  } else if (kind === 'apk') {
++    if (status === 'progress') set({ apkStatus: 'downloading', apkPct: Math.max(0, Math.min(100, pct | 0)) })
++    else if (status === 'installing') set({ apkStatus: 'installing', apkPct: 100 })
++    else if (status === 'needs_permission') set({ apkStatus: 'needs_permission' })
++    else if (status === 'error') set({ apkStatus: 'error' })
++  }
++  void message
++}
++
++// ---------------------------------------------------------------- actions
++export async function checkForUpdate(force = false) {
++  const n = native()
++  const info = appInfo()
++  if (!n || !info) return
++  if (!force && Date.now() - state.lastCheck < MIN_GAP_MS) return
++  const base = activeBackend()
++  if (!base) return
++  set({ lastCheck: Date.now() })
++  try {
++    const res = await fetch(`${base}/api/app/update?vc=${info.versionCode}&bv=${info.bundleVersion}`, {
++      cache: 'no-store',
++    })
++    if (!res.ok) return
++    const body = await res.json()
++    const d = (body && body.data) || {}
++    if (Array.isArray(d.endpoints)) setRemoteEndpoints(d.endpoints)
++    set({ apk: d.apk || null, bundle: d.bundle || null })
++    if (d.bundle && state.bundleStatus !== 'downloading' && state.bundleStatus !== 'ready') {
++      startBundleDownload()
++    }
++  } catch {
++    /* offline / server busy — try again next time */
++  }
++}
++
++export function startBundleDownload() {
++  const n = native()
++  const b = state.bundle
++  if (!n || !b) return
++  set({ bundleStatus: 'downloading' })
++  try {
++    n.downloadBundle(absolute(b.url), b.sha256 || '', b.version | 0)
++  } catch {
++    set({ bundleStatus: 'error' })
++  }
++}
++
++export function startApkDownload() {
++  const n = native()
++  const a = state.apk
++  if (!n || !a) return
++  set({ apkStatus: 'downloading', apkPct: 0 })
++  try {
++    n.downloadApk(absolute(a.url), a.sha256 || '', a.version_code | 0)
++  } catch {
++    set({ apkStatus: 'error' })
++  }
++}
++
++export function applyBundle() {
++  try {
++    native()?.applyBundle()
++  } catch {
++    /* ignore */
++  }
++}
++
++// Called once the new UI has mounted — lets native cancel its rollback guard.
++export function markBootOk() {
++  try {
++    native()?.markBootOk()
++  } catch {
++    /* ignore */
++  }
++}
++
++// ---------------------------------------------------------------- UI helpers
++export function currentNoticeKey() {
++  if (state.apk) return `apk:${state.apk.version_code}`
++  if (state.bundleStatus === 'ready' && state.bundle) return `bundle:${state.bundle.version}`
++  return ''
++}
++
++export function dismissNotice() {
++  const k = currentNoticeKey()
++  if (k) lsSet(DISMISSED_KEY, k)
++  window.dispatchEvent(new CustomEvent(EVENT))
++}
++
++export function isDismissed() {
++  const k = currentNoticeKey()
++  return !!k && lsGet(DISMISSED_KEY) === k
++}
++
++export function markNoticeSeen() {
++  const k = currentNoticeKey()
++  if (k) lsSet(SEEN_KEY, k)
++  window.dispatchEvent(new CustomEvent(EVENT))
++}
++
++export function hasUnseenNotice() {
++  const k = currentNoticeKey()
++  return !!k && lsGet(SEEN_KEY) !== k
++}
++
++// ---------------------------------------------------------------- scheduler
++let started = false
++export function startUpdateChecks() {
++  if (started || !native()) return
++  started = true
++  checkForUpdate(true)
++  window.setInterval(() => checkForUpdate(true), CHECK_EVERY_MS)
++  document.addEventListener('visibilitychange', () => {
++    if (document.visibilityState === 'visible') checkForUpdate(false)
++  })
++}
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/lib/useUpdate.js a501src/A501-main/frontend/src/lib/useUpdate.js
+--- orig/A501-main/frontend/src/lib/useUpdate.js	1970-01-01 00:00:00.000000000 +0000
++++ a501src/A501-main/frontend/src/lib/useUpdate.js	2026-11-04 08:17:59.095833519 +0000
+@@ -0,0 +1,27 @@
++import { useEffect, useState } from 'react'
++import {
++  UPDATE_EVENT,
++  getUpdateState,
++  hasUnseenNotice,
++  isDismissed,
++  currentNoticeKey,
++} from './updateStore'
++
++// Re-renders whenever the update state changes. `notice` is true while
++// there is something the user should hear about (a new APK, or a UI update
++// that finished downloading), `dismissed` means they already tapped "Later".
++export function useUpdate() {
++  const [, bump] = useState(0)
++  useEffect(() => {
++    const on = () => bump((n) => n + 1)
++    window.addEventListener(UPDATE_EVENT, on)
++    return () => window.removeEventListener(UPDATE_EVENT, on)
++  }, [])
++  const s = getUpdateState()
++  return {
++    ...s,
++    notice: !!currentNoticeKey(),
++    unseen: hasUnseenNotice(),
++    dismissed: isDismissed(),
++  }
++}
+diff -ruN -x node_modules -x __pycache__ orig/A501-main/frontend/src/main.jsx a501src/A501-main/frontend/src/main.jsx
+--- orig/A501-main/frontend/src/main.jsx	2026-10-02 09:05:29.000000000 +0000
++++ a501src/A501-main/frontend/src/main.jsx	2026-11-04 08:18:25.540215642 +0000
+@@ -3,6 +3,12 @@
+ import { BrowserRouter } from 'react-router-dom'
+ import App from './App.jsx'
+ import './index.css'
++import { installFetchFailover, rebaseStoredConfig } from './lib/endpoints'
++
++// Must run before the first request: moves old saved logins onto the current
++// domain and makes every backend call fail over to a mirror domain if needed.
++rebaseStoredConfig()
++installFetchFailover()
+ 
+ ReactDOM.createRoot(document.getElementById('root')).render(
+   <React.StrictMode>
