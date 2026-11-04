@@ -1318,6 +1318,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // Offline downloads ke liye native file-download bridge — dekho WebDownloadInterface
         // aur NativeDownloadManager ke doc comments (blob: URL vs content:// URI ka issue).
         webView.addJavascriptInterface(WebDownloadInterface(this), "AndroidDownloader")
+        // Over-the-air updates (APK + UI bundle) pushed from the Telegram bot — see AppUpdater.kt.
+        webView.addJavascriptInterface(WebUpdateInterface(this), "AndroidUpdater")
 
         // BUG FIX (user report): pull-to-refresh (neeche-swipe-se-reload) hi
         // "upar scroll nahi ho raha" issue ki asli wajah nikla — SwipeRefreshLayout
@@ -1352,7 +1354,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // khulega — lekin app HAMESHA khulega, offline ho ya online, yeahi
         // asli maang thi.
         try {
-            val html = assets.open("index.html").bufferedReader().use { it.readText() }
+            // OtaBundle.loadHtml(): a downloaded (OTA) UI if there is a newer, healthy
+            // one, otherwise the UI bundled inside the APK (assets/index.html).
+            val html = OtaBundle.loadHtml(this)
             webView.loadDataWithBaseURL(
                 "https://appassets.androidplatform.net/",
                 html,
@@ -1365,6 +1369,28 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // corrupt build) — is genuine case mein hi ab purana loadUrl()
             // fallback ke roop mein istemal hota hai.
             webView.loadUrl(APP_URL)
+        }
+    }
+
+    /** Reload the WebView with the newest UI (used after an OTA bundle finished downloading). */
+    fun reloadShell() {
+        if (isFinishing || isDestroyed) return
+        try {
+            val html = OtaBundle.loadHtml(this)
+            webView.loadDataWithBaseURL("https://appassets.androidplatform.net/", html, "text/html", "UTF-8", null)
+        } catch (e: Exception) {
+            webView.loadUrl(APP_URL)
+        }
+    }
+
+    /** Progress/result of an update download -> window.__nativeUpdate(kind, state, pct, message). */
+    fun postUpdateEvent(kind: String, state: String, pct: Int, message: String) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            webView.evaluateJavascript(
+                "window.__nativeUpdate?.(${JSONObject.quote(kind)}, ${JSONObject.quote(state)}, $pct, ${JSONObject.quote(message)})",
+                null
+            )
         }
     }
 
