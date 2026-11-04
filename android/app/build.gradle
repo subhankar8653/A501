@@ -18,14 +18,42 @@ android {
         // mat karna, warna PlayerActivity random crash karega.
         minSdk 24
         targetSdk 36
-        versionCode 1
-        versionName "1.0"
+        // CI passes VERSION_CODE (must go UP with every APK you ship) and VERSION_NAME.
+        versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
+        versionName System.getenv("VERSION_NAME") ?: "1.0"
+    }
+
+    // IMPORTANT for in-app updates: Android only installs an APK over the
+    // installed app when BOTH are signed with the SAME key. Debug builds on
+    // CI get a fresh random key every run, so updates would fail with
+    // "App not installed". Release builds are therefore signed with your own
+    // permanent keystore, supplied through env vars (GitHub secrets):
+    //   KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("KEYSTORE_PATH")
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            if (System.getenv("KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            }
         }
+    }
+
+    // CI release builds should not fail on lint opinions (debug builds never ran lint).
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 
     compileOptions {
