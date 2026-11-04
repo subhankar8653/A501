@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import os
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
@@ -163,6 +164,19 @@ _HIDE_PUBLIC = (os.environ.get("HIDE_PUBLIC_PAGES", "false") or "").strip().lowe
 @app.middleware("http")
 async def _hide_public_pages(request: Request, call_next):
     if _HIDE_PUBLIC and request.url.path.rstrip("/") in ("/status", "/stremio"):
+        return Response(status_code=404)
+    return await call_next(request)
+
+
+#----- Optional: only accept requests that come through YOUR Cloudflare Worker
+#      (it adds the secret X-Origin-Key header). Anyone who finds the VPS IP and
+#      hits it directly just gets a bare 404. Set ORIGIN_KEY in config.env.
+_ORIGIN_KEY = (os.environ.get("ORIGIN_KEY", "") or "").strip()
+
+
+@app.middleware("http")
+async def _require_origin_key(request: Request, call_next):
+    if _ORIGIN_KEY and not hmac.compare_digest(request.headers.get("x-origin-key", ""), _ORIGIN_KEY):
         return Response(status_code=404)
     return await call_next(request)
 
