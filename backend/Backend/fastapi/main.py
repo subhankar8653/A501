@@ -1,8 +1,9 @@
 import asyncio
+import os
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -110,6 +111,7 @@ from Backend.fastapi.routes.api_routes import (
 from Backend.fastapi.routes.stream_routes import decay_client_failures
 from Backend.fastapi.routes.stream_routes import router as stream_router
 from Backend.fastapi.routes.stremio_routes import router as stremio_router
+from Backend.fastapi.routes.app_update_routes import router as app_update_router
 from Backend.fastapi.routes.template_routes import (
     admin_access_page,
     admin_dashboard_page,
@@ -137,7 +139,11 @@ templates = Jinja2Templates(directory="Backend/fastapi/templates")
 app = FastAPI(
     title="Telegram Stremio Media Server",
     description="A powerful, self-hosted Telegram Stremio Media Server built with FastAPI, MongoDB, and PyroFork seamlessly integrated with Stremio for automated media streaming and discovery.",
-    version=__version__
+    version=__version__,
+    #----- Don't advertise what this server is: no /docs, /redoc, /openapi.json
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 #----- Middleware
@@ -148,6 +154,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+#----- Optional: make the public info pages look like nothing is here.
+#      Set HIDE_PUBLIC_PAGES=true in config.env (recommended for the app-only setup).
+_HIDE_PUBLIC = (os.environ.get("HIDE_PUBLIC_PAGES", "false") or "").strip().lower() in ("1", "true", "yes")
+
+
+@app.middleware("http")
+async def _hide_public_pages(request: Request, call_next):
+    if _HIDE_PUBLIC and request.url.path.rstrip("/") in ("/status", "/stremio"):
+        return Response(status_code=404)
+    return await call_next(request)
+
 
 try:
     app.mount("/static", StaticFiles(directory="Backend/fastapi/static"), name="static")
@@ -163,6 +181,7 @@ async def _startup():
 #----- Streaming and Stremio routers
 app.include_router(stream_router)
 app.include_router(stremio_router)
+app.include_router(app_update_router)
 
 
 #----- Public routes (no authentication)
