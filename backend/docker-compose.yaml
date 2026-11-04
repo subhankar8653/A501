@@ -1,14 +1,39 @@
+# Backend + Cloudflare Tunnel.
+#
+# - NO ports are published: nothing on this VPS listens to the internet, so
+#   scanning the VPS IP finds nothing and the IP is never tied to your domain.
+# - `cloudflared` dials OUT to Cloudflare and carries your domain's traffic to
+#   the `app` container. Moving to another VPS = run this same file there with
+#   the same TUNNEL_TOKEN (see DEPLOY_GUIDE.md).
+#
+# Files next to this one:  config.env  (bot/db secrets)   .env  (TUNNEL_TOKEN=...)
 services:
-  telegram-stremio:
+  app:
     build: .
-    container_name: tg_stremio  
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./config.env:/app/config.env
+    container_name: tg_stremio
     restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - ./config.env:/app/config.env:ro
+      - ./data:/app/data          # uploaded APK / UI bundle for in-app updates
     logging:
       driver: "json-file"
       options:
-        max-size: "1m"     
-        max-file: "3"      
+        max-size: "1m"
+        max-file: "3"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: tg_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - app
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "2"
