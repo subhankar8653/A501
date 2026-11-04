@@ -8,4 +8,6 @@
 -->
 <paths>
     <files-path name="native_downloads" path="native_downloads/" />
+    <!-- In-app APK updates (AppUpdater.kt) are staged here before install. -->
+    <cache-path name="app_updates" path="updates/" />
 </paths>
