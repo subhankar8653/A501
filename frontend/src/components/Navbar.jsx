@@ -4,6 +4,7 @@ import SearchOverlay from './SearchOverlay'
 import ThemeSheet from './ThemeSheet'
 import NotificationSheet from './NotificationSheet'
 import { useNotifications } from '../lib/notificationsStore'
+import { useUpdate } from '../lib/useUpdate'
 import logo from '../assets/logo.png'
 
 // REDESIGN (user ask: "Home ko or jada professional or stylist... header or
@@ -23,6 +24,7 @@ export default function Navbar() {
   const [themeOpen, setThemeOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const { unreadCount } = useNotifications()
+  const upd = useUpdate()
 
   return (
     <div className="sticky top-0 z-30">
@@ -68,7 +70,7 @@ export default function Navbar() {
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
-              {unreadCount > 0 ? (
+              {unreadCount > 0 || (upd.notice && upd.unseen) ? (
                 <span
                   className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-reel-gold ring-2 ring-reel-surface"
                   aria-hidden="true"

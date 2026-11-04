@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   saveConfig,
-  DEFAULT_BACKEND_URL,
   getBotUsername,
   createSignupCode,
   getSignupStatus,
   saveProfile,
 } from '../api'
+import { activeBackend } from '../lib/endpoints'
 import { useLanguage } from '../i18n/LanguageContext'
 
 const POLL_MS = 2500
@@ -47,7 +47,7 @@ export default function TelegramSignup({ onDone }) {
 
   async function finishSignup(status) {
     stopPolling()
-    saveConfig({ backendUrl: DEFAULT_BACKEND_URL, token: status.token })
+    saveConfig({ backendUrl: activeBackend(), token: status.token })
     saveProfile({
       userId: status.user_id,
       name: status.name,

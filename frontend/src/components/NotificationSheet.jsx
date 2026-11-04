@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useNotifications, markNotificationsSeen } from '../lib/notificationsStore'
 import { useLanguage } from '../i18n/LanguageContext'
+import { useUpdate } from '../lib/useUpdate'
+import { applyBundle, markNoticeSeen, startApkDownload } from '../lib/updateStore'
 
 // FEATURE (user ask: "theme mode change bala icon hai uske pass main
 // notification option vi add karo"): same bottom-sheet chrome/portal
@@ -13,11 +15,15 @@ import { useLanguage } from '../i18n/LanguageContext'
 export default function NotificationSheet({ open, onClose }) {
   const { items, loading } = useNotifications()
   const { t } = useLanguage()
+  const u = useUpdate()
 
   // Opening the sheet is the "I've seen these" moment — clears the bell's
   // unread badge, same idea as opening an inbox.
   useEffect(() => {
-    if (open) markNotificationsSeen()
+    if (open) {
+      markNotificationsSeen()
+      markNoticeSeen()
+    }
   }, [open])
 
   if (!open) return null
@@ -32,6 +38,33 @@ export default function NotificationSheet({ open, onClose }) {
         <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
 
         <p className="text-reel-ink font-semibold mb-3">{t('notifications_title')}</p>
+
+        {/* Update card — shown above the uploads list while an APK update is
+            available or a UI update has finished downloading. */}
+        {u.notice ? (
+          <div className="mb-3 rounded-xl bg-reel-surface2 ring-1 ring-reel-gold/30 p-3.5">
+            <p className="text-sm font-semibold text-reel-ink">
+              {u.apk ? `${t('update_title')} · v${u.apk.version_name}` : t('update_features_ready')}
+            </p>
+            {(u.apk ? u.apk.changelog : u.bundle && u.bundle.changelog) ? (
+              <p className="text-xs text-reel-muted mt-1 whitespace-pre-line max-h-28 overflow-y-auto">
+                {u.apk ? u.apk.changelog : u.bundle.changelog}
+              </p>
+            ) : null}
+            {u.apk && u.apkStatus === 'downloading' ? (
+              <div className="mt-2 h-1.5 rounded-full bg-reel-ink/10 overflow-hidden">
+                <div className="h-full bg-reel-gold" style={{ width: `${u.apkPct}%` }} />
+              </div>
+            ) : null}
+            <button
+              onClick={u.apk ? startApkDownload : applyBundle}
+              disabled={u.apk && (u.apkStatus === 'downloading' || u.apkStatus === 'installing')}
+              className="mt-3 w-full rounded-lg py-2.5 text-xs font-semibold bg-reel-gold text-reel-bg hover:brightness-110 disabled:opacity-60 active:scale-[0.98] transition"
+            >
+              {u.apk ? t('update_now') : t('update_restart')}
+            </button>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="space-y-2.5 mb-1">
