@@ -1,5 +1,12 @@
 name: Build APK
 
+# Required GitHub repo secrets (Settings -> Secrets and variables -> Actions):
+#   BACKEND_URL          your API domain, e.g. https://api.yourdomain.com   (NOT an IP / railway / vps hostname)
+#   BACKEND_FALLBACKS    optional, comma separated extra domains
+#   KEYSTORE_B64         your release keystore, base64 encoded   (see DEPLOY guide: keytool + base64 -w0)
+#   KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+# Keep the repo PRIVATE.
+
 on:
   push:
     branches: [ main ]
@@ -9,6 +16,11 @@ on:
       - '.github/workflows/build-apk.yml'
   workflow_dispatch: {}
 
+env:
+  # Strictly increasing -> becomes Android versionCode AND the OTA bundle version.
+  VERSION_CODE: ${{ github.run_number }}
+  VERSION_NAME: 1.${{ github.run_number }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,10 +28,16 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # App-shell (HTML/JS/CSS) ab APK ke andar bundled assets se serve hota
-      # hai (MainActivity.kt -> WebViewAssetLoader), koi live URL fetch nahi —
-      # isliye har APK build se pehle frontend ko yahin build karke Android
-      # assets folder mein copy karna zaroori hai.
+      - name: Check secrets
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          [ -n "$BACKEND_URL" ] || { echo "::error::Secret BACKEND_URL is missing"; exit 1; }
+          [ -n "$KEYSTORE_B64" ] || { echo "::error::Secret KEYSTORE_B64 is missing (APK updates need a fixed signing key)"; exit 1; }
+
+      # The UI is bundled inside the APK (MainActivity -> loadDataWithBaseURL),
+      # so the frontend is built here and copied into the Android assets.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -27,6 +45,9 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          VITE_BACKEND_FALLBACKS: ${{ secrets.BACKEND_FALLBACKS }}
         run: |
           npm install
           npm run build
@@ -36,6 +57,8 @@ jobs:
           rm -rf android/app/src/main/assets
           mkdir -p android/app/src/main/assets
           cp -r frontend/dist/. android/app/src/main/assets/
+          # Version of the UI that ships inside this APK (OTA only replaces it with a NEWER one).
+          echo -n "$VERSION_CODE" > android/app/src/main/assets/bundle_version.txt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -43,15 +66,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # BUG FIX (build failure at this step: "Warning: Failed to find package
-      # 'tools'" -> sdkmanager exit code 1): android-actions/setup-android@v3
-      # downloads cmdline-tools and then runs `sdkmanager tools`, but the legacy
-      # "tools" package no longer exists in Google's repository, so the step
-      # always fails before Gradle even starts (project code ka fault nahi).
-      # ubuntu-latest runner par Android SDK pehle se installed hai
-      # (ANDROID_HOME), isliye action ki zaroorat nahi — bas licenses accept
-      # kar dete hain; Gradle (AGP) baaki platform/build-tools khud download
-      # kar leta hai.
+      # ubuntu-latest already has the Android SDK; just accept licenses.
       - name: Set up Android SDK
         run: |
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
@@ -60,8 +75,6 @@ jobs:
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           if [ -x "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses > /dev/null || true
-          else
-            echo "sdkmanager not found at $SDKMANAGER, relying on Gradle to auto-accept/download"
           fi
 
       - name: Set up Gradle
@@ -69,44 +82,38 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      # libtdjson.so files (TDLib) 25MB+ ke hai isliye repo mein commit nahi
-      # kiye — inhe ek GitHub Release ke assets ke roop mein rakha hai, aur
-      # har build se pehle yahan download karke jniLibs mein daal rahe hain.
-      # Naya .so upload karna ho to bas Release "tdlib-libs" ke assets update
-      # kar do, ye step khud-ba-khud latest file utha lega.
+      # libtdjson.so (TDLib, 25MB+) lives in the GitHub Release "tdlib-libs".
+      # `gh` authenticates, so this also works when the repo is private.
       - name: Download TDLib native libs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
-          curl -L -o android/app/src/main/jniLibs/arm64-v8a/libtdjson.so \
-            https://github.com/${{ github.repository }}/releases/download/tdlib-libs/libtdjson-arm64-v8a.so
-          curl -L -o android/app/src/main/jniLibs/armeabi-v7a/libtdjson.so \
-            https://github.com/${{ github.repository }}/releases/download/tdlib-libs/libtdjson-armeabi-v7a.so
+          for abi in arm64-v8a armeabi-v7a; do
+            mkdir -p "android/app/src/main/jniLibs/$abi"
+            gh release download tdlib-libs --repo "$GITHUB_REPOSITORY" \
+              --pattern "libtdjson-$abi.so" --output "android/app/src/main/jniLibs/$abi/libtdjson.so" --clobber
+          done
 
-      - name: Build debug APK
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      # Retries with growing waits: Maven Central / Gradle plugin portal sometimes
+      # answer 429 or drop TLS on shared runners (not a project bug).
+      - name: Build signed release APK
         working-directory: android
-        # dl.google.com se kabhi-kabhi TLS handshake fail ho jata hai (GitHub
-        # Actions runner ka transient network issue, project code ka fault
-        # nahi) — isliye retry karte hain.
-        # BUG FIX (build failure: "Received status code 429 from server: Too
-        # Many Requests" from repo.maven.apache.org / plugins.gradle.org):
-        # yeh Maven Central/Gradle Plugin Portal ka apna transient rate-limit
-        # hai, humara code/config ka fault nahi. Pehle sirf 3 attempts, har
-        # ek ke beech 15s ka fixed wait — lekin har attempt khud hi 2-3
-        # minute leta hai (poori dependency resolution phir se), aur agar
-        # rate-limit abhi bhi active hai to 15s ka gap kaafi nahi hota, agla
-        # attempt turant phir 429 khaata hai (yehi is build mein hua — teeno
-        # attempts fail). Ab attempts badha kar 5 kar diye hain aur beech ka
-        # wait badhta hua (30s, 60s, 120s, 240s) rakha hai, taaki rate-limit
-        # window ko genuinely thandा hone ka waqt mile. gradle.properties
-        # mein Gradle ke apne internal resource-retry/backoff bhi badhaye
-        # gaye hain (dekho uska comment) — taaki ek hi attempt ke andar bhi
-        # yeh khud recover kar sake, poora build restart kiye bina.
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           delays=(30 60 120 240)
           for attempt in 1 2 3 4 5; do
             echo "Attempt $attempt of 5..."
-            if gradle assembleDebug --no-daemon; then
+            if gradle assembleRelease --no-daemon; then
               exit 0
             fi
             if [ "$attempt" -lt 5 ]; then
@@ -118,9 +125,33 @@ jobs:
           echo "All attempts failed."
           exit 1
 
+      - name: Name the files for the Telegram bot
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/HukaTube_${VERSION_NAME}_${VERSION_CODE}.apk"
+          cp frontend/dist/index.html out/index.html
+          {
+            echo "### Build ${VERSION_CODE} ready"
+            echo
+            echo "Send the artifact files to your bot, then reply to them with:"
+            echo
+            echo '```'
+            echo "/setapk code=${VERSION_CODE} name=${VERSION_NAME}"
+            echo "What's new..."
+            echo
+            echo "/setbundle version=${VERSION_CODE}"
+            echo "What's new..."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: suhani-screen-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: huka-apk
+          path: out/HukaTube_*.apk
 
+      - name: Upload OTA UI bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: huka-ui-bundle
+          path: out/index.html
