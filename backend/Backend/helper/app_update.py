@@ -37,6 +37,14 @@ def bundle_path() -> Path:
     return UPDATE_DIR / "bundle.html"
 
 
+def metube_path() -> Path:
+    return UPDATE_DIR / "metube.apk"
+
+
+def _path_for(kind: str) -> Path:
+    return {"apk": apk_path, "bundle": bundle_path, "metube": metube_path}[kind]()
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -63,9 +71,9 @@ async def save_release(kind: str, data: dict) -> dict:
 
 async def clear_release(kind: str) -> bool:
     res = await _col().delete_one({"_id": kind})
-    for p in ((apk_path(),) if kind == "apk" else (bundle_path(),) if kind == "bundle" else ()):
+    if kind in ("apk", "bundle", "metube"):
         try:
-            p.unlink()
+            _path_for(kind).unlink()
         except FileNotFoundError:
             pass
     return res.deleted_count > 0
@@ -139,10 +147,23 @@ async def build_manifest(app_vc: int, bundle_v: int) -> dict:
     return {"apk": apk_out, "bundle": bundle_out, "endpoints": await get_endpoints()}
 
 
+async def build_metube_manifest() -> Optional[dict]:
+    """MeTube companion app APK (installed from inside A501's 'MeTube' tab)."""
+    rel = await get_release("metube")
+    if not rel or not (metube_path().exists() or rel.get("file_id")):
+        return None
+    return {
+        "version_name": rel.get("version_name", ""),
+        "url": f"/api/app/metube/file/{rel['key']}",
+        "sha256": rel.get("sha256", ""),
+        "size": _int(rel.get("size")),
+    }
+
+
 # ------------------------------------------------- self-healing file fetch
 async def ensure_file(kind: str) -> Optional[Path]:
     """Return the file on disk; if the volume was lost, re-pull it from Telegram."""
-    path = apk_path() if kind == "apk" else bundle_path()
+    path = _path_for(kind)
     if path.exists():
         return path
     rel = await get_release(kind)
