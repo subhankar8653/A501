@@ -32,6 +32,8 @@ let state = {
   apkPct: 0,
   bundleStatus: 'idle', // idle | downloading | ready | error
   lastCheck: 0,
+  metubeStatus: 'idle', // idle | downloading | installing | needs_permission | unavailable | error | launched
+  metubePct: 0,
 }
 
 export function getUpdateState() {
@@ -89,6 +91,12 @@ window.__nativeUpdate = (kind, status, pct, message) => {
       if (state.bundle && state.bundle.force) applyBundle()
     } else if (status === 'progress') set({ bundleStatus: 'downloading' })
     else if (status === 'error') set({ bundleStatus: 'error' })
+  } else if (kind === 'metube') {
+    if (status === 'progress') set({ metubeStatus: 'downloading', metubePct: Math.max(0, Math.min(100, pct | 0)) })
+    else if (['installing', 'needs_permission', 'unavailable', 'error', 'launched'].includes(status)) {
+      set({ metubeStatus: status })
+      if (status === 'launched') window.setTimeout(() => set({ metubeStatus: 'idle' }), 500)
+    }
   } else if (kind === 'apk') {
     if (status === 'progress') set({ apkStatus: 'downloading', apkPct: Math.max(0, Math.min(100, pct | 0)) })
     else if (status === 'installing') set({ apkStatus: 'installing', apkPct: 100 })
@@ -146,6 +154,36 @@ export function startApkDownload() {
   } catch {
     set({ apkStatus: 'error' })
   }
+}
+
+// 'MeTube' tab: launch the companion app, or fetch + install it from our server.
+export async function openMetube() {
+  const n = native()
+  if (!n || typeof n.openMetube !== 'function') {
+    set({ metubeStatus: 'unavailable' })
+    return
+  }
+  try {
+    if (n.isMetubeInstalled()) {
+      n.openMetube('', '')
+      return
+    }
+    set({ metubeStatus: 'downloading', metubePct: 0 })
+    const res = await fetch(`${activeBackend()}/api/app/metube`, { cache: 'no-store' })
+    const body = res.ok ? await res.json() : null
+    const m = body && body.data
+    if (!m || !m.url) {
+      set({ metubeStatus: 'unavailable' })
+      return
+    }
+    n.openMetube(absolute(m.url), m.sha256 || '')
+  } catch {
+    set({ metubeStatus: 'error' })
+  }
+}
+
+export function clearMetubeStatus() {
+  set({ metubeStatus: 'idle' })
 }
 
 export function applyBundle() {
