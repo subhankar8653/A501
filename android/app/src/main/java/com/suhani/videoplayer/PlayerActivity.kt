@@ -2154,6 +2154,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            refreshPipParams()
             syncPlayPauseIcon()
             rescheduleControlsHideIfVisible()
         }
@@ -6946,7 +6947,7 @@ class PlayerActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return unsupportedPipFallback()
         if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return unsupportedPipFallback()
         if (!::player.isInitialized) return false
-        if (isInPictureInPictureMode) return false
+        if (isInPictureInPictureMode || isFinishing || isDestroyed) return false
         val result = try {
             enterPictureInPictureMode(buildPipParams().build())
         } catch (_: Exception) {
@@ -7067,7 +7068,12 @@ class PlayerActivity : AppCompatActivity() {
         // rakhta hai taaki OS ke paas seamless-enter ke waqt sahi sourceRectHint
         // /aspect-ratio pehle se maujood ho.)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try { builder.setAutoEnterEnabled(true) } catch (_: Exception) {}
+            // MeTube-style: auto-PiP ONLY while video is actually playing (paused video
+            // + Home should not pop a PiP window / confuse lifecycle).
+            val playingNow = ::player.isInitialized && player.playWhenReady &&
+                player.playbackState != Player.STATE_ENDED
+            try { builder.setAutoEnterEnabled(playingNow) } catch (_: Exception) {}
+            try { builder.setSeamlessResizeEnabled(false) } catch (_: Exception) {}
         }
         return builder
     }
@@ -7171,7 +7177,9 @@ class PlayerActivity : AppCompatActivity() {
         // hum yahan bhi manually enterPictureInPictureMode() bulaate to do transitions
         // race karke hi jhatka wapas laa dete. Sirf purane devices (< API 31, jahan
         // auto-enter available hi nahi) ke liye manual fallback chahiye.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+            !isFinishing && ::player.isInitialized && player.playWhenReady
+        ) {
             tryEnterPipOnBack()
         }
     }
@@ -7420,7 +7428,7 @@ class PlayerActivity : AppCompatActivity() {
             // khud foreground hai, isliye notification ki zaroorat nahi).
             BackgroundPlaybackService.stop(this)
         } else if (!isPip) {
-            player.playWhenReady = false
+            if (::player.isInitialized) player.playWhenReady = false
             if (isFinishing) BackgroundPlaybackService.stop(this)
         } else if (::player.isInitialized) {
             // Foreground service start karo taaki Android process ko background
