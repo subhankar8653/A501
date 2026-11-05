@@ -37,6 +37,17 @@ async def app_update_file(key: str):
     return await _serve("apk", key, "application/vnd.android.package-archive", "update.apk")
 
 
+#----- MeTube companion app: manifest + APK
+@router.get("/api/app/metube")
+async def app_metube_info():
+    return JSONResponse({"status": "success", "data": await au.build_metube_manifest()}, headers=_NO_STORE)
+
+
+@router.get("/api/app/metube/file/{key}")
+async def app_metube_file(key: str):
+    return await _serve("metube", key, "application/vnd.android.package-archive", "metube.apk")
+
+
 #----- OTA UI bundle (single-file index.html built by `npm run build`)
 @router.get("/api/app/bundle/{key}")
 async def app_bundle_file(key: str):
