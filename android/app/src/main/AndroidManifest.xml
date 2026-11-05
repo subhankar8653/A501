@@ -32,8 +32,13 @@
          owner's Telegram bot) to Android's package installer. See AppUpdater.kt. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Needed (Android 11+) to see / launch the MeTube companion app. -->
+    <queries>
+        <package android:name="io.github.yashoncode.metube" />
+    </queries>
+
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="Huka Tube"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
