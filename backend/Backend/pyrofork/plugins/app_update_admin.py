@@ -113,6 +113,35 @@ async def set_apk(client: Client, message: Message):
         await _reply(message, f"⚠️ Error: {e}")
 
 
+@Client.on_message((filters.command("setmetube") | filters.caption & filters.regex(r"^/setmetube\b")) & _OWNER_PRIVATE, group=5)
+async def set_metube(client: Client, message: Message):
+    try:
+        carrier = _doc_message(message)
+        if not carrier or not (carrier.document.file_name or "").lower().endswith(".apk"):
+            return await _reply(message, "MeTube ki .apk file bhejo, phir uspar reply karke:\n/setmetube name=1.0")
+        kv, _flags, _cl = _parse(message)
+        status = await message.reply_text("⬇️ MeTube APK download ho rahi hai...", quote=True)
+        au.UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = au.metube_path().with_suffix(".part")
+        await client.download_media(carrier, file_name=str(tmp))
+        with open(tmp, "rb") as f:
+            if f.read(2) != b"PK":
+                tmp.unlink(missing_ok=True)
+                return await status.edit_text("❌ File valid APK nahi lagti.")
+        digest = await au.sha256_file_async(Path(tmp))
+        tmp.replace(au.metube_path())
+        rel = await au.save_release("metube", {
+            "version_name": kv.get("name", ""),
+            "sha256": digest,
+            "size": au.metube_path().stat().st_size,
+            "file_id": carrier.document.file_id,
+        })
+        await status.edit_text(f"✅ MeTube APK live ({rel['size'] / 1048576:.1f} MB). A501 ke 'MeTube' tab se install hoga.")
+    except Exception as e:
+        LOGGER.error(f"/setmetube failed: {e}")
+        await _reply(message, f"⚠️ Error: {e}")
+
+
 @Client.on_message((filters.command("setbundle") | filters.caption & filters.regex(r"^/setbundle\b")) & _OWNER_PRIVATE, group=5)
 async def set_bundle(client: Client, message: Message):
     try:
@@ -177,8 +206,8 @@ async def update_info(client: Client, message: Message):
 @Client.on_message(filters.command("clearupdate") & _OWNER_PRIVATE, group=5)
 async def clear_update(client: Client, message: Message):
     kind = (message.command[1].lower() if len(message.command) > 1 else "")
-    if kind not in ("apk", "bundle"):
-        return await _reply(message, "Use: /clearupdate apk  ya  /clearupdate bundle")
+    if kind not in ("apk", "bundle", "metube"):
+        return await _reply(message, "Use: /clearupdate apk | bundle | metube")
     ok = await au.clear_release(kind)
     await _reply(message, "🗑️ Hata diya." if ok else "Kuch live nahi tha.")
 
