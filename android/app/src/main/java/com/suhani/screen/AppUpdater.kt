@@ -185,7 +185,7 @@ class WebUpdateInterface(private val activity: MainActivity) {
 
         runJob("apk") {
             val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
-            dir.listFiles()?.forEach { it.delete() }
+            dir.listFiles()?.filter { it.name.startsWith("update") }?.forEach { it.delete() }
             val apk = File(dir, "update.apk")
             val tmp = File(dir, "update.part")
             download(url, tmp, sha256) { pct -> emit("apk", "progress", pct) }
@@ -198,6 +198,66 @@ class WebUpdateInterface(private val activity: MainActivity) {
                     .setDataAndType(uri, "application/vnd.android.package-archive")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 activity.startActivity(i)
+            }
+        }
+    }
+
+    private val METUBE_PKG = "io.github.yashoncode.metube"
+
+    @JavascriptInterface
+    fun isMetubeInstalled(): Boolean =
+        activity.packageManager.getLaunchIntentForPackage(METUBE_PKG) != null
+
+    /**
+     * 'MeTube' tab: open the companion app if it is installed; otherwise
+     * download it from our own update server and hand it to the installer.
+     */
+    @JavascriptInterface
+    fun openMetube(url: String, sha256: String) {
+        val launch = activity.packageManager.getLaunchIntentForPackage(METUBE_PKG)
+        if (launch != null) {
+            activity.runOnUiThread {
+                try {
+                    activity.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    emit("metube", "launched", 100)
+                } catch (e: Exception) {
+                    emit("metube", "error", 0, e.message ?: "")
+                }
+            }
+            return
+        }
+        if (!isAllowedUrl(url)) { emit("metube", "unavailable", 0); return }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            emit("metube", "needs_permission", 0)
+            activity.runOnUiThread {
+                try {
+                    activity.startActivity(
+                        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (e: Exception) { }
+            }
+            return
+        }
+
+        runJob("metube") {
+            val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
+            val apk = File(dir, "metube.apk")
+            val tmp = File(dir, "metube.part")
+            download(url, tmp, sha256) { pct -> emit("metube", "progress", pct) }
+            apk.delete()
+            if (!tmp.renameTo(apk)) throw IllegalStateException("rename failed")
+            val uri = FileProvider.getUriForFile(activity, activity.packageName + ".downloads.fileprovider", apk)
+            emit("metube", "installing", 100)
+            activity.runOnUiThread {
+                activity.startActivity(
+                    Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
             }
         }
     }
