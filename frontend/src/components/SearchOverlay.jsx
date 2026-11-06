@@ -9,6 +9,8 @@ import {
   clearRecentSearches,
 } from '../api'
 import { useLanguage } from '../i18n/LanguageContext'
+import SearchFilters from './SearchFilters'
+import { getFilters, filtersActive, onFiltersChanged } from '../lib/searchFilters'
 
 // Debounce delay for live suggestions while typing.
 const SUGGEST_DEBOUNCE_MS = 300
@@ -21,6 +23,9 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
   const [recent, setRecent] = useState(() => getRecentSearches())
   const [suggestions, setSuggestions] = useState([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [hasFilters, setHasFilters] = useState(() => filtersActive(getFilters()))
+  useEffect(() => onFiltersChanged(() => setHasFilters(filtersActive(getFilters()))), [])
 
   // Autofocus the moment the overlay mounts, like YouTube's search screen.
   useEffect(() => {
@@ -111,7 +116,8 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
             runSearch(query)
           }}
         >
-          <div className="flex items-center rounded-full bg-reel-surface2 border border-reel-ink/5 focus-within:border-reel-gold/70 focus-within:shadow-[0_0_0_4px_rgba(232,163,61,0.12)] transition-all duration-200">
+          <div className={`hs-box flex items-center rounded-full bg-reel-surface2 border border-reel-ink/5 transition-all duration-200 ${query ? 'hs-typing' : ''}`}>
+            <style>{HS_CSS}</style>
             <input
               ref={inputRef}
               value={query}
@@ -121,7 +127,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
               enterKeyHint="search"
               aria-label="Search titles"
               placeholder={t('search_placeholder')}
-              className="w-full bg-transparent text-reel-ink placeholder-reel-muted px-4 py-2.5 text-base focus:outline-none"
+              className="hs-input w-full bg-transparent text-reel-ink placeholder-reel-muted px-4 py-2.5 text-base focus:outline-none"
             />
             {query ? (
               <button
@@ -144,15 +150,16 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
         {/* Big, prominent, YouTube-style search button — separate from the
             input's own clear button, always visible, submits the raw query. */}
         <button
-          onClick={() => runSearch(query)}
-          disabled={!query.trim()}
-          aria-label="Search"
-          className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-reel-gold text-reel-bg hover:brightness-110 active:scale-90 transition disabled:opacity-30 disabled:pointer-events-none"
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Search filters"
+          className="relative shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-reel-ink hover:bg-reel-ink/5 active:scale-90 transition"
         >
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+            <circle cx="16" cy="7" r="2" />
+            <circle cx="8" cy="17" r="2" />
           </svg>
+          {hasFilters ? <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-reel-gold" /> : null}
         </button>
       </div>
 
@@ -256,7 +263,25 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
           </div>
         )}
       </div>
+      {filtersOpen ? <SearchFilters onClose={() => setFiltersOpen(false)} /> : null}
     </div>,
     document.body
   )
 }
+
+// Rainbow "typing" effect: while there is text, the field gets an animated
+// colourful glow ring and the typed text itself shimmers through the colours.
+const HS_CSS = `
+.hs-box{position:relative}
+.hs-typing{border-color:transparent;
+  background:linear-gradient(var(--reel-surface2),var(--reel-surface2)) padding-box,
+    linear-gradient(90deg,#ff5f6d,#ffc371,#47e891,#38bdf8,#a78bfa,#ff5f6d) border-box;
+  background-size:100% 100%,300% 100%;animation:hs-flow 3s linear infinite;
+  box-shadow:0 0 14px rgba(167,139,250,.35),0 0 28px rgba(56,189,248,.18)}
+.hs-typing .hs-input{color:transparent;caret-color:#a78bfa;
+  background-image:linear-gradient(90deg,#ff5f6d,#ffc371,#47e891,#38bdf8,#a78bfa,#ff5f6d);
+  background-size:300% 100%;-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;animation:hs-flow 3s linear infinite;
+  filter:drop-shadow(0 0 6px rgba(167,139,250,.55))}
+@keyframes hs-flow{to{background-position:0 0,300% 0}}
+`

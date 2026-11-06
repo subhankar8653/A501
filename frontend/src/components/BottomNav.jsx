@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import SearchOverlay from './SearchOverlay'
 import { NavLink } from 'react-router-dom'
 import { useDownloadsList } from '../lib/downloadsStore'
 import { useOnlineStatus } from '../lib/connectivity'
@@ -27,6 +28,7 @@ const TABS = [
   },
   {
     to: '/search',
+    action: 'search', // opens the full-screen search overlay instead of a page
     labelKey: 'nav_search',
     icon: (active) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.6 : 2.1} strokeLinecap="round" strokeLinejoin="round">
@@ -96,6 +98,7 @@ export default function BottomNav() {
   // "internet on karo" bolna chahiye) — tapping the locked Home tab doesn't
   // navigate, it just flashes this message for a couple seconds.
   const [showOfflineHint, setShowOfflineHint] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   function handleHomeTap(e) {
     if (isOnline) return
@@ -125,6 +128,16 @@ export default function BottomNav() {
       ) : null}
       <div className="grid grid-cols-5 px-1">
         {TABS.map((tab) => {
+          if (tab.action === 'search') {
+            return (
+              <button key={tab.to} type="button" onClick={() => setSearchOpen(true)} className="relative flex justify-center">
+                <span className="relative flex flex-col items-center justify-center gap-1 w-full pt-2.5 pb-2 text-[10.5px] font-semibold tracking-wide text-reel-ink opacity-70 hover:opacity-100 active:scale-95 transition">
+                  {tab.icon(false)}
+                  {t(tab.labelKey)}
+                </span>
+              </button>
+            )
+          }
           const isHome = tab.to === '/'
           const locked = isHome && !isOnline
           return (
@@ -163,6 +176,7 @@ export default function BottomNav() {
         })}
       </div>
     </div>
+      {searchOpen ? <SearchOverlay onClose={() => setSearchOpen(false)} /> : null}
     </nav>
   )
 }
