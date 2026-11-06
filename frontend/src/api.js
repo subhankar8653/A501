@@ -443,7 +443,7 @@ export async function getComments(type, id) {
   return data.comments || []
 }
 
-export async function postComment(type, id, text, title, poster) {
+export async function postComment(type, id, text, title, poster, replyTo = 0) {
   const { backendUrl, token } = base()
   const profile = getProfile()
   const data = await postJson(`${backendUrl}/stremio/${token}/comments/${type}/${id}.json`, {
@@ -451,8 +451,16 @@ export async function postComment(type, id, text, title, poster) {
     name: profile?.name || 'Someone',
     title,
     poster,
+    reply_to: replyTo || 0,
   })
   return data.comment
+}
+
+// Bell notifications: replies to my comments, admin broadcasts, subscription reminders.
+export async function getNotifications() {
+  const { backendUrl, token } = base()
+  const data = await fetchJson(`${backendUrl}/stremio/${token}/notifications.json`)
+  return data.items || []
 }
 
 // PROFILE FEATURE (user ask: "My Comments — edit/delete ka option")
