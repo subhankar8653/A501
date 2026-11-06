@@ -499,6 +499,18 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // hamesha wahi khulta hai — koi navigate-back-and-forth ki zaroorat hi
     // nahi padti.
     private var pipSessionActive = false
+
+    // ---- PLAYER STATE RULES (single source of truth) ----------------------
+    // INLINE     : overlay visible on the watch page (normal)
+    // FULLSCREEN : PlayerActivity in front            (overlay GONE)
+    // PIP        : PlayerActivity floating in PiP     (overlay GONE)
+    // Rules: (1) a transition can only START from INLINE (overlay visible),
+    // so double-taps / fullscreen+PiP+home firing together are ignored;
+    // (2) re-entry is debounced; (3) the shared player is never paused by
+    // this Activity while PlayerActivity owns it; (4) EVERY return path
+    // (ok, cancelled, crashed) ends in INLINE or CLOSED via onActivityResult.
+    private var lastPlayerLaunchAt = 0L
+    private var playerActivityOwnsPlayer = false
     // PERMANENT FIX (dekho `isCurrentlyOnWatchPage()` ka bada comment):
     // `pipSessionActive` ab tak kabhi bhi khud-ba-khud reset nahi hoti thi —
     // sirf `onActivityResult()` (REQUEST_FULLSCREEN_PLAYER) ise false karta
@@ -3151,6 +3163,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
      *  enterPipImmediately=true ho to PlayerActivity khulte hi turant real PiP mein chala jaata hai
      *  (isi Activity ka apna already-working PiP implementation use karke). */
     private fun openFullscreenFromInline(enterPipImmediately: Boolean = false) {
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        if (inlinePlayer == null || inlineUri.isEmpty()) return
+        if (inlineOverlay?.visibility != View.VISIBLE) return // not INLINE -> ignore
+        if (playerActivityOwnsPlayer && nowMs - lastPlayerLaunchAt < 8000L) return
+        if (nowMs - lastPlayerLaunchAt < 700L) return // debounce double taps
+        lastPlayerLaunchAt = nowMs
+        playerActivityOwnsPlayer = true
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         // Bug fix (premium smoothness / "buffering" feel): pehle yahan turant
@@ -3391,6 +3410,23 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_FULLSCREEN_PLAYER) playerActivityOwnsPlayer = false
+        if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode != RESULT_OK) {
+            // Rule (4): PlayerActivity ended without a normal result (crash /
+            // killed / cancelled). Never leave the user on a hole: reattach and
+            // show the inline player again.
+            pipSessionActive = false
+            pipReturnPath = null
+            awaitingRectAfterPipReturn = false
+            if (inlineUri.isNotEmpty()) {
+                if (SharedPlayerHolder.player != null && SharedPlayerHolder.uri == inlineUri) {
+                    inlinePlayer = SharedPlayerHolder.player
+                    inlinePlayerView?.player = inlinePlayer
+                    inlinePlayer?.setForegroundMode(false)
+                }
+                if (inlinePlayer != null) showInlineOverlayWithFade(trustedNoCheck = isCurrentlyOnWatchPage())
+            }
+        }
         if (requestCode == REQUEST_FULLSCREEN_PLAYER && resultCode == RESULT_OK) {
             val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
             val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
@@ -3748,7 +3784,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         super.onPause()
         webView.onPause()
         saveInlineWatchProgress()
-        inlinePlayer?.pause()
+        // Rule (3): PlayerActivity owns the shared player while it is up.
+        if (!playerActivityOwnsPlayer) inlinePlayer?.pause()
     }
 
     override fun onResume() {
