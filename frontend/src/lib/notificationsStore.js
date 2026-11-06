@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getManifest, groupCatalogsByTab, loadNewToYou } from '../api'
+import { getManifest, groupCatalogsByTab, loadNewToYou, getNotifications } from '../api'
 
 // FEATURE (user ask: "theme mode change bala icon hai uske pass main
 // notification option vi add karo"): a lightweight notification center —
@@ -10,7 +10,7 @@ import { getManifest, groupCatalogsByTab, loadNewToYou } from '../api'
 // localStorage — same pattern as savedStore.js.
 const LAST_SEEN_KEY = 'huka-tube:notifications-last-seen'
 const EVENT = 'huka-tube-notifications-changed'
-const NOTIFICATIONS_LIMIT = 20
+const NOTIFICATIONS_LIMIT = 5 // new-upload rows are a small footer section now; real notifications come first
 
 // PROFILE FEATURE (user ask: "Notification preferences — kaunse
 // notifications chahiye"): the only notification channel this app
@@ -78,6 +78,23 @@ export function useNotifications() {
   const [loading, setLoading] = useState(true)
   const [lastSeen, setLastSeen] = useState(() => readLastSeen())
   const [enabled, setEnabled] = useState(() => isNewUploadsEnabled())
+  const [personal, setPersonal] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () =>
+      getNotifications()
+        .then((list) => {
+          if (!cancelled) setPersonal(list)
+        })
+        .catch(() => {})
+    load()
+    const id = window.setInterval(load, 5 * 60 * 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
 
   useEffect(() => {
     if (!enabled) {
@@ -115,9 +132,11 @@ export function useNotifications() {
     }
   }, [])
 
-  const unreadCount = enabled
+  const unreadUploads = enabled
     ? items.filter((it) => new Date(it.addedAt || 0).getTime() > lastSeen).length
     : 0
+  const unreadPersonal = personal.filter((n) => (n.ts || 0) * 1000 > lastSeen).length
+  const unreadCount = unreadPersonal + unreadUploads
 
-  return { items, loading, unreadCount, lastSeen }
+  return { items, personal, loading, unreadCount, lastSeen }
 }
