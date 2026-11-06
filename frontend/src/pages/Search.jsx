@@ -4,6 +4,7 @@ import { getCatalogAllPages, isVerified } from '../api'
 import MediaCard from '../components/MediaCard'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
+import { applyFilters, getFilters, filtersActive, saveFilters, onFiltersChanged, DEFAULT_FILTERS } from '../lib/searchFilters'
 
 export default function Search() {
   const [params] = useSearchParams()
@@ -12,6 +13,8 @@ export default function Search() {
   const [failed, setFailed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
   const verified = isVerified()
+  const [filters, setFilters] = useState(() => getFilters())
+  useEffect(() => onFiltersChanged(() => setFilters(getFilters())), [])
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -66,11 +69,16 @@ export default function Search() {
             {t('retry')}
           </button>
         </div>
-      ) : results.length === 0 ? (
-        <p className="text-reel-muted">{t('search_no_results')}</p>
+      ) : applyFilters(results, filters).length === 0 ? (
+        <div>
+          <p className="text-reel-muted">{t('search_no_results')}</p>
+          {filtersActive(filters) ? (
+            <button onClick={() => saveFilters({ ...DEFAULT_FILTERS })} className="mt-3 text-sm text-reel-gold">Filters hatao</button>
+          ) : null}
+        </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-x-3 gap-y-6">
-          {results.map((item, i) => (
+          {applyFilters(results, filters).map((item, i) => (
             <MediaCard key={item.id} item={item} index={i} />
           ))}
         </div>

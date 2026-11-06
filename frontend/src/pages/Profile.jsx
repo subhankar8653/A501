@@ -279,6 +279,23 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* Accounts / Settings quick buttons (YouTube-style "You" page) */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        {[
+          ['Accounts', 'profile-plan'],
+          ['Settings', 'profile-settings'],
+        ].map(([label, anchor]) => (
+          <button
+            key={label}
+            onClick={() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="rounded-full py-3 text-sm font-medium text-reel-ink bg-reel-surface2 active:scale-[0.98] transition"
+            style={{ border: '1px solid color-mix(in srgb, var(--reel-ink) 14%, transparent)' }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ---- History ----
           MOVED HERE (user ask: "save/downloads button ke upar history add
           karo, jaise YouTube ke profile page mein hota hai"): this is the
@@ -304,6 +321,32 @@ export default function Profile() {
             <p className="font-display text-base sm:text-lg font-bold text-reel-gold">{value}</p>
             <p className="text-[10px] text-reel-muted mt-0.5 leading-tight">{label}</p>
           </div>
+        ))}
+      </div>
+
+      {/* ---- Library (YouTube-style rows) ---- */}
+      <h2 className="font-display text-lg font-semibold text-reel-ink mb-2">Library</h2>
+      <div className="mb-6 space-y-1">
+        {[
+          ['Saved videos', saved.length, '/saved', 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'],
+          ['Downloads', doneDownloads.length, '/downloads', 'M12 3v12m0 0 4-4m-4 4-4-4M5 21h14'],
+          ['HukaTube picks', null, '/new', 'M3 5h18v14H3zM10 9l5 3-5 3z'],
+        ].map(([label, count, to, d]) => (
+          <button
+            key={label}
+            onClick={() => navigate(to)}
+            className="w-full flex items-center gap-3 py-2 active:scale-[0.99] transition"
+          >
+            <span
+              className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-reel-ink bg-reel-surface2"
+              style={{ border: '1px solid color-mix(in srgb, var(--reel-ink) 14%, transparent)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+            </span>
+            <span className="flex-1 text-left text-[16px] text-reel-ink">{label}</span>
+            {count != null ? <span className="text-xs text-reel-muted">{count}</span> : null}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-muted"><path d="m9 18 6-6-6-6" /></svg>
+          </button>
         ))}
       </div>
 
@@ -338,6 +381,7 @@ export default function Profile() {
         </button>
       </SectionCard>
 
+      <div id="profile-plan" />
       {/* ---- My Plan ---- */}
       {subscription?.enabled ? (
         <SectionCard
@@ -417,6 +461,7 @@ export default function Profile() {
       </SectionCard>
 
       {/* ---- Playback Settings ---- */}
+      <div id="profile-settings" />
       <SectionCard
         title={t('profile_playback_settings')}
         icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>}
