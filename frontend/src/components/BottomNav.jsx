@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useDownloadsList } from '../lib/downloadsStore'
 import { useOnlineStatus } from '../lib/connectivity'
 import { useLanguage } from '../i18n/LanguageContext'
-import { useUpdate } from '../lib/useUpdate'
-import { openMetube, clearMetubeStatus } from '../lib/updateStore'
 
 // FEATURE (user ask: "footer mein Saved category hata do aur usko profile
 // ke andar kisi jagah set kar do, aur footer mein Home - Search - New -
@@ -38,15 +36,12 @@ const TABS = [
     ),
   },
   {
-    // MeTube replaces the old 'New' tab: it is a separate app, so this tab is
-    // an action (launch it, or install it from our server) not a route.
-    to: '/metube',
-    action: 'metube',
+    to: '/new',
     labelKey: 'nav_new',
-    icon: () => (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+    icon: (active) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="5" width="18" height="14" rx="4" />
-        <path d="m10 9.5 5 2.5-5 2.5z" fill="currentColor" />
+        <path d="m10 9.5 5 2.5-5 2.5z" fill={active ? 'var(--reel-bg, #000)' : 'currentColor'} />
       </svg>
     ),
   },
@@ -101,19 +96,6 @@ export default function BottomNav() {
   // "internet on karo" bolna chahiye) — tapping the locked Home tab doesn't
   // navigate, it just flashes this message for a couple seconds.
   const [showOfflineHint, setShowOfflineHint] = useState(false)
-  const u = useUpdate()
-  const metubeMsg = {
-    downloading: `MeTube download ho raha hai ${u.metubePct || 0}%`,
-    installing: 'Install screen khulegi — Install dabao',
-    needs_permission: 'Settings mein "Is source se allow karo" on karo, phir MeTube dobara dabao',
-    unavailable: 'MeTube abhi available nahi hai',
-    error: 'MeTube nahi khul paya, dobara try karo',
-  }[u.metubeStatus]
-  useEffect(() => {
-    if (!metubeMsg || u.metubeStatus === 'downloading') return undefined
-    const id = setTimeout(clearMetubeStatus, 4500) // auto-hide
-    return () => clearTimeout(id)
-  }, [u.metubeStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleHomeTap(e) {
     if (isOnline) return
@@ -123,34 +105,17 @@ export default function BottomNav() {
   }
 
   return (
-    <nav className="chrome-surface chrome-edge-t elevate-up fixed bottom-0 inset-x-0 z-40 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-40 px-3 pointer-events-none" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom))' }}>
+      {/* MeTube-style floating "glass" bar: rounded pill, blurred backdrop, soft ring.
+          Colors come from the active theme tokens, so the theme switcher still works. */}
+      <div className="pointer-events-auto max-w-md mx-auto rounded-[28px] bg-reel-surface/70 backdrop-blur-2xl backdrop-saturate-150 ring-1 ring-reel-ink/10 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)]">
       {showOfflineHint ? (
         <div className="chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full text-xs text-reel-ink whitespace-nowrap elevate page-fade-in">
           {t('nav_home_locked_hint')}
         </div>
       ) : null}
-      {metubeMsg ? (
-        <div className="chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full text-xs text-reel-ink whitespace-nowrap elevate page-fade-in max-w-[92vw] overflow-hidden text-ellipsis">
-          {metubeMsg}
-        </div>
-      ) : null}
-      <div className="max-w-6xl mx-auto grid grid-cols-5 px-2">
+      <div className="grid grid-cols-5 px-1">
         {TABS.map((tab) => {
-          if (tab.action === 'metube') {
-            return (
-              <button
-                key={tab.to}
-                type="button"
-                onClick={openMetube}
-                className="relative flex justify-center"
-              >
-                <span className="relative flex flex-col items-center justify-center gap-1 w-full pt-2.5 pb-2 text-[10px] font-semibold tracking-wide text-reel-muted hover:text-reel-ink active:scale-95 transition-colors duration-200">
-                  {tab.icon(false)}
-                  {t(tab.labelKey)}
-                </span>
-              </button>
-            )
-          }
           const isHome = tab.to === '/'
           const locked = isHome && !isOnline
           return (
@@ -188,6 +153,7 @@ export default function BottomNav() {
           )
         })}
       </div>
+    </div>
     </nav>
   )
 }
