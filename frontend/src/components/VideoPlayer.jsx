@@ -229,6 +229,8 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     }
   }, [isNative])
 
+  const latestRef = useRef({ title, qualityPayload })
+  latestRef.current = { title, qualityPayload }
   useEffect(() => {
     if (!isNative || !src) return
     // PERMANENT FIX (native side: window.AndroidPlayer.mount() ab ek 4th
@@ -258,11 +260,23 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
     // guess nahi karna padta.
     const sameEpisode = prevEpisodeKeyRef.current != null && prevEpisodeKeyRef.current === episodeKey
     prevEpisodeKeyRef.current = episodeKey
-    window.AndroidPlayer.mount(src, title || 'Video', qualityPayload(), window.location.pathname, sameEpisode)
+    const { title: ti, qualityPayload: qp } = latestRef.current
+    window.AndroidPlayer.mount(src, ti || 'Video', qp(), window.location.pathname, sameEpisode)
     return () => {
       window.AndroidPlayer.unmount && window.AndroidPlayer.unmount()
     }
-  }, [isNative, src, title, qualityPayload, nativeCloseTick, episodeKey])
+  }, [isNative, src, nativeCloseTick, episodeKey])
+
+  // RULE: title / quality-list changes must NEVER unmount the native player
+  // (unmount pauses + hides it — that caused random stops/reloads whenever a
+  // re-render produced a new `qualities` array identity). They are pushed via
+  // the same mount() call, which native de-dupes by uri.
+  const qualitySig = qualityPayload()
+  useEffect(() => {
+    if (!isNative || !src) return
+    window.AndroidPlayer.mount(src, latestRef.current.title || 'Video', qualitySig, window.location.pathname, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qualitySig])
 
   // BUG FIX (user report: "video ke andar wala Ambient mode on/off nahi ho
   // raha, bahar wala ho raha hai"): the web page's Ambient toggle (Player.jsx)
