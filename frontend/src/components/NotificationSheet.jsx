@@ -13,7 +13,7 @@ import { applyBundle, markNoticeSeen, startApkDownload } from '../lib/updateStor
 // "New to You" is built from (see notificationsStore.js) — so opening this
 // never needs its own backend endpoint.
 export default function NotificationSheet({ open, onClose }) {
-  const { items, loading } = useNotifications()
+  const { items, personal, loading } = useNotifications()
   const { t } = useLanguage()
   const u = useUpdate()
 
@@ -66,13 +66,44 @@ export default function NotificationSheet({ open, onClose }) {
           </div>
         ) : null}
 
+        {/* Real notifications: replies, announcements, subscription */}
+        {personal.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {personal.map((n, i) => {
+              const href = n.media_type && n.media_id ? `/title/${n.media_type}/${encodeURIComponent(n.media_id)}` : null
+              const icon = n.kind === 'reply' ? '💬' : n.kind === 'subscription' ? '⏳' : '📢'
+              const body = (
+                <>
+                  <span className="shrink-0 w-10 h-10 rounded-full bg-reel-surface2 ring-1 ring-reel-ink/10 flex items-center justify-center text-lg">
+                    {icon}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-reel-ink">{n.title}</span>
+                    {n.body ? <span className="block text-xs text-reel-muted line-clamp-2">{n.body}</span> : null}
+                  </span>
+                </>
+              )
+              const cls = 'flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-reel-ink/[0.04] active:scale-[0.98] transition'
+              return href ? (
+                <Link key={`${n.ts}-${i}`} to={href} onClick={onClose} className={cls}>{body}</Link>
+              ) : (
+                <div key={`${n.ts}-${i}`} className={cls}>{body}</div>
+              )
+            })}
+          </div>
+        ) : null}
+
+        {items.length > 0 ? (
+          <p className="text-[11px] uppercase tracking-wide text-reel-muted mb-2">Naya add hua</p>
+        ) : null}
+
         {loading ? (
           <div className="space-y-2.5 mb-1">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-14 rounded-xl bg-reel-surface2 animate-pulse" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && personal.length === 0 ? (
           <p className="text-reel-muted text-sm py-6 text-center">{t('notifications_empty')}</p>
         ) : (
           <div className="space-y-2 mb-1">

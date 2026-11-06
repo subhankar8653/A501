@@ -33,6 +33,7 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
   const [posting, setPosting] = useState(false)
   const [editingTs, setEditingTs] = useState(null)
   const [editText, setEditText] = useState('')
+  const [replyTo, setReplyTo] = useState(null) // comment being answered
 
   useEffect(() => {
     let cancelled = false
@@ -61,13 +62,14 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
       // title/poster ride along so this shows up nicely in the Profile
       // page's "My Comments" list without a second metadata fetch (dekho
       // database.py add_comment + get_user_comments).
-      const entry = await postComment(type, id, trimmed, title, poster)
+      const entry = await postComment(type, id, trimmed, title, poster, replyTo ? replyTo.ts : 0)
       setComments((prev) => {
         const next = [entry, ...(prev || [])]
         onCountChange?.(next.length)
         return next
       })
       setText('')
+      setReplyTo(null)
     } catch {
       /* backend hiccup — leave the draft so the user can retry */
     } finally {
@@ -119,6 +121,12 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
           {nick[0].toUpperCase()}
         </div>
         <div className="flex-1">
+          {replyTo ? (
+            <div className="flex items-center justify-between text-[11px] text-reel-muted mb-1.5 px-1">
+              <span className="truncate">↪ {replyTo.n} ko reply</span>
+              <button onClick={() => setReplyTo(null)} className="ml-2 text-reel-muted hover:text-reel-ink">✕</button>
+            </div>
+          ) : null}
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -129,7 +137,7 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
           />
           {text ? (
             <div className="flex gap-2 mt-2 justify-end">
-              <button onClick={() => setText('')} className="text-xs px-3 py-1 rounded text-reel-muted hover:text-reel-ink">
+              <button onClick={() => { setText(''); setReplyTo(null) }} className="text-xs px-3 py-1 rounded text-reel-muted hover:text-reel-ink">
                 {t('cancel')}
               </button>
               <button onClick={post} disabled={posting} className="text-xs px-3 py-1 rounded bg-reel-gold text-reel-bg font-semibold disabled:opacity-60">
@@ -163,7 +171,10 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
                 {c.n[0].toUpperCase()}
               </div>
               <div className="flex-1">
-                <p className="text-xs font-semibold text-reel-ink">{c.n}</p>
+                <p className="text-xs font-semibold text-reel-ink">
+                  {c.n}
+                  {c.rn ? <span className="font-normal text-reel-muted"> ↪ {c.rn}</span> : null}
+                </p>
                 {editingTs === c.ts ? (
                   <div className="mt-1">
                     <textarea
@@ -188,6 +199,12 @@ export default function Comments({ type, id, onCountChange, title, poster }) {
                     <p className="text-sm text-reel-ink/90 break-words">{c.t}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-[11px] text-reel-muted">{relTime(c.ts, t)}</span>
+                      <button
+                        onClick={() => { setReplyTo({ ts: c.ts, n: c.n }); setText('') }}
+                        className="text-[11px] text-reel-muted hover:text-reel-ink"
+                      >
+                        Reply
+                      </button>
                       {myUserId && c.u === myUserId ? (
                         <>
                           <button onClick={() => startEdit(c)} className="text-[11px] text-reel-muted hover:text-reel-ink">

@@ -39,9 +39,9 @@ const TABS = [
     to: '/new',
     labelKey: 'nav_new',
     icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill={active ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.4 : 2.1} strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="5" width="18" height="14" rx="4" />
-        <path d="m10 9.5 5 2.5-5 2.5z" fill={active ? 'var(--reel-bg, #000)' : 'currentColor'} />
+        <path d="M10.2 9.4v5.2l4.4-2.6z" fill="currentColor" stroke="none" />
       </svg>
     ),
   },
@@ -106,9 +106,18 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 px-3 pointer-events-none" style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom))' }}>
-      {/* MeTube-style floating "glass" bar: rounded pill, blurred backdrop, soft ring.
-          Colors come from the active theme tokens, so the theme switcher still works. */}
-      <div className="pointer-events-auto max-w-md mx-auto rounded-[28px] bg-reel-surface/70 backdrop-blur-2xl backdrop-saturate-150 ring-1 ring-reel-ink/10 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)]">
+      {/* Floating rounded bar. Colors come straight from the active theme's CSS
+          variables (inline color-mix: Tailwind's "/70" opacity does not work on
+          var() colors, which is why the old version looked washed out) and there
+          is NO backdrop blur — blur on an always-visible fixed bar was the cause
+          of the earlier lag. */}
+      <div
+        className="pointer-events-auto max-w-md mx-auto rounded-[28px] shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)]"
+        style={{
+          background: 'color-mix(in srgb, var(--reel-surface) 97%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--reel-ink) 12%, transparent)',
+        }}
+      >
       {showOfflineHint ? (
         <div className="chip absolute left-1/2 -translate-x-1/2 -top-11 px-3.5 py-2 rounded-full text-xs text-reel-ink whitespace-nowrap elevate page-fade-in">
           {t('nav_home_locked_hint')}
@@ -129,8 +138,8 @@ export default function BottomNav() {
             >
               {({ isActive }) => (
                 <span
-                  className={`relative flex flex-col items-center justify-center gap-1 w-full pt-2.5 pb-2 text-[10px] font-semibold tracking-wide transition-colors duration-200 active:scale-95 ${
-                    locked ? 'text-reel-muted/50' : isActive ? 'text-reel-gold' : 'text-reel-muted hover:text-reel-ink'
+                  className={`relative flex flex-col items-center justify-center gap-1 w-full pt-2.5 pb-2 text-[10.5px] font-semibold tracking-wide transition-colors duration-200 active:scale-95 ${
+                    locked ? 'text-reel-muted opacity-50' : isActive ? 'text-reel-gold' : 'text-reel-ink opacity-70 hover:opacity-100'
                   }`}
                 >
                   {/* Active indicator bar — replaces the old full-pill fill. */}
