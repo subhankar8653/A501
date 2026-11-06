@@ -642,11 +642,70 @@ object TdlibClient {
         // (no partial-download cache to poison), so a transient network
         // blip here just needs one plain retry — no [resetFileForRetry]
         // needed since there's nothing file-related to clean yet.
-        return try {
-            resolveFileAttempt(chatId, msgId, cacheKey)
-        } catch (e: Exception) {
-            Log.w(TAG, "resolveFile failed for chat_id=$chatId msg_id=$msgId, retrying once: ${e.message}")
-            resolveFileAttempt(chatId, msgId, cacheKey)
+        // ROOT-CAUSE FIX ("naye index kiye file pe kabhi connect hota hai kabhi
+        // nahi, aur bahut der rukta hai"): every phone is stuck to ONE bot of
+        // the pool. If that bot is not a member of the channel the NEW file
+        // lives in, getChat/getMessage fails ("Chat not found" / 403 / 404)
+        // for that phone only — so it works on some phones/attempts and not
+        // others, and the old code just retried the SAME bot and failed.
+        // Now a chat-access failure switches to the next bot of the pool
+        // (up to MAX_CHAT_FAILOVERS) and remembers the one that works.
+        var lastError: Exception? = null
+        var failovers = 0
+        var plainRetried = false
+        while (true) {
+            val seenRotation = rotation
+            try {
+                return resolveFileAttempt(chatId, msgId, cacheKey)
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(TAG, "resolveFile failed for chat_id=$chatId msg_id=$msgId: ${e.message}")
+                if (isChatAccessFailure(e) && failovers < MAX_CHAT_FAILOVERS && failoverForChatAccess(seenRotation)) {
+                    failovers++
+                    ensureReady()
+                    continue
+                }
+                if (!plainRetried) {
+                    plainRetried = true // one plain retry for transient network blips
+                    continue
+                }
+                throw lastError
+            }
+        }
+    }
+
+    private const val MAX_CHAT_FAILOVERS = 4
+
+    private fun isChatAccessFailure(e: Exception): Boolean {
+        val m = (e.message ?: "").lowercase()
+        return m.contains("chat not found") || m.contains("channel_private") ||
+            m.contains("not found") || m.contains("forbidden") ||
+            m.contains("chat_admin") || m.contains("error 400") ||
+            m.contains("error 403") || m.contains("error 404") ||
+            m.contains("getchat returned no response") || m.contains("timed out: getchat")
+    }
+
+    /** Switch to the next phone bot because the current one cannot see the
+     *  chat. [seenRotation] = rotation value when the failing call began, so
+     *  parallel failures only rotate once. */
+    private fun failoverForChatAccess(seenRotation: Int): Boolean {
+        synchronized(failoverLock) {
+            if (rotation != seenRotation) return true // someone else already rotated
+            val url = lastStreamUrl ?: return false
+            rotation++
+            Log.w(TAG, "Chat not accessible for this bot — switching to next phone bot (rotate=$rotation)")
+            configLoaded = false
+            authFailure = null
+            authReadyLatch = CountDownLatch(1)
+            tdlibParametersSent = false
+            botTokenSent = false
+            clientId = -1
+            messageFileCache.clear()
+            latestFileState.clear()
+            activeWindow.clear()
+            ensureConfigLoaded(url)
+            ensureClient()
+            return true
         }
     }
 
