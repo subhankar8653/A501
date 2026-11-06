@@ -1090,8 +1090,40 @@ async def add_comment_api(token: str, media_type: str, id: str, payload: dict, t
     name = (payload.get("name") or "").strip() or "Someone"
     title = payload.get("title") or ""
     poster = payload.get("poster") or ""
-    entry = await db.add_comment(media_type, id, int(user_id), name, text, title, poster)
+    try:
+        reply_to = int(payload.get("reply_to") or 0)
+    except (TypeError, ValueError):
+        reply_to = 0
+    entry = await db.add_comment(media_type, id, int(user_id), name, text, title, poster, reply_to)
     return {"comment": entry}
+
+
+#----- Notifications for the bell: replies to my comments, admin broadcasts
+#----- (/notify in the bot) and subscription reminders (computed from my expiry).
+@router.get("/{token}/notifications.json")
+async def notifications_api(token: str, token_data: dict = Depends(verify_token)):
+    user_id = token_data.get("user_id")
+    items = []
+    if user_id:
+        items = await db.get_notifications(int(user_id))
+        try:
+            user = await db.get_user(int(user_id))
+            expiry = user.get("subscription_expiry") if user else None
+            if expiry and SettingsManager.current().subscription and not token_data.get("is_admin"):
+                exp = expiry if expiry.tzinfo else expiry.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                days = (exp - now).days
+                if exp < now:
+                    items.append({"kind": "subscription", "title": "Subscription khatam ho gaya",
+                                  "body": "Dobara active karne ke liye bot se plan lo.", "ts": int(exp.timestamp())})
+                elif days <= 3:
+                    items.append({"kind": "subscription", "title": f"Subscription {max(days, 0)} din me khatam hoga",
+                                  "body": "Bina ruke dekhne ke liye time se renew karo.",
+                                  "ts": int((exp - timedelta(days=3)).timestamp())})
+        except Exception:
+            pass
+    items.sort(key=lambda i: i.get("ts", 0), reverse=True)
+    return {"items": items[:50]}
 
 
 @router.delete("/{token}/comments/{media_type}/{id}/{ts}")
