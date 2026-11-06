@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getManifest, groupCatalogsByTab, loadNewToYou, isVerified } from '../api'
+import { getManifest, getCatalog, groupCatalogsByTab, loadNewToYou, isVerified } from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
 import MediaCard from '../components/MediaCard'
 import VerifyGate from '../components/VerifyGate'
@@ -29,47 +29,53 @@ export default function HukaTubePage() {
 }
 
 // HukaTube tab: anime first (biggest section), then movies, k-drama, series and
-// short drama. Each section = newest uploads of that category (same
-// loadNewToYou() data path, so new uploads appear automatically).
+// short drama. Each section = newest uploads of that category, with a
+// "Load more" button that keeps going until the category is exhausted.
 const SECTIONS = [
-  { key: 'anime', title: 'Anime', limit: 18 },
-  { key: 'movie', title: 'Movies', limit: 9 },
-  { key: 'kdrama', title: 'K-Drama', limit: 9 },
-  { key: 'series', title: 'Series', limit: 6 },
-  { key: 'shortdrama', title: 'Short Drama', limit: 6 },
+  { key: 'anime', title: 'Anime', first: 18, step: 12 },
+  { key: 'movie', title: 'Movies', first: 9, step: 9 },
+  { key: 'kdrama', title: 'K-Drama', first: 9, step: 9 },
+  { key: 'series', title: 'Series', first: 6, step: 9 },
+  { key: 'shortdrama', title: 'Short Drama', first: 6, step: 9 },
 ]
+const PAGE = 15 // backend catalog page size
+const PAGES_ALREADY = 3 // loadNewToYou() already scanned pages 0-2 of every catalog
 
 function NewContent({ t }) {
-  const [data, setData] = useState(null) // null = loading
+  const [tabs, setTabs] = useState(null) // catalogs per tab
+  const [sec, setSec] = useState(null) // { key: { items, shown, page, more, busy } }
   const [failed, setFailed] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    setData(null)
+    setSec(null)
     setFailed(false)
     getManifest()
       .then(async (manifest) => {
-        const tabs = groupCatalogsByTab(manifest.catalogs)
+        const g = groupCatalogsByTab(manifest.catalogs)
         const out = {}
         await Promise.all(
-          SECTIONS.map(async (sec) => {
+          SECTIONS.map(async (s) => {
             try {
-              const groups = await loadNewToYou(tabs[sec.key] || [])
-              out[sec.key] = (groups[0]?.items || []).slice(0, sec.limit)
+              const groups = await loadNewToYou(g[s.key] || [])
+              const items = groups[0]?.items || []
+              out[s.key] = { items, shown: s.first, page: PAGES_ALREADY, more: (g[s.key] || []).length > 0, busy: false }
             } catch {
-              out[sec.key] = []
+              out[s.key] = { items: [], shown: s.first, page: PAGES_ALREADY, more: false, busy: false }
             }
           })
         )
-        return out
+        return [g, out]
       })
-      .then((out) => {
-        if (!cancelled) setData(out)
+      .then(([g, out]) => {
+        if (cancelled) return
+        setTabs(g)
+        setSec(out)
       })
       .catch(() => {
         if (!cancelled) {
-          setData({})
+          setSec({})
           setFailed(true)
         }
       })
@@ -78,13 +84,56 @@ function NewContent({ t }) {
     }
   }, [retryKey])
 
-  const nothing = data && SECTIONS.every((s) => !(data[s.key] || []).length)
+  function patch(key, p) {
+    setSec((prev) => ({ ...prev, [key]: { ...prev[key], ...p } }))
+  }
+
+  async function loadMore(s) {
+    const cur = sec[s.key]
+    if (cur.busy) return
+    // 1) still have unshown items in memory -> just reveal them
+    if (cur.shown < cur.items.length) {
+      patch(s.key, { shown: cur.shown + s.step })
+      return
+    }
+    // 2) fetch the next page of every catalog in this category
+    patch(s.key, { busy: true })
+    const known = new Set(cur.items.map((i) => i.id))
+    const fresh = []
+    let anyFull = false
+    await Promise.all(
+      ((tabs && tabs[s.key]) || []).map(async (cat) => {
+        try {
+          const metas = await getCatalog(cat.type, cat.id, { skip: cur.page * PAGE })
+          if (metas.length >= PAGE) anyFull = true
+          for (const m of metas) {
+            if (m && m.id && !known.has(m.id)) {
+              known.add(m.id)
+              fresh.push(m)
+            }
+          }
+        } catch {
+          /* skip this catalog */
+        }
+      })
+    )
+    fresh.sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0))
+    patch(s.key, {
+      items: [...cur.items, ...fresh],
+      shown: cur.shown + s.step,
+      page: cur.page + 1,
+      more: anyFull,
+      busy: false,
+    })
+  }
+
+  const nothing = sec && SECTIONS.every((s) => !(sec[s.key]?.items || []).length)
 
   return (
     <div className="max-w-6xl mx-auto py-5 sm:py-6 px-4 sm:px-6">
       <h1 className="font-display text-2xl font-semibold mb-6">{t('nav_new')}</h1>
 
-      {data === null ? (
+      {sec === null ? (
         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-4">
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="aspect-[2/3] rounded-md bg-reel-surface2 animate-pulse" />
@@ -101,19 +150,32 @@ function NewContent({ t }) {
           </button>
         </div>
       ) : (
-        SECTIONS.map((sec) => {
-          const items = data[sec.key] || []
-          if (!items.length) return null
+        SECTIONS.map((s) => {
+          const st = sec[s.key]
+          if (!st || !st.items.length) return null
+          const visible = st.items.slice(0, st.shown)
+          const canMore = st.shown < st.items.length || st.more
           return (
-            <section key={sec.key} className="mb-8">
-              <h2 className={`font-display font-semibold mb-3 ${sec.key === 'anime' ? 'text-xl text-reel-gold' : 'text-lg'}`}>
-                {sec.title}
+            <section key={s.key} className="mb-8">
+              <h2 className={`font-display font-semibold mb-3 ${s.key === 'anime' ? 'text-xl text-reel-gold' : 'text-lg'}`}>
+                {s.title}
               </h2>
               <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-x-3 gap-y-6">
-                {items.map((item, i) => (
+                {visible.map((item, i) => (
                   <MediaCard key={item.id} item={item} index={i} />
                 ))}
               </div>
+              {canMore ? (
+                <div className="flex justify-center mt-5">
+                  <button
+                    onClick={() => loadMore(s)}
+                    disabled={st.busy}
+                    className="px-6 py-2.5 rounded-full text-sm font-semibold bg-reel-surface2 text-reel-gold border border-reel-gold/40 active:scale-95 transition disabled:opacity-60"
+                  >
+                    {st.busy ? 'Loading…' : `Load more ${s.title}`}
+                  </button>
+                </div>
+              ) : null}
             </section>
           )
         })

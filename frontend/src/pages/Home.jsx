@@ -72,6 +72,15 @@ function HomeContent({ t }) {
   // and mutates, not something that should trigger a re-render itself.
   const [tabExhausted, setTabExhausted] = useState({})
   const [loadingMore, setLoadingMore] = useState(false)
+
+  // Tells the opening intro (components/Intro.jsx) that real content is on
+  // screen, so it can fade out exactly when the app is ready.
+  useEffect(() => {
+    if (!loadingTab && Object.keys(groupsByTab).length) {
+      window.__hukaReady = true
+      window.dispatchEvent(new Event('huka-app-ready'))
+    }
+  }, [loadingTab, groupsByTab])
   const loadStatesRef = useRef({})
   const [error, setError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
