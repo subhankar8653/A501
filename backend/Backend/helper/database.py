@@ -78,6 +78,7 @@ class Database:
         if tracking is not None:
             try:
                 await tracking["custom_catalogs"].create_index([("updated_at", DESCENDING)])
+                await tracking["notifications"].create_index([("user_id", ASCENDING), ("ts", DESCENDING)])
                 await tracking["custom_catalogs"].create_index(
                     [("items.tmdb_id", ASCENDING), ("items.media_type", ASCENDING)]
                 )
@@ -213,12 +214,23 @@ class Database:
     #----- Comments: { _id, comments: [{u,n,t,ts}, ...] } capped at 100 (oldest drop first)
     COMMENTS_CAP = 100
 
-    async def add_comment(self, media_type: str, media_id: str, user_id: int, name: str, text: str, title: str = "", poster: str = "") -> dict:
+    async def add_comment(self, media_type: str, media_id: str, user_id: int, name: str, text: str, title: str = "", poster: str = "", reply_to: int = 0) -> dict:
         text = (text or "").strip()[:500]  # hard cap so one comment can't blow up the document
         if not text:
             raise ValueError("empty comment")
         key = self._media_key(media_type, media_id)
         entry = {"u": user_id, "n": (name or "")[:60], "t": text, "ts": int(datetime.now(timezone.utc).timestamp())}
+        # Reply: remember which comment this answers, and tell that person.
+        parent = None
+        if reply_to:
+            doc = await self.dbs["tracking"]["comments"].find_one({"_id": key})
+            for c in (doc.get("comments") or []) if doc else []:
+                if c.get("ts") == int(reply_to):
+                    parent = c
+                    break
+            if parent:
+                entry["r"] = int(reply_to)
+                entry["rn"] = (parent.get("n") or "")[:60]
         update = {"$push": {"comments": {"$each": [entry], "$slice": -self.COMMENTS_CAP}}}
         # PROFILE FEATURE (user ask: "My Comments — apne comments ki list,
         # edit/delete ka option"): title/poster stashed once on the parent
@@ -228,7 +240,40 @@ class Database:
         if title or poster:
             update["$set"] = {"title": (title or "")[:200], "poster": (poster or "")[:500]}
         await self.dbs["tracking"]["comments"].update_one({"_id": key}, update, upsert=True)
+        if parent and parent.get("u") and int(parent["u"]) != int(user_id):
+            try:
+                await self.add_notification(
+                    int(parent["u"]), "reply",
+                    f"{(name or 'Someone')[:40]} ne reply kiya",
+                    text[:140], media_type=media_type, media_id=media_id,
+                    poster=poster,
+                    ref=f"reply:{key}:{entry['ts']}",
+                )
+            except Exception:
+                pass
         return entry
+
+    #----- In-app notifications (per user; user_id 0 = broadcast to everyone).
+    # Newest first, capped, auto-expire after 30 days via the `ts` age check on read.
+    async def add_notification(self, user_id: int, kind: str, title: str, body: str = "",
+                               media_type: str = "", media_id: str = "", poster: str = "", ref: str = "") -> None:
+        doc = {
+            "user_id": int(user_id), "kind": kind, "title": (title or "")[:120], "body": (body or "")[:300],
+            "media_type": media_type, "media_id": media_id, "poster": (poster or "")[:500],
+            "ts": int(datetime.now(timezone.utc).timestamp()), "ref": ref,
+        }
+        await self.dbs["tracking"]["notifications"].insert_one(doc)
+
+    async def get_notifications(self, user_id: int, limit: int = 40) -> list:
+        cutoff = int(datetime.now(timezone.utc).timestamp()) - 30 * 86400
+        cursor = self.dbs["tracking"]["notifications"].find(
+            {"user_id": {"$in": [int(user_id), 0]}, "ts": {"$gte": cutoff}}
+        ).sort("ts", -1).limit(limit)
+        out = []
+        async for d in cursor:
+            d.pop("_id", None)
+            out.append(d)
+        return out
 
     async def get_comments(self, media_type: str, media_id: str) -> list:
         key = self._media_key(media_type, media_id)
