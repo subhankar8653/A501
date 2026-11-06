@@ -442,7 +442,13 @@ async def resolve_handler(token: str, id: str, token_data: dict = Depends(verify
     # Best-effort file name/mime for the client to set up its player/download
     # target before the TDLib fetch starts. Not authoritative — the phone's
     # TDLib getMessage/downloadFile call is the source of truth for size.
-    final_title = await _lookup_title(id, "")
+    # SPEED FIX: _lookup_title() runs an unindexed nested-array Mongo scan
+    # (movie.telegram.id / tv.seasons.episodes.telegram.id) across every storage
+    # DB. For a file nobody played since the last restart (= every NEW file) that
+    # scan blocked the play button for seconds. The phone does not need the title
+    # to start playback, so only use it if it is already cached.
+    cached_title = _title_cache.get(id)
+    final_title = cached_title[0] if cached_title else None
 
     return JSONResponse({
         "chat_id": chat_id,
