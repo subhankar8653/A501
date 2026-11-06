@@ -113,6 +113,18 @@ async def set_apk(client: Client, message: Message):
         await _reply(message, f"⚠️ Error: {e}")
 
 
+@Client.on_message(filters.command("notify") & _OWNER_PRIVATE, group=5)
+async def broadcast_notify(client: Client, message: Message):
+    """/notify Title | message  -> shows in every user's in-app bell."""
+    from Backend import db
+    raw = (message.text or "").split(None, 1)
+    if len(raw) < 2:
+        return await _reply(message, "Use: /notify Title | message")
+    title, _, body = raw[1].partition("|")
+    await db.add_notification(0, "broadcast", title.strip(), body.strip(), ref="broadcast")
+    await _reply(message, "✅ Notification sabke bell me chala gaya.")
+
+
 @Client.on_message((filters.command("setmetube") | filters.caption & filters.regex(r"^/setmetube\b")) & _OWNER_PRIVATE, group=5)
 async def set_metube(client: Client, message: Message):
     try:
