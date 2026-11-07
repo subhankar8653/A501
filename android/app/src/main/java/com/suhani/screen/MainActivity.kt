@@ -1025,6 +1025,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         webView.isSaveEnabled = false
         swipeRefresh = findViewById(R.id.swipe_refresh)
         initialLoadingView = findViewById(R.id.initialLoadingView)
+        // Splash logo size = web intro ke tile ke barabar: min(26% width, 112dp)
+        findViewById<View>(R.id.splashLogo)?.let { logo ->
+            val d = resources.displayMetrics
+            val px = minOf(d.widthPixels * 0.26f, 112f * d.density).toInt()
+            logo.layoutParams = logo.layoutParams.apply { width = px; height = px }
+        }
         loadErrorView = findViewById(R.id.loadErrorView)
         loadErrorTitle = findViewById(R.id.loadErrorTitle)
         loadErrorMessage = findViewById(R.id.loadErrorMessage)
@@ -1048,6 +1054,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusBarInsetPx = bars.top
             view.setPadding(bars.left, bars.top, bars.right, 0)
+            // splash logo ka center WebView ke center se match kare
+            findViewById<View>(R.id.initialLoadingView)?.setPadding(bars.left, bars.top, bars.right, 0)
             // navBarMask ki height ab asli nav-bar inset ke barabar — dekho
             // activity_main.xml mein iska poora comment (nav bar solid
             // black fix, Round 2).
