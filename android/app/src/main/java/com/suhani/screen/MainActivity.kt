@@ -162,6 +162,13 @@ class WebAppInterface(private val activity: MainActivity) {
         runOnUiThreadSafely { activity.updateInlinePlayerRect(left, top, width, height, currentPath) }
     }
 
+    /** Intro/loading screen full-screen ho: status + navigation bar chhupao, intro
+     *  khatam hote hi wapas dikhao (index.html ka inline script bulata hai). */
+    @JavascriptInterface
+    fun setImmersive(on: Boolean) {
+        runOnUiThreadSafely { activity.setSystemBarsHidden(on) }
+    }
+
     @JavascriptInterface
     fun unmount() {
         runOnUiThreadSafely { activity.unmountInlinePlayer() }
@@ -967,6 +974,22 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         loadErrorView.visibility = View.VISIBLE
     }
 
+    private val barsSafetyHandler = Handler(Looper.getMainLooper())
+
+    fun setSystemBarsHidden(hidden: Boolean) {
+        try {
+            val c = WindowCompat.getInsetsController(window, window.decorView)
+            if (hidden) {
+                c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                c.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                barsSafetyHandler.removeCallbacksAndMessages(null)
+                c.show(WindowInsetsCompat.Type.systemBars())
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // DownloadService ke saath registration — dekho onDownloadProgress/
@@ -1050,6 +1073,11 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // calculation mein bhi add karenge (nahi to chhota player status bar ke
         // andar ghusa dikhta).
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Cold start: loading + intro poori screen par (bars hidden). Intro khatam
+        // hone par JS setImmersive(false) bulata hai; agar kisi wajah se (purana
+        // bundle, error) wo na aaye to safety timer 14s baad bars wapas la deta hai.
+        setSystemBarsHidden(true)
+        barsSafetyHandler.postDelayed({ setSystemBarsHidden(false) }, 14_000L)
         ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusBarInsetPx = bars.top
