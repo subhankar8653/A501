@@ -79,6 +79,57 @@ function writeDiskCache(c) {
   }
 }
 
+// One place that builds every section (used by the page itself and by the
+// start-up prefetch below).
+async function fetchSections() {
+  const manifest = await getManifest()
+  const g = groupCatalogsByTab(manifest.catalogs)
+  const out = {}
+  await Promise.all(
+    SECTIONS.map(async (s) => {
+      try {
+        const groups = await loadNewToYou(g[s.key] || [])
+        const items = groups[0]?.items || []
+        out[s.key] = { items, shown: s.first, page: PAGES_ALREADY, more: (g[s.key] || []).length > 0, busy: false }
+      } catch {
+        out[s.key] = { items: [], shown: s.first, page: PAGES_ALREADY, more: false, busy: false }
+      }
+    })
+  )
+  return [g, out]
+}
+
+// Called once while the opening loading screen is up: fills the in-memory cache
+// (and warms the first posters) so the HukaTube tab opens instantly and the
+// app does no catch-up work after the intro. Safe to call repeatedly.
+let prefetching = null
+export function prefetchNew() {
+  if (memCache && Date.now() - memCache.ts < FRESH_MS) return Promise.resolve()
+  if (prefetching) return prefetching
+  prefetching = fetchSections()
+    .then(([g, out]) => {
+      const total = SECTIONS.reduce((n, s) => n + (out[s.key]?.items?.length || 0), 0)
+      if (!total) return
+      const c = { tabs: g, sec: out, ts: Date.now() }
+      memCache = { ...c, scrollY: 0 }
+      writeDiskCache(c)
+      for (const s of SECTIONS) {
+        for (const it of (out[s.key]?.items || []).slice(0, 4)) {
+          if (it && it.poster) {
+            const im = new Image()
+            im.decoding = 'async'
+            im.src = it.poster
+          }
+        }
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      prefetching = null
+    })
+  return prefetching
+}
+
 function NewContent({ t }) {
   const boot = memCache || readDiskCache()
   const [tabs, setTabs] = useState(boot ? boot.tabs : null) // catalogs per tab
@@ -126,23 +177,7 @@ function NewContent({ t }) {
       setSec(null)
       setFailed(false)
     }
-    getManifest()
-      .then(async (manifest) => {
-        const g = groupCatalogsByTab(manifest.catalogs)
-        const out = {}
-        await Promise.all(
-          SECTIONS.map(async (s) => {
-            try {
-              const groups = await loadNewToYou(g[s.key] || [])
-              const items = groups[0]?.items || []
-              out[s.key] = { items, shown: s.first, page: PAGES_ALREADY, more: (g[s.key] || []).length > 0, busy: false }
-            } catch {
-              out[s.key] = { items: [], shown: s.first, page: PAGES_ALREADY, more: false, busy: false }
-            }
-          })
-        )
-        return [g, out]
-      })
+    fetchSections()
       .then(([g, out]) => {
         if (cancelled) return
         const total = SECTIONS.reduce((n, s) => n + (out[s.key]?.items?.length || 0), 0)
