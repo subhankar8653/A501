@@ -32,9 +32,12 @@
       #hb .cw{position:absolute;inset:0}
       /* EXIT: logo + effects fade out over the (still opaque) dark backdrop first, THEN the
          backdrop itself fades away into the app. Nothing slides, no ghost of the intro. */
+      #hb .cover{position:absolute;inset:0;opacity:0;pointer-events:none}
+      #hb.out .cover{animation:hb-cov .34s ease-in-out forwards}
+      @keyframes hb-cov{to{opacity:1}}
       #hb.out .cw{animation:hb-cx .32s ease-in forwards}
       @keyframes hb-cx{to{opacity:0;transform:scale(1.05)}}
-      #hb.out{animation:hb-fade .55s ease-in-out .3s forwards;pointer-events:none}
+      #hb.out{animation:hb-fade .5s ease-in-out .42s forwards;pointer-events:none}
       @keyframes hb-fade{to{opacity:0}}
 
       #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
@@ -182,6 +185,7 @@
       <div class="ld"><div class="ldb"><div class="ldf"><div class="ldsh"></div></div></div><div class="ldr"><span class="ldt">Loading</span><span class="ldp" id="hbp">0%</span></div></div>
       <div class="grain"></div><div class="vig"></div>
      </div>
+     <div class="cover"></div>
     </div>
     <script>
     (function () {
@@ -190,9 +194,16 @@
       function bars(hidden) { try { window.AndroidPlayer && window.AndroidPlayer.setImmersive && window.AndroidPlayer.setImmersive(!!hidden); } catch (e) {} }
       try {
         // once per app session: reloads / pull-to-refresh must not replay it
-        if (sessionStorage.getItem('huka-intro-done') === '1') { el.parentNode.removeChild(el); bars(false); return; }
+        if (sessionStorage.getItem('huka-intro-done') === '1') { el.parentNode.removeChild(el); bars(false); try { window.AndroidPlayer && window.AndroidPlayer.splashReady && window.AndroidPlayer.splashReady(); } catch (e) {} return; }
         sessionStorage.setItem('huka-intro-done', '1');
       } catch (e) {}
+      var visible = false, lastTick = 0;
+      // Tell native to drop its splash ONLY after the web loading screen has really painted
+      // (2 frames) — no black gap between the native logo and the web loader.
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        visible = true; lastTick = Date.now();
+        try { window.AndroidPlayer && window.AndroidPlayer.splashReady && window.AndroidPlayer.splashReady(); } catch (e) {}
+      }); });
       bars(true); // full-screen: hide status + navigation bar while loading/intro
       // pre-go: tile sits at the exact screen centre (same spot as the native splash logo)
       try {
@@ -217,10 +228,16 @@
 
       function leave() {
         if (done) return; done = true;
-        bars(false); // system bars return while the curtain is still covering (layout reflow stays hidden)
-        el.classList.add('out');
         try { stopSnd(); } catch (e) {}
-        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1000);
+        bars(false); // system bars + normal layout come back while the intro is still fully opaque
+        setTimeout(function () {
+          try {
+            var c = el.querySelector('.cover'), bg = getComputedStyle(document.body).backgroundColor;
+            c.style.background = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#0B0B0F';
+          } catch (e) {}
+          el.classList.add('out');
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1100);
+        }, 260);
       }
       el.addEventListener('click', function () { if (started) leave(); });
 
@@ -314,20 +331,24 @@
       }
       var tick = setInterval(function () {
         if (started) { clearInterval(tick); return; }
-        var age = Date.now() - tStart;
+        var now = Date.now(), age = now - tStart;
+        if (!visible) { if (age >= LOAD_MAX) { visible = true; lastTick = now; } else return; }
+        var dt = Math.min(0.25, (now - lastTick) / 1000); lastTick = now;
         var mounted = !!window.__hukaMounted, ready = mounted && !!window.__hukaReady;
         if (mounted && !audioInit) { audioInit = true; setTimeout(initAudio, 200); }
-        cap = Math.min(66, 25 + age / 110);
-        if (pageLoaded) cap = Math.max(cap, 55);
-        if (mounted) cap = Math.max(cap, 78 + Math.min(17, age / 450));
         var audioOk = audioDone || age >= LOAD_MIN + 3000;
-        // done = Home on screen + network idle + first posters loaded + 900 ms with no heavy
+        // done = Home on screen + network idle + first posters loaded + 600 ms with no heavy
         // main-thread task. Only then the 100% / intro (so nothing is left to run behind it).
-        var calm = ready && netIdle() && imagesSettled() && (Date.now() - lastBusy) > 900;
-        if ((calm && audioOk && age >= LOAD_MIN) || age >= LOAD_MAX) cap = 100;
-        pct += (cap - pct) * (cap === 100 ? 0.3 : 0.08) + (cap === 100 ? 0.8 : 0.04);
-        if (pct > cap) pct = cap;
-        if (cap === 100 && pct > 99.5) pct = 100;
+        var calm = ready && netIdle() && imagesSettled() && (now - lastBusy) > 600;
+        var finish = (calm && audioOk && age >= LOAD_MIN) || age >= LOAD_MAX;
+        // Even speed: a steady ~19 %/s. Real milestones only act as ceilings (50 -> 80 -> 94);
+        // at a ceiling the bar keeps creeping (1.5 %/s, never past 99) instead of freezing,
+        // and once everything is truly done it finishes at a steady ~70 %/s.
+        var cap = !mounted ? 50 : (!ready ? 80 : 94);
+        var rate = 19;
+        if (finish) rate = 70;
+        else if (pct >= cap) { rate = 1.5; cap = Math.min(99, cap + 5); }
+        pct = Math.min(finish ? 100 : cap, pct + rate * dt);
         setP(pct);
         if (pct >= 100) { clearInterval(tick); setTimeout(go, 280); }
       }, 90);
