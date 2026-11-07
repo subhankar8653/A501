@@ -116,35 +116,36 @@
       @keyframes hb-ldin{to{opacity:1}}
       @keyframes hb-ldout{from{opacity:1}to{opacity:0;visibility:hidden}}
       @keyframes hb-ld{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
-      /* ---- cinematic background (static layers + slow compositor drifts) ---- */
+      /* ---- cinematic background: bokeh + aurora + sparkles + orbit rings (transform/opacity only) ---- */
       #hb .bgblob{position:absolute;width:95vmin;height:95vmin;border-radius:50%;will-change:transform}
       #hb .b1{left:-34vmin;top:-22vmin;background:radial-gradient(circle,rgba(253,176,30,.20),transparent 66%)}
-      #hb .b2{right:-38vmin;bottom:-26vmin;background:radial-gradient(circle,rgba(110,90,255,.24),transparent 66%)}
+      #hb .b2{right:-38vmin;bottom:-26vmin;background:radial-gradient(circle,rgba(110,90,255,.26),transparent 66%)}
+      #hb .b3{left:-30vmin;bottom:-22vmin;background:radial-gradient(circle,rgba(40,190,190,.16),transparent 66%)}
       #hb.go .b1{animation:hb-d1 13s ease-in-out infinite alternate}
       #hb.go .b2{animation:hb-d2 16s ease-in-out infinite alternate}
+      #hb.go .b3{animation:hb-d1 19s ease-in-out infinite alternate-reverse}
       @keyframes hb-d1{to{transform:translate(18vmin,14vmin) scale(1.15)}}
       @keyframes hb-d2{to{transform:translate(-16vmin,-12vmin) scale(1.12)}}
-      #hb .rays{position:absolute;left:0;right:0;top:0;height:78vh;opacity:0;
-        background:repeating-conic-gradient(from 160deg at 50% -3%,rgba(255,214,120,.11) 0 2.6deg,transparent 2.6deg 8deg);
-        -webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 72%);mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 72%)}
-      #hb.go .rays{animation:hb-fin 1.6s ease-out .1s both}
-      @keyframes hb-fin{from{opacity:0}to{opacity:1}}
-      #hb .dots{position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.11) 1px,transparent 1.5px);background-size:22px 22px;
-        -webkit-mask-image:radial-gradient(ellipse at 50% 46%,#000 0%,transparent 62%);mask-image:radial-gradient(ellipse at 50% 46%,#000 0%,transparent 62%)}
-      #hb .grain{position:absolute;inset:0;opacity:.06;pointer-events:none;
-        background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
-      #hb .film{position:absolute;left:-60px;right:-60px;height:26px;opacity:0;will-change:transform,opacity;
-        border-top:1px solid rgba(253,208,8,.2);border-bottom:1px solid rgba(253,208,8,.2);background:rgba(255,255,255,.035);
-        background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.16) 0 14px,transparent 14px 30px);background-size:100% 8px;background-position:0 9px;background-repeat:no-repeat}
-      #hb .f1{top:11%}#hb .f2{bottom:11%}
-      #hb.go .f1{animation:hb-fin .9s ease-out .2s both,hb-filmL 3.2s linear infinite}
-      #hb.go .f2{animation:hb-fin .9s ease-out .3s both,hb-filmR 3.2s linear infinite}
-      @keyframes hb-filmL{to{transform:translateX(-30px)}}
-      @keyframes hb-filmR{from{transform:translateX(-30px)}to{transform:translateX(0)}}
-      #hb .flo{position:absolute;inset:0;pointer-events:none}
-      #hb .flo u{position:absolute;opacity:0;background:linear-gradient(135deg,#ffe27a,#fdd008);clip-path:polygon(0 0,100% 50%,0 100%);will-change:transform,opacity}
-      #hb.go .flo u{animation:hb-float 12s ease-in-out infinite alternate}
-      @keyframes hb-float{0%{opacity:0;transform:translateY(0) rotate(0)}25%{opacity:var(--o)}100%{opacity:var(--o);transform:translateY(-28vh) rotate(70deg)}}
+      #hb .bk{position:absolute;inset:0;pointer-events:none}
+      #hb .bk i{position:absolute;border-radius:50%;opacity:calc(var(--o) * .22);will-change:transform,opacity;
+        background:radial-gradient(circle,rgba(var(--c),.10) 0,rgba(var(--c),.16) 58%,rgba(var(--c),.50) 64%,rgba(var(--c),0) 71%)}
+      #hb.go .bk i{opacity:calc(var(--o) * .5);transition:opacity 1.5s ease;animation:hb-bk 22s ease-in-out infinite alternate}
+      @keyframes hb-bk{to{transform:translate(var(--dx),var(--dy))}}
+      #hb .sp{position:absolute;inset:0;pointer-events:none}
+      #hb .sp s{position:absolute;opacity:0;background:linear-gradient(135deg,#fff,#ffe27a);will-change:transform,opacity;
+        clip-path:polygon(50% 0,59% 41%,100% 50%,59% 59%,50% 100%,41% 59%,0 50%,41% 41%)}
+      #hb.go .sp s{animation:hb-tw 3s ease-in-out infinite}
+      @keyframes hb-tw{0%,100%{opacity:0;transform:scale(.3) rotate(0)}50%{opacity:.95;transform:scale(1) rotate(45deg)}}
+      /* orbit rings around the tile (appear with the burst) */
+      #hb .orb{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+      #hb .obw{position:absolute;opacity:0;--d:calc(var(--s) * var(--k));width:var(--d);height:var(--d);left:calc(var(--d) / -2);top:calc(var(--d) / -2);will-change:transform,opacity}
+      #hb.go .obw{animation:hb-ob 1.3s cubic-bezier(.2,.9,.25,1.08) 1.4s both}
+      @keyframes hb-ob{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:scale(1)}}
+      #hb .ob{position:absolute;inset:0;border-radius:50%;transform:perspective(520px) rotateX(var(--tx)) rotateY(var(--ty))}
+      #hb .obs{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(253,208,8,.40);box-shadow:0 0 16px rgba(253,208,8,.16),inset 0 0 16px rgba(253,208,8,.08);
+        animation:hb-spin 8s linear infinite;will-change:transform}
+      #hb .obs i{position:absolute;left:50%;top:-4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:#fff;box-shadow:0 0 10px 3px rgba(253,208,8,.9)}
+      @keyframes hb-spin{to{transform:rotate(360deg)}}
       #hb.go .stage{animation:hb-push 8s cubic-bezier(.25,.1,.3,1) both}
       @keyframes hb-push{from{transform:scale(1)}to{transform:scale(1.055)}}
       #hb .vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(0,0,0,.5) 100%)}
@@ -153,16 +154,16 @@
   <body class="bg-reel-bg text-reel-ink font-body">
     <div id="hb" aria-hidden="true">
      <div class="cw">
-      <div class="bgblob b1"></div><div class="bgblob b2"></div>
-      <div class="rays"></div><div class="dots"></div>
-      <div class="film f1"></div><div class="film f2"></div>
-      <div class="flo"><u style="left:17%;top:59%;width:38px;height:38px;--o:.12;animation-duration:9s;animation-delay:-4s"></u><u style="left:6%;top:8%;width:14px;height:14px;--o:.05;animation-duration:10s;animation-delay:-3s"></u><u style="left:52%;top:58%;width:30px;height:30px;--o:.07;animation-duration:12s;animation-delay:-1s"></u><u style="left:38%;top:51%;width:46px;height:46px;--o:.09;animation-duration:9s;animation-delay:-4s"></u><u style="left:56%;top:23%;width:14px;height:14px;--o:.05;animation-duration:10s;animation-delay:-3s"></u><u style="left:11%;top:67%;width:14px;height:14px;--o:.07;animation-duration:15s;animation-delay:-7s"></u><u style="left:75%;top:32%;width:46px;height:46px;--o:.07;animation-duration:12s;animation-delay:-8s"></u><u style="left:20%;top:61%;width:46px;height:46px;--o:.05;animation-duration:14s;animation-delay:-6s"></u><u style="left:57%;top:35%;width:30px;height:30px;--o:.09;animation-duration:9s;animation-delay:-4s"></u></div>
+      <div class="bgblob b1"></div><div class="bgblob b2"></div><div class="bgblob b3"></div>
+      <div class="bk"><i style="left:94%;top:11%;width:72px;height:72px;--c:70,200,205;--o:0.36;--dx:-23px;--dy:8px;animation-duration:17s;animation-delay:-0s"></i><i style="left:83%;top:-2%;width:124px;height:124px;--c:255,140,50;--o:0.42;--dx:56px;--dy:-77px;animation-duration:23s;animation-delay:-12s"></i><i style="left:46%;top:51%;width:96px;height:96px;--c:253,190,40;--o:0.61;--dx:-35px;--dy:-21px;animation-duration:21s;animation-delay:-2s"></i><i style="left:38%;top:-1%;width:40px;height:40px;--c:70,200,205;--o:0.72;--dx:-45px;--dy:-56px;animation-duration:19s;animation-delay:-3s"></i><i style="left:3%;top:57%;width:22px;height:22px;--c:70,200,205;--o:0.4;--dx:11px;--dy:-42px;animation-duration:23s;animation-delay:-16s"></i><i style="left:89%;top:96%;width:30px;height:30px;--c:255,140,50;--o:0.53;--dx:-11px;--dy:-61px;animation-duration:22s;animation-delay:-13s"></i><i style="left:-4%;top:32%;width:30px;height:30px;--c:253,208,8;--o:0.47;--dx:53px;--dy:-85px;animation-duration:19s;animation-delay:-5s"></i><i style="left:73%;top:80%;width:56px;height:56px;--c:253,208,8;--o:0.36;--dx:-42px;--dy:-36px;animation-duration:23s;animation-delay:-8s"></i><i style="left:94%;top:76%;width:22px;height:22px;--c:130,105,255;--o:0.76;--dx:-11px;--dy:-72px;animation-duration:17s;animation-delay:-2s"></i><i style="left:70%;top:79%;width:30px;height:30px;--c:255,140,50;--o:0.31;--dx:-13px;--dy:5px;animation-duration:25s;animation-delay:-14s"></i><i style="left:71%;top:59%;width:30px;height:30px;--c:253,208,8;--o:0.37;--dx:-11px;--dy:-44px;animation-duration:26s;animation-delay:-4s"></i><i style="left:25%;top:76%;width:40px;height:40px;--c:255,140,50;--o:0.7;--dx:-40px;--dy:51px;animation-duration:19s;animation-delay:-12s"></i><i style="left:73%;top:8%;width:56px;height:56px;--c:70,200,205;--o:0.33;--dx:-47px;--dy:-81px;animation-duration:24s;animation-delay:-8s"></i><i style="left:90%;top:88%;width:30px;height:30px;--c:70,200,205;--o:0.44;--dx:45px;--dy:35px;animation-duration:20s;animation-delay:-16s"></i><i style="left:88%;top:6%;width:30px;height:30px;--c:255,140,50;--o:0.43;--dx:11px;--dy:-72px;animation-duration:20s;animation-delay:-6s"></i></div>
+      <div class="sp"><s style="left:5%;top:12%;width:8px;height:8px;animation-duration:3.4s;animation-delay:-1.9s"></s><s style="left:34%;top:11%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-0.6s"></s><s style="left:50%;top:71%;width:10px;height:10px;animation-duration:2.8s;animation-delay:-0s"></s><s style="left:20%;top:61%;width:10px;height:10px;animation-duration:3.4s;animation-delay:-3.1s"></s><s style="left:77%;top:21%;width:14px;height:14px;animation-duration:2.2s;animation-delay:-0s"></s><s style="left:48%;top:93%;width:12px;height:12px;animation-duration:3.4s;animation-delay:-0s"></s><s style="left:79%;top:85%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.9s"></s><s style="left:42%;top:44%;width:6px;height:6px;animation-duration:2.8s;animation-delay:-0s"></s><s style="left:60%;top:73%;width:6px;height:6px;animation-duration:3.4s;animation-delay:-3.1s"></s><s style="left:93%;top:20%;width:6px;height:6px;animation-duration:3.4s;animation-delay:-1.2s"></s><s style="left:90%;top:64%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.9s"></s><s style="left:66%;top:77%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-2.5s"></s><s style="left:51%;top:78%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-2.5s"></s><s style="left:13%;top:15%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.2s"></s><s style="left:45%;top:53%;width:12px;height:12px;animation-duration:4.0s;animation-delay:-1.9s"></s><s style="left:72%;top:14%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-1.2s"></s></div>
       <div class="glow"></div>
       <div class="ember"></div>
       <div class="beam"></div>
       <div class="stage">
         <div class="mark">
           <div class="flash"></div><div class="ring"></div><div class="ring r2"></div>
+          <div class="orb"><div class="obw" style="--k:1.9"><div class="ob" style="--tx:70deg;--ty:-16deg"><div class="obs" style="animation-duration:7s;animation-direction:normal"><i></i></div></div></div><div class="obw" style="--k:2.55"><div class="ob" style="--tx:66deg;--ty:24deg"><div class="obs" style="animation-duration:10s;animation-direction:reverse"><i></i></div></div></div><div class="obw" style="--k:3.3"><div class="ob" style="--tx:74deg;--ty:4deg"><div class="obs" style="animation-duration:14s;animation-direction:normal"><i></i></div></div></div></div>
           <div class="mv"><div class="tp"><div class="tile">
             <svg viewBox="0 0 1254 1254"><rect width="1254" height="1254" fill="#fdd008"/><path fill="#0a0b0a" fill-rule="evenodd" d="M285 926C287 930 290 937 293 941C296 945 298 947 302 949C306 951 311 954 317 955C323 956 330 956 336 955C342 954 350 951 355 949C360 947 363 945 368 941C373 937 380 930 385 925C390 920 393 914 396 909C399 904 401 900 403 894C405 888 401 915 408 875C415 835 437 690 443 652C449 614 444 650 445 648C446 646 450 644 451 643C452 642 440 642 454 642C468 642 522 642 536 642C550 642 540 643 541 644C542 645 543 646 544 647C545 648 551 620 546 653C541 686 521 808 516 842C511 876 516 851 516 855C516 859 517 863 518 867C519 871 520 874 522 879C524 884 525 888 530 894C535 900 544 909 550 914C556 919 560 920 565 922C570 924 573 925 577 926C581 927 583 928 588 928C593 928 602 928 608 928C614 928 616 927 623 925C630 923 592 948 647 915C702 882 889 765 951 727C1013 689 1004 696 1018 687C1032 678 1030 677 1033 673C1036 669 1036 669 1039 665C1042 661 1046 652 1048 648C1050 644 1050 644 1051 639C1052 634 1054 626 1054 621C1054 616 1054 613 1054 609C1054 605 1053 602 1052 597C1051 592 1050 587 1047 581C1044 575 1038 565 1034 560C1030 555 1075 583 1023 549C971 515 774 388 721 354C668 320 709 348 703 346C697 344 692 343 685 342C678 341 667 341 659 342C651 343 643 346 637 348C631 350 628 352 624 355C620 358 616 360 611 365C606 370 600 377 597 382C594 387 592 390 590 395C588 400 588 392 584 413C580 434 571 504 567 524C563 544 563 530 561 532C559 534 572 534 557 534C542 534 487 534 472 534C457 534 470 534 469 533C468 532 465 530 464 528C463 526 458 556 463 521C468 486 491 355 497 317C503 279 498 299 498 293C498 287 496 285 495 282C494 279 493 278 491 276C489 274 486 272 484 270C482 268 482 268 477 267C472 266 463 266 457 266C451 266 448 268 443 269C438 270 433 272 427 275C421 278 412 284 405 289C398 294 392 301 386 308C380 315 376 324 372 332C368 340 380 266 365 355C350 444 298 774 284 865C270 956 281 894 281 900C281 906 282 899 282 901C282 903 282 910 282 914C282 918 283 922 285 926ZM686 409C689 410 646 381 694 412C742 443 928 562 976 593C1024 624 980 596 981 598C982 600 984 603 985 606C986 609 987 614 986 618C985 622 984 627 980 631C976 635 984 630 965 642C946 654 920 668 865 702C810 736 673 822 633 846C593 870 628 848 625 849C622 850 617 849 614 849C611 849 611 848 609 847C607 846 604 843 602 841C600 839 600 838 599 835C598 832 598 832 599 823C600 814 605 793 606 784C607 775 606 775 607 771C608 767 609 762 610 758C611 754 610 749 611 745C612 741 611 753 614 732C617 711 628 638 631 617C634 596 633 611 634 605C635 599 635 595 637 580C639 565 646 531 648 517C650 503 649 504 650 498C651 492 652 491 654 479C656 467 659 438 661 428C663 418 664 420 665 417C666 414 667 414 669 413C671 412 674 410 677 409C680 408 683 408 686 409Z"/></svg>
             <div class="tsheen"></div></div></div></div>
