@@ -1079,7 +1079,10 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         setSystemBarsHidden(true)
         barsSafetyHandler.postDelayed({ setSystemBarsHidden(false) }, 14_000L)
         ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            // IgnoringVisibility: bars intro ke dauraan chhupne/wapas aane par bhi padding
+            // same rehti hai => WebView ka layout kabhi nahi badalta (intro ke ant mein
+            // relayout wala atakna khatam).
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             statusBarInsetPx = bars.top
             view.setPadding(bars.left, bars.top, bars.right, 0)
             // splash logo ka center WebView ke center se match kare
@@ -1220,7 +1223,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // wo event aata hai).
             override fun onPageCommitVisible(view: WebView, url: String) {
                 super.onPageCommitVisible(view, url)
-                fadeOutLoadingView()
+                fadeOutLoadingView(70L)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -1464,13 +1467,13 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
     }
 
-    private fun fadeOutLoadingView() {
+    private fun fadeOutLoadingView(durationMs: Long = 220L) {
         if (initialLoadingView.visibility != View.VISIBLE) return
         loadingLabelPulse?.cancel()
         loadingLabelPulse = null
         initialLoadingView.animate()
             .alpha(0f)
-            .setDuration(220)
+            .setDuration(durationMs)
             .withEndAction {
                 initialLoadingView.visibility = View.GONE
                 initialLoadingView.alpha = 1f
