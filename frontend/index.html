@@ -34,16 +34,13 @@
          sparkles, glow) lingers over Home for ~1.5 s while a warm light sweep crosses —
          so Home appears INSIDE the intro's world instead of replacing it. */
       #hb.out{pointer-events:none}
-      #hb.out .bgfill{animation:hb-bgout .9s ease-in-out .28s forwards}
-      #hb.out .amb{animation:hb-ambout 1.5s ease-in-out .4s forwards}
-      #hb.out .stage{animation:hb-lockout .62s cubic-bezier(.4,0,.7,.4) forwards}
-      @keyframes hb-bgout{to{opacity:0}}
-      @keyframes hb-ambout{to{opacity:0}}
-      @keyframes hb-lockout{from{opacity:1;transform:scale(1.055)}to{opacity:0;transform:translateY(-5vh) scale(1.09)}}
-      #hb .sweep{position:absolute;top:-10%;bottom:-10%;left:0;width:55%;opacity:0;pointer-events:none;will-change:transform,opacity;
-        background:linear-gradient(100deg,transparent 0%,rgba(255,226,140,.22) 50%,transparent 100%);transform:translateX(-130%) skewX(-18deg)}
-      #hb.out .sweep{animation:hb-sweep 1.2s ease-in-out .3s forwards}
-      @keyframes hb-sweep{0%{opacity:1;transform:translateX(-130%) skewX(-18deg)}100%{opacity:1;transform:translateX(280%) skewX(-18deg)}}
+      /* EXIT, strictly in two beats so NOTHING of the intro is ever seen over Home:
+         beat 1 (0-.4s): logo + all effects fade out while the dark backdrop stays opaque;
+         beat 2 (.4-1s): the plain backdrop dissolves while Home fades in underneath. */
+      #hb.out .stage,#hb.out .amb,#hb.out .ld{animation:hb-fo .4s ease-in forwards}
+      #hb.out .bgfill{animation:hb-fo .6s ease-in-out .4s forwards}
+      @keyframes hb-fo{to{opacity:0}}
+      #hb .sweep{display:none}
 
       #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
         background:radial-gradient(circle,rgba(253,208,8,.22) 0%,rgba(255,150,30,.08) 36%,transparent 64%)}
@@ -245,12 +242,12 @@
               // Home fades up underneath while the backdrop dissolves (opacity only:
               // a transform on #root would break every position:fixed child)
               root.style.opacity = '0'; void root.offsetHeight;
-              root.style.transition = 'opacity .9s ease-in-out .3s'; root.style.opacity = '1';
-              setTimeout(function () { root.style.transition = ''; root.style.opacity = ''; }, 1600);
+              root.style.transition = 'opacity .6s ease-in-out .4s'; root.style.opacity = '1';
+              setTimeout(function () { root.style.transition = ''; root.style.opacity = ''; }, 1300);
             }
           } catch (e) {}
           el.classList.add('out');
-          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2200);
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1250);
         }, 260);
       }
       el.addEventListener('click', function () { if (started) leave(); });
