@@ -164,6 +164,12 @@ class WebAppInterface(private val activity: MainActivity) {
 
     /** Intro/loading screen full-screen ho: status + navigation bar chhupao, intro
      *  khatam hote hi wapas dikhao (index.html ka inline script bulata hai). */
+    /** Web loading screen paint ho chuka — ab native logo-splash hata do (seamless). */
+    @JavascriptInterface
+    fun splashReady() {
+        runOnUiThreadSafely { activity.dropSplashNow() }
+    }
+
     @JavascriptInterface
     fun setImmersive(on: Boolean) {
         runOnUiThreadSafely { activity.onIntroImmersive(on) }
@@ -1241,21 +1247,17 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 loadErrorView.visibility = View.GONE
             }
 
-            // Intro ab index.html ke andar hi hai — jaise hi WebView ka pehla
-            // frame visible ho, native dark parda hata do taaki intro turant
-            // dikhe (onPageFinished tak intezaar karne se kuch second black
-            // screen dikhti thi, kyunki bada JS bundle load hone ke baad hi
-            // wo event aata hai).
-            override fun onPageCommitVisible(view: WebView, url: String) {
-                super.onPageCommitVisible(view, url)
-                fadeOutLoadingView(70L)
-            }
-
+            // NOTE: splash ab onPageCommitVisible par nahi hatta (bada bundle head mein
+            // hone se wo event khaali/kali page par aa jata tha => logo ke baad black
+            // screen). Ab index.html ka script web loader ke 2 frame paint hone ke
+            // BAAD AndroidPlayer.splashReady() bulata hai. onPageFinished safety hai.
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
                 hasLoadedOnce = true
-                fadeOutLoadingView()
+                // safety net only: normal path = JS splashReady(). 1.5s grace so we never
+                // drop the logo before the web loader has painted.
+                initialLoadingView.postDelayed({ fadeOutLoadingView() }, 1500L)
                 // BUG FIX (dekho `attemptPipReturnNavigate()` ka comment): agar
                 // ek PiP-expand restore abhi bhi pending hai (target set hai)
                 // JAB WebView genuinely ek naya page load poora karti hai (jaise
@@ -1491,6 +1493,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             start()
         }
     }
+
+    fun dropSplashNow() = fadeOutLoadingView(60L)
 
     private fun fadeOutLoadingView(durationMs: Long = 220L) {
         if (initialLoadingView.visibility != View.VISIBLE) return
