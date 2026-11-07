@@ -120,7 +120,7 @@ export default function App() {
     const id = window.setTimeout(() => {
       window.__hukaReady = true
       window.dispatchEvent(new Event('huka-app-ready'))
-    }, 6000)
+    }, 3500)
     return () => window.clearTimeout(id)
   }, [])
 
