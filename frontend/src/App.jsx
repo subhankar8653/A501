@@ -8,7 +8,7 @@ import ToastHost from './components/ToastHost'
 import ConnectionOverlay from './components/ConnectionOverlay'
 import Home from './pages/Home'
 import Search from './pages/Search'
-import New from './pages/New'
+import New, { prefetchNew } from './pages/New'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
 import PlayerErrorBoundary from './components/PlayerErrorBoundary'
@@ -117,6 +117,8 @@ export default function App() {
   useEffect(() => {
     window.__hukaMounted = true
     window.dispatchEvent(new Event('huka-mounted'))
+    // warm the HukaTube tab while the loading screen is still up
+    prefetchNew()
     const id = window.setTimeout(() => {
       window.__hukaReady = true
       window.dispatchEvent(new Event('huka-app-ready'))
