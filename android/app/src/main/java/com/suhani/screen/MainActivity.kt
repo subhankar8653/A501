@@ -166,7 +166,7 @@ class WebAppInterface(private val activity: MainActivity) {
      *  khatam hote hi wapas dikhao (index.html ka inline script bulata hai). */
     @JavascriptInterface
     fun setImmersive(on: Boolean) {
-        runOnUiThreadSafely { activity.setSystemBarsHidden(on) }
+        runOnUiThreadSafely { activity.onIntroImmersive(on) }
     }
 
     @JavascriptInterface
@@ -976,7 +976,29 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     private val barsSafetyHandler = Handler(Looper.getMainLooper())
 
+    /** index.html ka intro bulata hai: on=true shuru, on=false khatam. */
+    fun onIntroImmersive(on: Boolean) {
+        if (on) {
+            introSignalled = true
+            // intro chal raha hai: loading lambi ho sakti hai, isliye safety lamba (45s)
+            barsSafetyHandler.removeCallbacksAndMessages(null)
+            barsSafetyHandler.postDelayed({ setSystemBarsHidden(false) }, 45_000L)
+            setSystemBarsHidden(true)
+        } else {
+            setSystemBarsHidden(false)
+        }
+    }
+
+    // Intro/loading ke dauraan WebView poori screen (status + nav bar ke neeche tak) le leta hai.
+    private var introFullscreen = false
+    private var introSignalled = false
+
     fun setSystemBarsHidden(hidden: Boolean) {
+        introFullscreen = hidden
+        try {
+            ViewCompat.requestApplyInsets(window.decorView)
+        } catch (_: Exception) {
+        }
         try {
             val c = WindowCompat.getInsetsController(window, window.decorView)
             if (hidden) {
@@ -1077,13 +1099,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // hone par JS setImmersive(false) bulata hai; agar kisi wajah se (purana
         // bundle, error) wo na aaye to safety timer 14s baad bars wapas la deta hai.
         setSystemBarsHidden(true)
-        barsSafetyHandler.postDelayed({ setSystemBarsHidden(false) }, 14_000L)
+        // Purana bundle (jo intro ka signal nahi deta) ho to 10s baad bars wapas.
+        barsSafetyHandler.postDelayed({ if (!introSignalled) setSystemBarsHidden(false) }, 10_000L)
         ViewCompat.setOnApplyWindowInsetsListener(swipeRefresh) { view, insets ->
             // IgnoringVisibility: bars intro ke dauraan chhupne/wapas aane par bhi padding
             // same rehti hai => WebView ka layout kabhi nahi badalta (intro ke ant mein
             // relayout wala atakna khatam).
-            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-            statusBarInsetPx = bars.top
+            val real = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            statusBarInsetPx = real.top
+            // Intro/loading: poori screen (koi kala patta upar/niche nahi)
+            val bars = if (introFullscreen) androidx.core.graphics.Insets.NONE else real
             view.setPadding(bars.left, bars.top, bars.right, 0)
             // splash logo ka center WebView ke center se match kare
             findViewById<View>(R.id.initialLoadingView)?.setPadding(bars.left, bars.top, bars.right, 0)
