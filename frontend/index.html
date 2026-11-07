@@ -16,103 +16,119 @@
          request ko waise hi rehne dena risky tha. Ab display/body font
          seedha tailwind.config.js ke fallback stack (serif / sans-serif) par
          chalte hain — koi network dependency nahi, offline 100% reliable. -->
-    
-    
+
     <style id="huka-boot-css">
-      #hb{position:fixed;inset:0;z-index:2147483000;overflow:hidden;background:radial-gradient(ellipse at 50% 44%,#2b2723 0%,#15130f 55%,#0a0908 100%);
-        transition:opacity .6s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-      #hb.out{opacity:0;pointer-events:none}
+      #hb{position:fixed;inset:0;z-index:2147483000;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+        background:radial-gradient(ellipse at 50% 50%,#2b2723 0%,#15130f 55%,#0a0908 100%)}
       #hb *{box-sizing:border-box;margin:0;padding:0}
-      /* everything below animates ONLY transform/opacity => runs on the GPU
-         compositor and stays smooth even while the app is booting behind it */
-      #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;
-        background:radial-gradient(circle,rgba(255,186,80,.30) 0%,rgba(255,140,30,.10) 34%,transparent 64%);
-        opacity:0;will-change:transform,opacity;animation:hb-glow 1.1s ease-out .1s both,hb-breathe 3.4s ease-in-out 1.3s infinite}
-      @keyframes hb-glow{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}
-      @keyframes hb-breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(1.07)}}
-      #hb .beam{position:absolute;left:50%;top:38%;width:150vmax;height:2px;margin-left:-75vmax;opacity:0;will-change:transform,opacity;
-        background:linear-gradient(90deg,transparent,rgba(255,200,120,.55) 30%,#fff 50%,rgba(255,200,120,.55) 70%,transparent);
-        box-shadow:0 0 22px 4px rgba(255,180,80,.45);transform:scaleX(0);animation:hb-beam 1s ease-out .95s both}
+      #hb{--s:min(26vw,112px)}
+      /* Only transform/opacity are animated => GPU-composited, stays smooth even
+         while the app boots behind. Animations start only after .go (set once
+         the app has mounted) so a busy main thread can never skip frames. */
+      #hb .cw{position:absolute;inset:0}
+      #hb.out .cw{animation:hb-cx .32s ease-in forwards}
+      @keyframes hb-cx{to{opacity:0;transform:scale(1.06)}}
+      #hb.out{animation:hb-curtain .6s cubic-bezier(.75,0,.2,1) .2s forwards;box-shadow:0 30px 60px rgba(0,0,0,.6)}
+      @keyframes hb-curtain{to{transform:translateY(-104%)}}
+      #hb.out::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent,#fdd008,#fff3a8,#fdd008,transparent);box-shadow:0 0 18px 3px rgba(253,208,8,.6)}
+
+      #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
+        background:radial-gradient(circle,rgba(253,208,8,.22) 0%,rgba(255,150,30,.08) 36%,transparent 64%)}
+      #hb.go .glow{animation:hb-glow 1.2s ease-out .05s both,hb-breathe 3.6s ease-in-out 1.3s infinite}
+      @keyframes hb-glow{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:scale(1)}}
+      @keyframes hb-breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.68;transform:scale(1.07)}}
+      #hb .beam{position:absolute;left:50%;top:38%;width:150vmax;height:2px;margin-left:-75vmax;opacity:0;transform:scaleX(0);will-change:transform,opacity;
+        background:linear-gradient(90deg,transparent,rgba(255,220,100,.6) 30%,#fff 50%,rgba(255,220,100,.6) 70%,transparent);box-shadow:0 0 22px 4px rgba(253,208,8,.45)}
+      #hb.go .beam{animation:hb-beam 1s ease-out 1.3s forwards}
       @keyframes hb-beam{0%{opacity:1;transform:scaleX(0)}30%{opacity:1;transform:scaleX(.55)}100%{opacity:0;transform:scaleX(1)}}
       #hb .ember{position:absolute;inset:0;pointer-events:none}
-      #hb .ember b{position:absolute;bottom:-8px;border-radius:50%;background:#ffcf80;opacity:0;will-change:transform,opacity;
-        animation:hb-rise linear infinite}
+      #hb .ember b{position:absolute;bottom:-8px;border-radius:50%;background:#ffd95a;opacity:0;will-change:transform,opacity}
+      #hb.go .ember b{animation:hb-rise linear infinite}
       @keyframes hb-rise{0%{transform:translateY(0);opacity:0}15%{opacity:var(--o)}85%{opacity:var(--o)}100%{transform:translateY(-105vh);opacity:0}}
 
       #hb .stage{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:3vh}
-      #hb .mark{position:relative;width:min(24vw,96px);height:min(24vw,96px);margin-bottom:min(5vw,22px)}
-      #hb .emb{position:absolute;inset:0;will-change:transform,opacity;opacity:0;animation:hb-emb 1s cubic-bezier(.2,.9,.25,1.15) .15s both}
-      @keyframes hb-emb{0%{opacity:0;transform:perspective(500px) rotateY(-110deg) scale(.35)}60%{opacity:1}100%{opacity:1;transform:perspective(500px) rotateY(0) scale(1)}}
-      #hb .emb-in{position:absolute;inset:0;will-change:transform;animation:hb-pulse .55s ease-out .98s both}
-      @keyframes hb-pulse{0%{transform:scale(1)}35%{transform:scale(1.16)}100%{transform:scale(1)}}
-      #hb .emb svg{width:100%;height:100%;display:block;overflow:visible}
-      #hb .sparks i{position:absolute;left:50%;top:50%;border-radius:50%;margin:-2px 0 0 -2px;opacity:0;will-change:transform,opacity;
-        animation:hb-spark .9s cubic-bezier(.1,.7,.3,1) .98s both}
-      @keyframes hb-spark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(.2)}}
+      #hb .mark{position:relative;width:var(--s);height:var(--s);margin-bottom:min(5.5vw,24px)}
+      /* .mv: lifts the tile from screen-centre (where the native splash shows it) to its final place */
+      #hb .mv{position:absolute;inset:0;transform:translateY(var(--dy,0px));will-change:transform}
+      #hb.go .mv{animation:hb-move .8s cubic-bezier(.65,0,.2,1) .6s both}
+      @keyframes hb-move{from{transform:translateY(var(--dy,0px))}to{transform:translateY(0)}}
+      #hb .tp{position:absolute;inset:0;border-radius:22.5%;will-change:transform;
+        box-shadow:0 12px 40px rgba(0,0,0,.55),0 0 64px rgba(253,208,8,.26)}
+      #hb.go .tp{animation:hb-pulse .55s ease-out .2s both}
+      @keyframes hb-pulse{0%{transform:scale(1)}40%{transform:scale(1.09)}100%{transform:scale(1)}}
+      #hb .tile{position:absolute;inset:0;border-radius:22.5%;overflow:hidden}
+      #hb .tile svg{width:100%;height:100%;display:block}
+      #hb .tsheen{position:absolute;top:-10%;bottom:-10%;left:0;width:45%;opacity:0;will-change:transform,opacity;
+        background:linear-gradient(100deg,transparent,rgba(255,255,255,.75),transparent);transform:translateX(-140%) skewX(-18deg)}
+      #hb.go .tsheen{animation:hb-tsheen .7s ease-in-out .3s forwards}
+      @keyframes hb-tsheen{0%{opacity:1;transform:translateX(-140%) skewX(-18deg)}100%{opacity:1;transform:translateX(330%) skewX(-18deg)}}
       #hb .ring{position:absolute;left:50%;top:50%;width:100%;height:100%;margin:-50% 0 0 -50%;border-radius:50%;opacity:0;will-change:transform,opacity;
-        border:2px solid rgba(255,208,120,.9);animation:hb-ring 1.1s cubic-bezier(.1,.7,.2,1) .98s both}
-      #hb .ring.r2{animation-delay:1.12s;border-color:rgba(255,255,255,.7)}
-      @keyframes hb-ring{0%{opacity:.9;transform:scale(.6)}100%{opacity:0;transform:scale(7)}}
+        border:2px solid rgba(253,208,8,.9)}
+      #hb.go .ring{animation:hb-ring 1.1s cubic-bezier(.1,.7,.2,1) 1.34s forwards}
+      #hb .ring.r2{border-color:rgba(255,255,255,.7)}
+      #hb.go .ring.r2{animation-delay:1.48s}
+      @keyframes hb-ring{0%{opacity:.9;transform:scale(.7)}100%{opacity:0;transform:scale(7)}}
       #hb .flash{position:absolute;left:50%;top:50%;width:100%;height:100%;margin:-50% 0 0 -50%;border-radius:50%;opacity:0;will-change:transform,opacity;
-        background:radial-gradient(circle,#fff 0%,rgba(255,210,130,.6) 38%,transparent 70%);animation:hb-flash .7s ease-out .98s both}
-      @keyframes hb-flash{0%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(5)}}
+        background:radial-gradient(circle,#fff 0%,rgba(255,225,120,.6) 38%,transparent 70%)}
+      #hb.go .flash{animation:hb-flash .7s ease-out 1.34s forwards}
+      @keyframes hb-flash{0%{opacity:1;transform:scale(.9)}100%{opacity:0;transform:scale(5)}}
+      #hb .sparks i{position:absolute;left:50%;top:50%;border-radius:50%;margin:-2px 0 0 -2px;opacity:0;will-change:transform,opacity}
+      #hb.go .sparks i{animation:hb-spark .95s cubic-bezier(.1,.7,.3,1) 1.34s forwards}
+      @keyframes hb-spark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(.2)}}
 
       #hb .logoWrap{position:relative;overflow:hidden;padding:0 .35em}
-      #hb .logo{display:flex;justify-content:center;font-family:'Roboto','Segoe UI',system-ui,sans-serif;font-weight:900;font-style:normal;
+      #hb .logo{display:flex;justify-content:center;font-family:'Roboto','Segoe UI',system-ui,sans-serif;font-weight:900;
         font-size:min(15.5vw,84px);line-height:1.18;letter-spacing:-.02em;transform:skewX(-8deg)}
-      #hb .lc{display:block;overflow:hidden;padding:0 .01em}
+      #hb .lc{display:block;overflow:hidden}
       #hb .l{display:block;transform:translateY(118%);opacity:0;will-change:transform,opacity;
         background-image:linear-gradient(180deg,#ffffff 0%,#dcdce6 45%,#9d9dab 100%);
-        -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
-        animation:hb-let .8s cubic-bezier(.16,.9,.25,1.08) var(--d) both}
-      #hb .l.g{background-image:linear-gradient(180deg,#fff3c4 0%,#f7bd45 48%,#c97d08 100%)}
+        -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+      #hb .l.g{background-image:linear-gradient(180deg,#fff6b0 0%,#fdd008 50%,#d99a00 100%)}
+      #hb.go .l{animation:hb-let .8s cubic-bezier(.16,.9,.25,1.08) var(--d) both}
       @keyframes hb-let{0%{opacity:0;transform:translateY(118%)}25%{opacity:1}100%{opacity:1;transform:translateY(0)}}
       #hb .sheen{position:absolute;top:0;bottom:0;left:0;width:34%;pointer-events:none;opacity:0;will-change:transform,opacity;
-        background:linear-gradient(100deg,transparent 0%,rgba(255,255,255,.38) 50%,transparent 100%);transform:translateX(-120%) skewX(-18deg);
-        animation:hb-sheen 1s ease-in-out 1.95s both}
+        background:linear-gradient(100deg,transparent 0%,rgba(255,255,255,.36) 50%,transparent 100%);transform:translateX(-120%) skewX(-18deg)}
+      #hb.go .sheen{animation:hb-sheen 1s ease-in-out 2.35s both}
       @keyframes hb-sheen{0%{opacity:1;transform:translateX(-120%) skewX(-18deg)}100%{opacity:1;transform:translateX(420%) skewX(-18deg)}}
 
       #hb .rule{height:2px;width:min(56vw,270px);margin-top:min(3.4vw,14px);border-radius:2px;opacity:0;transform:scaleX(0);will-change:transform,opacity;
-        background:linear-gradient(90deg,transparent,#f5b63a 30%,#fff3c4 50%,#f5b63a 70%,transparent);box-shadow:0 0 12px rgba(245,182,58,.55);
-        animation:hb-rule .8s cubic-bezier(.2,.8,.2,1) 1.95s both}
+        background:linear-gradient(90deg,transparent,#fdd008 30%,#fff6b0 50%,#fdd008 70%,transparent);box-shadow:0 0 12px rgba(253,208,8,.5)}
+      #hb.go .rule{animation:hb-rule .8s cubic-bezier(.2,.8,.2,1) 2.2s both}
       @keyframes hb-rule{to{opacity:1;transform:scaleX(1)}}
-
       #hb .tg{margin-top:min(5vw,22px);display:flex;flex-direction:column;align-items:center;gap:10px;
         font:600 13px/1 'Roboto',system-ui,sans-serif;letter-spacing:.26em;text-transform:uppercase;color:#d8d8e0}
       #hb .tg .row{display:flex;gap:.9em;align-items:center;justify-content:center;white-space:nowrap}
-      #hb .tg span{opacity:0;transform:translateY(8px);will-change:transform,opacity;animation:hb-tg .6s ease-out var(--d) both}
-      #hb .tg .dot{color:#f5b63a;letter-spacing:0}
-      #hb .tg .gold{color:#f7c14f}
+      #hb .tg span{opacity:0;transform:translateY(8px);will-change:transform,opacity}
+      #hb.go .tg span{animation:hb-tg .6s ease-out var(--d) both}
+      #hb .tg .dot{color:#fdd008;letter-spacing:0}
+      #hb .tg .gold{color:#fdd008}
       @keyframes hb-tg{to{opacity:1;transform:none}}
       #hb .vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(0,0,0,.5) 100%)}
     </style>
   </head>
   <body class="bg-reel-bg text-reel-ink font-body">
     <div id="hb" aria-hidden="true">
+     <div class="cw">
       <div class="glow"></div>
-      <div class="ember"><b style="left:92%;width:4px;height:4px;animation-duration:7s;animation-delay:-7s;--o:.35"></b><b style="left:15%;width:2px;height:2px;animation-duration:7s;animation-delay:-7s;--o:.35"></b><b style="left:93%;width:3px;height:3px;animation-duration:7s;animation-delay:-7s;--o:.65"></b><b style="left:53%;width:4px;height:4px;animation-duration:7s;animation-delay:0s;--o:.5"></b><b style="left:25%;width:4px;height:4px;animation-duration:9s;animation-delay:-1s;--o:.35"></b><b style="left:31%;width:2px;height:2px;animation-duration:7s;animation-delay:-2s;--o:.5"></b><b style="left:54%;width:2px;height:2px;animation-duration:8s;animation-delay:-1s;--o:.5"></b><b style="left:55%;width:2px;height:2px;animation-duration:9s;animation-delay:-4s;--o:.5"></b><b style="left:74%;width:3px;height:3px;animation-duration:7s;animation-delay:-6s;--o:.65"></b><b style="left:52%;width:2px;height:2px;animation-duration:6s;animation-delay:-2s;--o:.35"></b><b style="left:23%;width:2px;height:2px;animation-duration:6s;animation-delay:-3s;--o:.5"></b><b style="left:79%;width:3px;height:3px;animation-duration:6s;animation-delay:-4s;--o:.35"></b></div>
+      <div class="ember"><b style="left:69%;width:2px;height:2px;animation-duration:9s;animation-delay:-6s;--o:.3"></b><b style="left:54%;width:4px;height:2px;animation-duration:6s;animation-delay:-4s;--o:.6"></b><b style="left:42%;width:2px;height:2px;animation-duration:7s;animation-delay:-6s;--o:.6"></b><b style="left:86%;width:2px;height:2px;animation-duration:7s;animation-delay:-3s;--o:.45"></b><b style="left:37%;width:2px;height:3px;animation-duration:8s;animation-delay:-6s;--o:.3"></b><b style="left:13%;width:2px;height:2px;animation-duration:10s;animation-delay:-3s;--o:.3"></b><b style="left:80%;width:3px;height:3px;animation-duration:10s;animation-delay:-7s;--o:.3"></b><b style="left:79%;width:4px;height:2px;animation-duration:9s;animation-delay:-2s;--o:.6"></b><b style="left:23%;width:3px;height:2px;animation-duration:10s;animation-delay:-3s;--o:.6"></b><b style="left:28%;width:2px;height:2px;animation-duration:9s;animation-delay:-7s;--o:.6"></b><b style="left:14%;width:4px;height:2px;animation-duration:6s;animation-delay:-1s;--o:.3"></b></div>
       <div class="beam"></div>
       <div class="stage">
         <div class="mark">
           <div class="flash"></div><div class="ring"></div><div class="ring r2"></div>
-          <div class="emb"><div class="emb-in">
-            <svg viewBox="0 0 100 100"><defs>
-              <linearGradient id="hbg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a443b"/><stop offset=".55" stop-color="#1d1a16"/><stop offset="1" stop-color="#3a3228"/></linearGradient>
-              <linearGradient id="hbg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset=".5" stop-color="#f7bd45"/><stop offset="1" stop-color="#d98a0a"/></linearGradient></defs>
-              <rect x="4" y="4" width="92" height="92" rx="26" fill="url(#hbg1)" stroke="url(#hbg2)" stroke-width="3.2"/>
-              <path d="M24 12 Q50 4 76 12" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>
-              <polygon points="39,30 39,70 73,50" fill="url(#hbg2)" stroke="url(#hbg2)" stroke-width="7" stroke-linejoin="round"/>
-            </svg></div></div>
-          <div class="sparks"><i style="--x:93px;--y:-7px;width:3px;height:3px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:79px;--y:41px;width:3px;height:3px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:73px;--y:48px;width:6px;height:6px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:76px;--y:105px;width:3px;height:3px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:32px;--y:95px;width:3px;height:3px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:-18px;--y:83px;width:4px;height:4px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:-48px;--y:79px;width:6px;height:6px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:-102px;--y:83px;width:4px;height:4px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:-131px;--y:43px;width:5px;height:5px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:-86px;--y:-2px;width:3px;height:3px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:-137px;--y:-32px;width:6px;height:6px;background:#fff;box-shadow:0 0 8px 2px #fff99"></i><i style="--x:-126px;--y:-103px;width:5px;height:5px;background:#fff;box-shadow:0 0 8px 2px #fff99"></i><i style="--x:-56px;--y:-78px;width:4px;height:4px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:-18px;--y:-126px;width:5px;height:5px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:21px;--y:-133px;width:3px;height:3px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:48px;--y:-82px;width:5px;height:5px;background:#ffd98a;box-shadow:0 0 8px 2px #ffd98a99"></i><i style="--x:102px;--y:-59px;width:3px;height:3px;background:#ffb347;box-shadow:0 0 8px 2px #ffb34799"></i><i style="--x:151px;--y:-50px;width:5px;height:5px;background:#fff;box-shadow:0 0 8px 2px #fff99"></i></div>
+          <div class="mv"><div class="tp"><div class="tile">
+            <svg viewBox="0 0 1254 1254"><rect width="1254" height="1254" fill="#fdd008"/><path fill="#0a0b0a" fill-rule="evenodd" d="M285 926C287 930 290 937 293 941C296 945 298 947 302 949C306 951 311 954 317 955C323 956 330 956 336 955C342 954 350 951 355 949C360 947 363 945 368 941C373 937 380 930 385 925C390 920 393 914 396 909C399 904 401 900 403 894C405 888 401 915 408 875C415 835 437 690 443 652C449 614 444 650 445 648C446 646 450 644 451 643C452 642 440 642 454 642C468 642 522 642 536 642C550 642 540 643 541 644C542 645 543 646 544 647C545 648 551 620 546 653C541 686 521 808 516 842C511 876 516 851 516 855C516 859 517 863 518 867C519 871 520 874 522 879C524 884 525 888 530 894C535 900 544 909 550 914C556 919 560 920 565 922C570 924 573 925 577 926C581 927 583 928 588 928C593 928 602 928 608 928C614 928 616 927 623 925C630 923 592 948 647 915C702 882 889 765 951 727C1013 689 1004 696 1018 687C1032 678 1030 677 1033 673C1036 669 1036 669 1039 665C1042 661 1046 652 1048 648C1050 644 1050 644 1051 639C1052 634 1054 626 1054 621C1054 616 1054 613 1054 609C1054 605 1053 602 1052 597C1051 592 1050 587 1047 581C1044 575 1038 565 1034 560C1030 555 1075 583 1023 549C971 515 774 388 721 354C668 320 709 348 703 346C697 344 692 343 685 342C678 341 667 341 659 342C651 343 643 346 637 348C631 350 628 352 624 355C620 358 616 360 611 365C606 370 600 377 597 382C594 387 592 390 590 395C588 400 588 392 584 413C580 434 571 504 567 524C563 544 563 530 561 532C559 534 572 534 557 534C542 534 487 534 472 534C457 534 470 534 469 533C468 532 465 530 464 528C463 526 458 556 463 521C468 486 491 355 497 317C503 279 498 299 498 293C498 287 496 285 495 282C494 279 493 278 491 276C489 274 486 272 484 270C482 268 482 268 477 267C472 266 463 266 457 266C451 266 448 268 443 269C438 270 433 272 427 275C421 278 412 284 405 289C398 294 392 301 386 308C380 315 376 324 372 332C368 340 380 266 365 355C350 444 298 774 284 865C270 956 281 894 281 900C281 906 282 899 282 901C282 903 282 910 282 914C282 918 283 922 285 926ZM686 409C689 410 646 381 694 412C742 443 928 562 976 593C1024 624 980 596 981 598C982 600 984 603 985 606C986 609 987 614 986 618C985 622 984 627 980 631C976 635 984 630 965 642C946 654 920 668 865 702C810 736 673 822 633 846C593 870 628 848 625 849C622 850 617 849 614 849C611 849 611 848 609 847C607 846 604 843 602 841C600 839 600 838 599 835C598 832 598 832 599 823C600 814 605 793 606 784C607 775 606 775 607 771C608 767 609 762 610 758C611 754 610 749 611 745C612 741 611 753 614 732C617 711 628 638 631 617C634 596 633 611 634 605C635 599 635 595 637 580C639 565 646 531 648 517C650 503 649 504 650 498C651 492 652 491 654 479C656 467 659 438 661 428C663 418 664 420 665 417C666 414 667 414 669 413C671 412 674 410 677 409C680 408 683 408 686 409Z"/></svg>
+            <div class="tsheen"></div></div></div></div>
+          <div class="sparks"><i style="--x:146px;--y:-3px;width:6px;height:6px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:141px;--y:46px;width:4px;height:4px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:123px;--y:88px;width:4px;height:4px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:63px;--y:83px;width:3px;height:3px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:26px;--y:185px;width:4px;height:4px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:25px;--y:141px;width:3px;height:3px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:-23px;--y:112px;width:3px;height:3px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:-80px;--y:126px;width:4px;height:4px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:-89px;--y:79px;width:3px;height:3px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:-139px;--y:70px;width:6px;height:6px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:-171px;--y:-31px;width:5px;height:5px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:-130px;--y:-56px;width:3px;height:3px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:-80px;--y:-61px;width:3px;height:3px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:-115px;--y:-146px;width:3px;height:3px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:-74px;--y:-165px;width:6px;height:6px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:22px;--y:-128px;width:3px;height:3px;background:#fdd008;box-shadow:0 0 8px 2px #fdd00888"></i><i style="--x:59px;--y:-157px;width:5px;height:5px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i><i style="--x:57px;--y:-109px;width:6px;height:6px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:116px;--y:-111px;width:3px;height:3px;background:#ffe27a;box-shadow:0 0 8px 2px #ffe27a88"></i><i style="--x:131px;--y:-45px;width:4px;height:4px;background:#ffffff;box-shadow:0 0 8px 2px #ffffff88"></i></div>
         </div>
-        <div class="logoWrap"><div class="logo" aria-label="HukaTube"><span class="lc"><span class="l" style="--d:1.120s">H</span></span><span class="lc"><span class="l" style="--d:1.195s">u</span></span><span class="lc"><span class="l" style="--d:1.270s">k</span></span><span class="lc"><span class="l" style="--d:1.345s">a</span></span><span class="lc"><span class="l g" style="--d:1.420s">T</span></span><span class="lc"><span class="l g" style="--d:1.495s">u</span></span><span class="lc"><span class="l g" style="--d:1.570s">b</span></span><span class="lc"><span class="l g" style="--d:1.645s">e</span></span></div><div class="sheen"></div></div>
+        <div class="logoWrap"><div class="logo" aria-label="HukaTube"><span class="lc"><span class="l" style="--d:1.200s">H</span></span><span class="lc"><span class="l" style="--d:1.265s">u</span></span><span class="lc"><span class="l" style="--d:1.330s">k</span></span><span class="lc"><span class="l" style="--d:1.395s">a</span></span><span class="lc"><span class="l g" style="--d:1.460s">T</span></span><span class="lc"><span class="l g" style="--d:1.525s">u</span></span><span class="lc"><span class="l g" style="--d:1.590s">b</span></span><span class="lc"><span class="l g" style="--d:1.655s">e</span></span></div></div>
         <div class="rule"></div>
         <div class="tg">
-          <div class="row"><span style="--d:2.4s">Anime</span><span class="dot" style="--d:2.55s">·</span><span style="--d:2.75s">Movies</span><span class="dot" style="--d:2.9s">·</span><span style="--d:3.1s">K-Drama</span></div>
-          <div class="row"><span style="--d:3.5s">Short Drama</span><span class="dot" style="--d:3.65s">·</span><span class="gold" style="--d:3.85s">&amp; More</span></div>
+          <div class="row"><span style="--d:2.5s">Anime</span><span class="dot" style="--d:2.6s">·</span><span style="--d:2.8s">Movies</span><span class="dot" style="--d:2.9s">·</span><span style="--d:3.1s">K-Drama</span></div>
+          <div class="row"><span style="--d:3.4s">Short Drama</span><span class="dot" style="--d:3.5s">·</span><span class="gold" style="--d:3.7s">&amp; More</span></div>
         </div>
       </div>
       <div class="vig"></div>
+     </div>
     </div>
     <script>
     (function () {
@@ -123,64 +139,76 @@
         if (sessionStorage.getItem('huka-intro-done') === '1') { el.parentNode.removeChild(el); return; }
         sessionStorage.setItem('huka-intro-done', '1');
       } catch (e) {}
-      var MIN = 5000, MAX = 8200, t0 = Date.now(), done = false, stopSnd = function () {};
+      // pre-go: tile sits at the exact screen centre (same spot as the native splash logo)
+      try {
+        var mk = el.querySelector('.mark').getBoundingClientRect();
+        var dy = window.innerHeight / 2 - (mk.top + mk.height / 2);
+        el.style.setProperty('--dy', dy + 'px');
+      } catch (e) {}
+      var MIN = 4900, MAX = 9500, t0 = 0, done = false, started = false, stopSnd = function () {};
       function leave() {
         if (done) return; done = true;
         el.classList.add('out');
         try { stopSnd(); } catch (e) {}
-        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 700);
+        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 950);
       }
-      el.addEventListener('click', leave);
-      var iv = setInterval(function () {
-        var age = Date.now() - t0;
-        if (age >= MAX || (age >= MIN && window.__hukaReady)) { clearInterval(iv); leave(); }
-      }, 200);
-
-      // ---- sound (Web Audio, synthesized; silent if unavailable) ----
-      try {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        var ctx = new AC();
-        if (ctx.state === 'suspended') ctx.resume();
-        var T = ctx.currentTime + 0.08;
-        var master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
-        // light reverb tail (short mono IR, cheap to build)
-        var irLen = Math.floor(ctx.sampleRate * 1.1), ir = ctx.createBuffer(1, irLen, ctx.sampleRate), d = ir.getChannelData(0), amp = 1, k = Math.pow(0.0005, 1 / irLen);
-        for (var i = 0; i < irLen; i++) { d[i] = (Math.random() * 2 - 1) * amp; amp *= k; }
-        var cv = ctx.createConvolver(); cv.buffer = ir; var wet = ctx.createGain(); wet.gain.value = 0.28;
-        master.connect(cv); cv.connect(wet); wet.connect(ctx.destination);
-        var nb = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.2), ctx.sampleRate), nd = nb.getChannelData(0);
-        for (var j = 0; j < nd.length; j++) nd[j] = Math.random() * 2 - 1;
-        function noise(at, dur, f0, f1, vol, type, q) {
-          var s = ctx.createBufferSource(); s.buffer = nb;
-          var f = ctx.createBiquadFilter(); f.type = type || 'bandpass'; f.Q.value = q || 1;
-          f.frequency.setValueAtTime(f0, T + at); f.frequency.exponentialRampToValueAtTime(f1, T + at + dur);
-          var g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T + at);
-          g.gain.exponentialRampToValueAtTime(vol, T + at + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, T + at + dur);
-          s.connect(f); f.connect(g); g.connect(master); s.start(T + at); s.stop(T + at + dur + 0.05);
-        }
-        function tone(at, dur, f0, f1, vol, type, atk) {
-          var o = ctx.createOscillator(); o.type = type || 'sine';
-          o.frequency.setValueAtTime(f0, T + at); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), T + at + dur);
-          var g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T + at);
-          g.gain.exponentialRampToValueAtTime(vol, T + at + (atk || 0.012)); g.gain.exponentialRampToValueAtTime(0.0001, T + at + dur);
-          o.connect(g); g.connect(master); o.start(T + at); o.stop(T + at + dur + 0.05);
-        }
-        noise(0.12, 0.85, 220, 4200, 0.34, 'bandpass', 0.8);     // rising riser
-        tone(0.12, 0.85, 80, 560, 0.15, 'sine', 0.3);
-        tone(0.98, 0.95, 130, 32, 0.95, 'sine', 0.008);           // boom
-        tone(0.98, 0.25, 520, 90, 0.35, 'triangle', 0.005);
-        noise(0.98, 0.6, 5200, 260, 0.7, 'bandpass', 0.5);        // crack
-        for (var a = 0; a < 8; a++) tone(1.02 + a * 0.05, 0.22, 2400 + a * 260, 3400 + a * 300, 0.05, 'sine');
-        var sc = [392, 440, 523, 587, 659, 784, 880, 1047];       // one ping per letter
-        for (var b = 0; b < 8; b++) tone(1.14 + b * 0.075, 0.5, sc[b], sc[b], 0.12, 'sine', 0.01);
-        [2.4, 2.75, 3.1, 3.5, 3.85].forEach(function (x) { tone(x, 0.08, 1500, 1500, 0.05, 'triangle'); });
-        [262, 392, 523, 659, 784].forEach(function (f, n) { tone(3.85 + n * 0.03, 1.6, f, f, 0.12, 'sine', 0.05); });
-        stopSnd = function () {
-          master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
-          setTimeout(function () { try { ctx.close(); } catch (e) {} }, 800);
-        };
-      } catch (e) {}
+      el.addEventListener('click', function () { if (started) leave(); });
+      function sound() {
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+          var ctx = new AC(); if (ctx.state === 'suspended') ctx.resume();
+          var T = ctx.currentTime + 0.06;
+          var master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
+          var irLen = Math.floor(ctx.sampleRate * 1.1), ir = ctx.createBuffer(1, irLen, ctx.sampleRate), d = ir.getChannelData(0), amp = 1, k = Math.pow(0.0005, 1 / irLen);
+          for (var i = 0; i < irLen; i++) { d[i] = (Math.random() * 2 - 1) * amp; amp *= k; }
+          var cv = ctx.createConvolver(); cv.buffer = ir; var wet = ctx.createGain(); wet.gain.value = 0.28;
+          master.connect(cv); cv.connect(wet); wet.connect(ctx.destination);
+          var nb = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.2), ctx.sampleRate), nd = nb.getChannelData(0);
+          for (var j = 0; j < nd.length; j++) nd[j] = Math.random() * 2 - 1;
+          function noise(at, dur, f0, f1, vol, type, q) {
+            var s = ctx.createBufferSource(); s.buffer = nb;
+            var f = ctx.createBiquadFilter(); f.type = type || 'bandpass'; f.Q.value = q || 1;
+            f.frequency.setValueAtTime(f0, T + at); f.frequency.exponentialRampToValueAtTime(f1, T + at + dur);
+            var g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T + at);
+            g.gain.exponentialRampToValueAtTime(vol, T + at + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, T + at + dur);
+            s.connect(f); f.connect(g); g.connect(master); s.start(T + at); s.stop(T + at + dur + 0.05);
+          }
+          function tone(at, dur, f0, f1, vol, type, atk) {
+            var o = ctx.createOscillator(); o.type = type || 'sine';
+            o.frequency.setValueAtTime(f0, T + at); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), T + at + dur);
+            var g = ctx.createGain(); g.gain.setValueAtTime(0.0001, T + at);
+            g.gain.exponentialRampToValueAtTime(vol, T + at + (atk || 0.012)); g.gain.exponentialRampToValueAtTime(0.0001, T + at + dur);
+            o.connect(g); g.connect(master); o.start(T + at); o.stop(T + at + dur + 0.05);
+          }
+          [880, 1320, 1760].forEach(function (f, n) { tone(0.2 + n * 0.04, 0.6, f, f, 0.08, 'sine', 0.01); });   // tile pulse chime
+          noise(0.6, 0.8, 220, 4200, 0.3, 'bandpass', 0.8); tone(0.6, 0.8, 80, 560, 0.14, 'sine', 0.3);          // lift riser
+          tone(1.34, 0.95, 130, 32, 0.95, 'sine', 0.008); tone(1.34, 0.25, 520, 90, 0.35, 'triangle', 0.005);   // boom
+          noise(1.34, 0.6, 5200, 260, 0.7, 'bandpass', 0.5);
+          for (var a = 0; a < 8; a++) tone(1.38 + a * 0.05, 0.22, 2400 + a * 260, 3400 + a * 300, 0.05, 'sine');
+          var sc = [392, 440, 523, 587, 659, 784, 880, 1047];
+          for (var b = 0; b < 8; b++) tone(1.24 + b * 0.065, 0.5, sc[b], sc[b], 0.11, 'sine', 0.01);
+          [2.5, 2.8, 3.1, 3.4, 3.7].forEach(function (x) { tone(x, 0.08, 1500, 1500, 0.05, 'triangle'); });
+          [262, 392, 523, 659, 784].forEach(function (f, n) { tone(3.7 + n * 0.03, 1.5, f, f, 0.12, 'sine', 0.05); });
+          stopSnd = function () {
+            master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+            setTimeout(function () { try { ctx.close(); } catch (e) {} }, 800);
+          };
+        } catch (e) {}
+      }
+      // Start the show only when the app has mounted (main thread calm) —
+      // otherwise a busy thread eats the first frames and the intro looks rushed.
+      function go() {
+        if (started) return; started = true;
+        requestAnimationFrame(function () { requestAnimationFrame(function () {
+          t0 = Date.now(); el.classList.add('go'); sound();
+          var iv = setInterval(function () {
+            var age = Date.now() - t0;
+            if (age >= MAX || (age >= MIN && window.__hukaReady)) { clearInterval(iv); leave(); }
+          }, 200);
+        }); });
+      }
+      if (window.__hukaMounted) setTimeout(go, 120); else window.addEventListener('huka-mounted', function () { setTimeout(go, 120); });
+      setTimeout(go, 4500); // safety: never stay on the static logo
     })();
     </script>
 
