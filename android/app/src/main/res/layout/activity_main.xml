@@ -26,7 +26,7 @@
         android:id="@+id/initialLoadingView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#1c1b1a"
+        android:background="@drawable/bg_splash"
         android:gravity="center"
         android:orientation="vertical"
         android:visibility="visible">
@@ -34,6 +34,16 @@
         <!-- Spinner/text hata diya: app khulte hi seedha intro dikhna chahiye.
              Yeh view ab sirf intro ke dark background jaisa khaali parda hai
              jo WebView ke pehle frame tak blank/white flash rokta hai. -->
+        <!-- Asli HukaTube logo: web intro ka pehla frame isi ke bilkul upar
+             baithta hai (same size/jagah), isliye app kholte hi black nahi,
+             seedha logo dikhta hai. Size MainActivity.kt set karta hai. -->
+        <ImageView
+            android:id="@+id/splashLogo"
+            android:layout_width="104dp"
+            android:layout_height="104dp"
+            android:contentDescription="HukaTube"
+            android:src="@drawable/splash_logo" />
+
         <ProgressBar
             android:id="@+id/initialLoadingSpinner"
             android:layout_width="0dp"
