@@ -110,6 +110,20 @@ export default function App() {
     cleanupStaleDownloads()
   }, [])
 
+  // Intro handshake (see the inline script in index.html): tell it the app has
+  // mounted so the animation starts on a calm main thread, and make sure it can
+  // always leave — pages with no Home "ready" signal (offline -> Downloads,
+  // verify gate) still release it a few seconds after mount.
+  useEffect(() => {
+    window.__hukaMounted = true
+    window.dispatchEvent(new Event('huka-mounted'))
+    const id = window.setTimeout(() => {
+      window.__hukaReady = true
+      window.dispatchEvent(new Event('huka-app-ready'))
+    }, 6000)
+    return () => window.clearTimeout(id)
+  }, [])
+
   // BUG FIX (user report: "PiP expand karne par watch page ki jagah Home par
   // khul jaata hai"): jab chhote inline player se native (real) PiP shuru hoti
   // hai, Android side is watch page ko WebView history mein PEECHE (Detail
