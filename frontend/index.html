@@ -21,24 +21,29 @@
       html,body{-webkit-touch-callout:none}
       body{-webkit-user-select:none;user-select:none}
       input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:text}
-      #hb{position:fixed;inset:0;z-index:2147483000;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
-        background:radial-gradient(ellipse at 50% 50%,#2b2723 0%,#15130f 55%,#0a0908 100%)}
-      #hb,#hb *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
-      #hb *{box-sizing:border-box}
+      #hb{position:fixed;inset:0;z-index:2147483000;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+      #hb .bgfill{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 50%,#2b2723 0%,#15130f 55%,#0a0908 100%)}
+      #hb .amb,#hb .stage,#hb .ld{will-change:opacity}
       #hb{--s:min(26vw,112px)}
       /* Only transform/opacity are animated => GPU-composited, stays smooth even
          while the app boots behind. Animations start only after .go (set once
          the app has mounted) so a busy main thread can never skip frames. */
       #hb .cw{position:absolute;inset:0}
-      /* EXIT: logo + effects fade out over the (still opaque) dark backdrop first, THEN the
-         backdrop itself fades away into the app. Nothing slides, no ghost of the intro. */
-      #hb .cover{position:absolute;inset:0;opacity:0;pointer-events:none}
-      #hb.out .cover{animation:hb-cov .34s ease-in-out forwards}
-      @keyframes hb-cov{to{opacity:1}}
-      #hb.out .cw{animation:hb-cx .32s ease-in forwards}
-      @keyframes hb-cx{to{opacity:0;transform:scale(1.05)}}
-      #hb.out{animation:hb-fade .5s ease-in-out .42s forwards;pointer-events:none}
-      @keyframes hb-fade{to{opacity:0}}
+      /* EXIT = a hand-off, not a cut. Order: (1) logo lock-up drifts up + fades,
+         (2) the dark backdrop dissolves into Home, (3) the intro's own atmosphere (bokeh,
+         sparkles, glow) lingers over Home for ~1.5 s while a warm light sweep crosses —
+         so Home appears INSIDE the intro's world instead of replacing it. */
+      #hb.out{pointer-events:none}
+      #hb.out .bgfill{animation:hb-bgout .9s ease-in-out .28s forwards}
+      #hb.out .amb{animation:hb-ambout 1.5s ease-in-out .4s forwards}
+      #hb.out .stage{animation:hb-lockout .62s cubic-bezier(.4,0,.7,.4) forwards}
+      @keyframes hb-bgout{to{opacity:0}}
+      @keyframes hb-ambout{to{opacity:0}}
+      @keyframes hb-lockout{from{opacity:1;transform:scale(1.055)}to{opacity:0;transform:translateY(-5vh) scale(1.09)}}
+      #hb .sweep{position:absolute;top:-10%;bottom:-10%;left:0;width:55%;opacity:0;pointer-events:none;will-change:transform,opacity;
+        background:linear-gradient(100deg,transparent 0%,rgba(255,226,140,.22) 50%,transparent 100%);transform:translateX(-130%) skewX(-18deg)}
+      #hb.out .sweep{animation:hb-sweep 1.2s ease-in-out .3s forwards}
+      @keyframes hb-sweep{0%{opacity:1;transform:translateX(-130%) skewX(-18deg)}100%{opacity:1;transform:translateX(280%) skewX(-18deg)}}
 
       #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
         background:radial-gradient(circle,rgba(253,208,8,.22) 0%,rgba(255,150,30,.08) 36%,transparent 64%)}
@@ -156,20 +161,24 @@
         animation:hb-spin 8s linear infinite;will-change:transform}
       #hb .obs i{position:absolute;left:50%;top:-4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:#fff;box-shadow:0 0 10px 3px rgba(253,208,8,.9)}
       @keyframes hb-spin{to{transform:rotate(360deg)}}
-      #hb.go .stage{animation:hb-push 8s cubic-bezier(.25,.1,.3,1) both}
+      #hb.go .stage{animation:hb-push 6.06s linear both}
       @keyframes hb-push{from{transform:scale(1)}to{transform:scale(1.055)}}
       #hb .vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(0,0,0,.5) 100%)}
     </style>
   </head>
   <body class="bg-reel-bg text-reel-ink font-body">
     <div id="hb" aria-hidden="true">
+     <div class="bgfill"></div>
      <div class="cw">
+      <div class="amb">
       <div class="bgblob b1"></div><div class="bgblob b2"></div><div class="bgblob b3"></div>
       <div class="bk"><i style="left:94%;top:11%;width:72px;height:72px;--c:70,200,205;--o:0.36;--dx:-23px;--dy:8px;animation-duration:17s;animation-delay:-0s"></i><i style="left:83%;top:-2%;width:124px;height:124px;--c:255,140,50;--o:0.42;--dx:56px;--dy:-77px;animation-duration:23s;animation-delay:-12s"></i><i style="left:46%;top:51%;width:96px;height:96px;--c:253,190,40;--o:0.61;--dx:-35px;--dy:-21px;animation-duration:21s;animation-delay:-2s"></i><i style="left:38%;top:-1%;width:40px;height:40px;--c:70,200,205;--o:0.72;--dx:-45px;--dy:-56px;animation-duration:19s;animation-delay:-3s"></i><i style="left:3%;top:57%;width:22px;height:22px;--c:70,200,205;--o:0.4;--dx:11px;--dy:-42px;animation-duration:23s;animation-delay:-16s"></i><i style="left:89%;top:96%;width:30px;height:30px;--c:255,140,50;--o:0.53;--dx:-11px;--dy:-61px;animation-duration:22s;animation-delay:-13s"></i><i style="left:-4%;top:32%;width:30px;height:30px;--c:253,208,8;--o:0.47;--dx:53px;--dy:-85px;animation-duration:19s;animation-delay:-5s"></i><i style="left:73%;top:80%;width:56px;height:56px;--c:253,208,8;--o:0.36;--dx:-42px;--dy:-36px;animation-duration:23s;animation-delay:-8s"></i><i style="left:94%;top:76%;width:22px;height:22px;--c:130,105,255;--o:0.76;--dx:-11px;--dy:-72px;animation-duration:17s;animation-delay:-2s"></i><i style="left:70%;top:79%;width:30px;height:30px;--c:255,140,50;--o:0.31;--dx:-13px;--dy:5px;animation-duration:25s;animation-delay:-14s"></i><i style="left:71%;top:59%;width:30px;height:30px;--c:253,208,8;--o:0.37;--dx:-11px;--dy:-44px;animation-duration:26s;animation-delay:-4s"></i><i style="left:25%;top:76%;width:40px;height:40px;--c:255,140,50;--o:0.7;--dx:-40px;--dy:51px;animation-duration:19s;animation-delay:-12s"></i><i style="left:73%;top:8%;width:56px;height:56px;--c:70,200,205;--o:0.33;--dx:-47px;--dy:-81px;animation-duration:24s;animation-delay:-8s"></i><i style="left:90%;top:88%;width:30px;height:30px;--c:70,200,205;--o:0.44;--dx:45px;--dy:35px;animation-duration:20s;animation-delay:-16s"></i><i style="left:88%;top:6%;width:30px;height:30px;--c:255,140,50;--o:0.43;--dx:11px;--dy:-72px;animation-duration:20s;animation-delay:-6s"></i></div>
       <div class="sp"><s style="left:5%;top:12%;width:8px;height:8px;animation-duration:3.4s;animation-delay:-1.9s"></s><s style="left:34%;top:11%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-0.6s"></s><s style="left:50%;top:71%;width:10px;height:10px;animation-duration:2.8s;animation-delay:-0s"></s><s style="left:20%;top:61%;width:10px;height:10px;animation-duration:3.4s;animation-delay:-3.1s"></s><s style="left:77%;top:21%;width:14px;height:14px;animation-duration:2.2s;animation-delay:-0s"></s><s style="left:48%;top:93%;width:12px;height:12px;animation-duration:3.4s;animation-delay:-0s"></s><s style="left:79%;top:85%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.9s"></s><s style="left:42%;top:44%;width:6px;height:6px;animation-duration:2.8s;animation-delay:-0s"></s><s style="left:60%;top:73%;width:6px;height:6px;animation-duration:3.4s;animation-delay:-3.1s"></s><s style="left:93%;top:20%;width:6px;height:6px;animation-duration:3.4s;animation-delay:-1.2s"></s><s style="left:90%;top:64%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.9s"></s><s style="left:66%;top:77%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-2.5s"></s><s style="left:51%;top:78%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-2.5s"></s><s style="left:13%;top:15%;width:6px;height:6px;animation-duration:2.2s;animation-delay:-1.2s"></s><s style="left:45%;top:53%;width:12px;height:12px;animation-duration:4.0s;animation-delay:-1.9s"></s><s style="left:72%;top:14%;width:12px;height:12px;animation-duration:2.2s;animation-delay:-1.2s"></s></div>
       <div class="glow"></div>
       <div class="ember"></div>
       <div class="beam"></div>
+      <div class="grain"></div><div class="vig"></div>
+      </div>
       <div class="stage">
         <div class="mark">
           <div class="flash"></div><div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
@@ -183,9 +192,8 @@
         <div class="rule"></div>
       </div>
       <div class="ld"><div class="ldb"><div class="ldf"><div class="ldsh"></div></div></div><div class="ldr"><span class="ldt">Loading</span><span class="ldp" id="hbp">0%</span></div></div>
-      <div class="grain"></div><div class="vig"></div>
      </div>
-     <div class="cover"></div>
+     <div class="sweep"></div>
     </div>
     <script>
     (function () {
@@ -231,12 +239,18 @@
         try { stopSnd(); } catch (e) {}
         bars(false); // system bars + normal layout come back while the intro is still fully opaque
         setTimeout(function () {
+          var root = document.getElementById('root');
           try {
-            var c = el.querySelector('.cover'), bg = getComputedStyle(document.body).backgroundColor;
-            c.style.background = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#0B0B0F';
+            if (root) {
+              // Home fades up underneath while the backdrop dissolves (opacity only:
+              // a transform on #root would break every position:fixed child)
+              root.style.opacity = '0'; void root.offsetHeight;
+              root.style.transition = 'opacity .9s ease-in-out .3s'; root.style.opacity = '1';
+              setTimeout(function () { root.style.transition = ''; root.style.opacity = ''; }, 1600);
+            }
           } catch (e) {}
           el.classList.add('out');
-          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1100);
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2200);
         }, 260);
       }
       el.addEventListener('click', function () { if (started) leave(); });
