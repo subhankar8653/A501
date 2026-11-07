@@ -1177,6 +1177,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 loadErrorView.visibility = View.GONE
             }
 
+            // Intro ab index.html ke andar hi hai — jaise hi WebView ka pehla
+            // frame visible ho, native dark parda hata do taaki intro turant
+            // dikhe (onPageFinished tak intezaar karne se kuch second black
+            // screen dikhti thi, kyunki bada JS bundle load hone ke baad hi
+            // wo event aata hai).
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                super.onPageCommitVisible(view, url)
+                fadeOutLoadingView()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
