@@ -77,10 +77,24 @@ jobs:
             yes | "$SDKMANAGER" --licenses > /dev/null || true
           fi
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.11.1'
+      # Gradle is fetched with curl + many retries (the setup-gradle action gives up
+      # after 3 tries when services.gradle.org answers 504). Falls back to a second mirror.
+      - name: Set up Gradle (with retries)
+        run: |
+          V=8.11.1
+          mkdir -p "$RUNNER_TEMP/gr" && cd "$RUNNER_TEMP/gr"
+          ok=0
+          for url in "https://services.gradle.org/distributions/gradle-$V-bin.zip" \
+                     "https://downloads.gradle.org/distributions/gradle-$V-bin.zip" \
+                     "https://github.com/gradle/gradle-distributions/releases/download/v$V/gradle-$V-bin.zip"; do
+            for i in 1 2 3 4 5 6; do
+              if curl -fL --connect-timeout 20 --max-time 300 -o gradle.zip "$url" && unzip -tq gradle.zip >/dev/null 2>&1; then ok=1; break 2; fi
+              echo "download failed ($url, try $i), waiting..."; sleep $((i * 15))
+            done
+          done
+          [ "$ok" = 1 ] || { echo "::error::Could not download Gradle $V"; exit 1; }
+          unzip -q gradle.zip
+          echo "$RUNNER_TEMP/gr/gradle-$V/bin" >> "$GITHUB_PATH"
 
       # libtdjson.so (TDLib, 25MB+) lives in the GitHub Release "tdlib-libs".
       # `gh` authenticates, so this also works when the repo is private.
