@@ -34,12 +34,16 @@
          sparkles, glow) lingers over Home for ~1.5 s while a warm light sweep crosses —
          so Home appears INSIDE the intro's world instead of replacing it. */
       #hb.out{pointer-events:none}
-      /* EXIT, strictly in two beats so NOTHING of the intro is ever seen over Home:
-         beat 1 (0-.4s): logo + all effects fade out while the dark backdrop stays opaque;
-         beat 2 (.4-1s): the plain backdrop dissolves while Home fades in underneath. */
-      #hb.out .stage,#hb.out .amb,#hb.out .ld{animation:hb-fo .4s ease-in forwards}
-      #hb.out .bgfill{animation:hb-fo .6s ease-in-out .4s forwards}
+      /* EXIT in 2 beats, Home is NOT visible during beat 1:
+         beat 1 (0-.5s): logo+effects fade out AND the backdrop turns into Home's own flat colour (.flat)
+         beat 2 (.5-1.2s): the whole intro layer (now just Home's flat colour) fades while Home fades in -
+         same colour on both sides, so there is nothing to clash. */
+      #hb .flat{position:absolute;inset:0;opacity:0}
+      #hb.go.out .stage,#hb.out .amb,#hb.go.out .ld,#hb.out .ld{animation:hb-fo .45s ease-in forwards}
+      #hb.out .flat{animation:hb-fi .5s ease-in-out forwards}
+      #hb.out{animation:hb-fo .7s ease-in-out .5s forwards}
       @keyframes hb-fo{to{opacity:0}}
+      @keyframes hb-fi{to{opacity:1}}
       #hb .sweep{display:none}
 
       #hb .glow{position:absolute;left:50%;top:44%;width:130vmin;height:130vmin;margin:-65vmin 0 0 -65vmin;border-radius:50%;opacity:0;will-change:transform,opacity;
@@ -166,6 +170,7 @@
   <body class="bg-reel-bg text-reel-ink font-body">
     <div id="hb" aria-hidden="true">
      <div class="bgfill"></div>
+     <div class="flat"></div>
      <div class="cw">
       <div class="amb">
       <div class="bgblob b1"></div><div class="bgblob b2"></div><div class="bgblob b3"></div>
@@ -237,17 +242,18 @@
         bars(false); // system bars + normal layout come back while the intro is still fully opaque
         setTimeout(function () {
           var root = document.getElementById('root');
+          try { var bg = getComputedStyle(document.body).backgroundColor; if (!bg || bg === 'rgba(0, 0, 0, 0)') bg = '#0a0b0a'; el.querySelector('.flat').style.background = bg; } catch (e) {}
           try {
             if (root) {
               // Home fades up underneath while the backdrop dissolves (opacity only:
               // a transform on #root would break every position:fixed child)
               root.style.opacity = '0'; void root.offsetHeight;
-              root.style.transition = 'opacity .6s ease-in-out .4s'; root.style.opacity = '1';
-              setTimeout(function () { root.style.transition = ''; root.style.opacity = ''; }, 1300);
+              root.style.transition = 'opacity .7s ease-in-out .5s'; root.style.opacity = '1';
+              setTimeout(function () { root.style.transition = ''; root.style.opacity = ''; }, 1500);
             }
           } catch (e) {}
           el.classList.add('out');
-          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1250);
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1400);
         }, 260);
       }
       el.addEventListener('click', function () { if (started) leave(); });
