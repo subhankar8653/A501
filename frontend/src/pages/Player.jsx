@@ -6,7 +6,7 @@ import Comments from '../components/Comments'
 import CommentsSheet from '../components/CommentsSheet'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import { pickStreamForPref, rememberQuality } from '../lib/qualityPref'
-import { isRealImage } from '../components/ArtImage'
+import ArtImage, { isRealImage } from '../components/ArtImage'
 import Rail from '../components/Rail'
 import RatingStars from '../components/RatingStars'
 import ReportForm from '../components/ReportForm'
@@ -1392,11 +1392,11 @@ export default function Player() {
                     onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
                     className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-reel-ink/5"
                   >
-                    <img
-                      src={ep.thumbnail}
-                      alt={ep.title}
-                      loading="lazy"
-                      className="w-32 sm:w-40 aspect-video object-cover rounded-md shrink-0"
+                    <ArtImage
+                      srcs={[ep.thumbnail, seriesMeta?.background, seriesMeta?.poster]}
+                      name={ep.title}
+                      logoOnly
+                      className="w-32 sm:w-40 aspect-video rounded-md shrink-0"
                     />
                     <div className="min-w-0">
                       <p className="font-medium text-sm">
