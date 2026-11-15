@@ -86,9 +86,31 @@ object PlayerNetwork {
     // CDN/m3u8 links) — which was never the Railway-bandwidth path anyway.
     fun dataSourceFactory(context: Context): DataSource.Factory {
         val localOrExternal = cacheBackedHttpFactory(context)
+        // Telegram (TDLib) stream ko bhi disk cache se wrap karo: jo hissa ek baar dekh/
+        // download ho chuka hai, peeche seek / 10s back karne par wahi disk se turant milta
+        // hai (buffering nahi). Cache sirf isi episode ka rehta hai — naya episode shuru
+        // hote hi clearOtherResources() purana hata deta hai.
+        val tdlibCached = CacheDataSource.Factory()
+            .setCache(cache(context))
+            .setUpstreamDataSourceFactory(TdlibDataSource.Factory())
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         return TelegramRoutingDataSource.Factory(
-            primaryFactory = TdlibDataSource.Factory(),
+            primaryFactory = tdlibCached,
             secondaryFactory = localOrExternal,
         )
+    }
+
+    /** Naye episode/video ke liye: current URI ke alawa baaki sab cached data hata do. */
+    fun clearOtherResources(context: Context, keepUri: String) {
+        Thread {
+            try {
+                val c = cache(context)
+                for (k in c.keys.toList()) {
+                    if (k != keepUri) {
+                        try { c.removeResource(k) } catch (_: Throwable) {}
+                    }
+                }
+            } catch (_: Throwable) {}
+        }.start()
     }
 }
