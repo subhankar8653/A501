@@ -12,6 +12,7 @@ import New, { prefetchNew } from './pages/New'
 import Detail from './pages/Detail'
 import Player from './pages/Player'
 import PlayerErrorBoundary from './components/PlayerErrorBoundary'
+import AppErrorBoundary from './components/AppErrorBoundary'
 import Saved from './pages/Saved'
 import Downloads from './pages/Downloads'
 import { LanguageProvider } from './i18n/LanguageContext'
@@ -70,7 +71,7 @@ function ChromeForRoute({ children }) {
         className={`page-fade-in ${!hideChrome ? 'pb-20' : ''}`}
         onAnimationEnd={(e) => e.currentTarget.classList.remove('page-fade-in')}
       >
-        {children}
+        <AppErrorBoundary>{children}</AppErrorBoundary>
       </div>
       {!hideChrome && <DownloadToast />}
       {!hideChrome && <BottomNav />}
