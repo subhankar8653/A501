@@ -612,6 +612,28 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlinePlayPauseButtonRef: ImageButton? = null
     private var inlineQualityButtonRef: TextView? = null
     private var inlineTimeBarRef: DefaultTimeBar? = null
+    private var inlineBottomBlockRef: View? = null
+
+    // Keep-screen-on (YouTube jaisa): video chalte waqt screen dim/sleep nahi hogi.
+    private fun updateInlineKeepScreenOn() {
+        val p = inlinePlayer
+        val active = p != null && p.playWhenReady &&
+            (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
+        if (active) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    // Bottom block (time row + progress bar) ko hamesha overlay ke neeche ke border
+    // se chipka rakhta hai: agar kisi wajah se upar float kare to translationY se wapas kheench deta hai.
+    private fun pinInlineBottomBlock() {
+        val block = inlineBottomBlockRef ?: return
+        val ov = inlineOverlay ?: return
+        if (block.height == 0 || ov.height == 0 || ov.scaleY != 1f) return
+        val a = IntArray(2); val b = IntArray(2)
+        ov.getLocationInWindow(a); block.getLocationInWindow(b)
+        val delta = (a[1] + ov.height) - (b[1] + block.height)
+        if (kotlin.math.abs(delta) >= 1) block.translationY = block.translationY + delta
+    }
     private var inlineBufferingIndicatorRef: View? = null
     // FEATURE (user follow-up: "sabhi icon pe kaam karna chahiye" — the
     // first pass only retinted the play/pause hero button, quality text and
@@ -712,6 +734,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // hai aur uska icon yahi listener seedha player ki state se badalta hai.
     private val inlinePlayPauseListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            updateInlineKeepScreenOn()
             inlinePlayPauseButtonRef?.setImageResource(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow
             )
@@ -735,6 +758,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // ek hi cheez dikhti hai, jhatka-free premium feel.
         override fun onPlaybackStateChanged(playbackState: Int) {
             setInlineBuffering(playbackState == Player.STATE_BUFFERING)
+            updateInlineKeepScreenOn()
             if (playbackState == Player.STATE_READY) {
                 // Pehli baar READY ban gaya — is URI ke liye ab "initial
                 // load" khatam. Aage koi bhi buffering isi URI par sirf
@@ -1692,6 +1716,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val processingLabel = root.findViewById<TextView>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineTimeBarRef = timeBar
+            inlineBottomBlockRef = playerView.findViewById(R.id.inlineBottomBlock)
+            inlineBottomBlockRef?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
+            inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
             inlineBufferingIndicatorRef = bufferingIndicator
             inlineProcessingLabelRef = processingLabel
             inlinePipChevronRef = pipChevron
@@ -2953,6 +2980,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // target ke roop mein istemal na ho.
         lastKnownWatchPath = null
         inlinePlayer?.pause()
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         inlineOverlay?.let { overlay ->
             overlay.animate().cancel()
             overlay.animate()
@@ -3580,6 +3608,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineAmbientGlowView = null
                 inlineQualityButtonRef = null
                 inlineTimeBarRef = null
+                inlineBottomBlockRef = null
                 inlineThinProgressBarRef = null
                 inlineBufferingIndicatorRef = null
                 inlineProcessingLabelRef = null
