@@ -1,3 +1,4 @@
+import ArtImage from '../components/ArtImage'
 import { useEffect, useState } from 'react'
 import { getMeta } from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
@@ -224,9 +225,7 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
         hasAny ? 'bg-reel-surface' : 'bg-reel-surface/40 opacity-50'
       }`}
     >
-      <div className="w-20 aspect-video rounded-md overflow-hidden bg-reel-surface2 shrink-0">
-        {ep.thumbnail ? <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" /> : null}
-      </div>
+      <ArtImage srcs={[ep.thumbnail]} name={ep.title || ''} logoOnly className="w-20 aspect-video rounded-md bg-reel-surface2 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-reel-ink line-clamp-1">
           E{ep.episode} · {ep.title}

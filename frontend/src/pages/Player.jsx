@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments, getReportStatus, submitReport, reportStreamLanguages } from '../api'
+import { getStreams, prefetchStreams, getMeta, qualityLabel, isVerified, getContinueWatching, saveWatchProgress, removeWatchProgress, getRelatedTitles, getComments, getReportStatus, submitReport, reportStreamLanguages } from '../api'
 import VideoPlayer from '../components/VideoPlayer'
 import Comments from '../components/Comments'
 import CommentsSheet from '../components/CommentsSheet'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
+import { pickStreamForPref, rememberQuality } from '../lib/qualityPref'
+import { isRealImage } from '../components/ArtImage'
 import Rail from '../components/Rail'
 import RatingStars from '../components/RatingStars'
 import ReportForm from '../components/ReportForm'
@@ -332,6 +334,24 @@ export default function Player() {
   }
 
   const [retryKey, setRetryKey] = useState(0)
+  // START WATCHDOG (user report: "video kai baar load nahi hota, app band-khol karne par ho jata
+  // hai"): if the player has not reported a duration / position within 20 s of getting a stream,
+  // rebuild it once or twice (fresh native player = what an app restart effectively did).
+  const [playerNonce, setPlayerNonce] = useState(0)
+  const startedRef = useRef(false)
+  const nonceTries = useRef(0)
+  useEffect(() => { nonceTries.current = 0; setPlayerNonce(0) }, [id])
+  useEffect(() => {
+    if (!active?.url) return undefined
+    startedRef.current = false
+    const tid = setTimeout(() => {
+      if (!startedRef.current && !document.hidden && nonceTries.current < 2) {
+        nonceTries.current += 1
+        setPlayerNonce((n) => n + 1)
+      }
+    }, 20000)
+    return () => clearTimeout(tid)
+  }, [active?.url, playerNonce]) // eslint-disable-line react-hooks/exhaustive-deps
   const [toast, setToast] = useState('')
   // Continuously tracks current playback position so that switching quality
   // mid-video can resume from the same spot instead of restarting.
@@ -450,7 +470,7 @@ export default function Player() {
           return
         }
         setStreams(list)
-        setActive(lowestQualityStream(list))
+        setActive(pickStreamForPref(list) || lowestQualityStream(list))
       })
       .catch(() => setError(t('player_stream_load_failed')))
     // FEATURE (user ask: "Watch history / Continue Watching"): backend se
@@ -776,7 +796,7 @@ export default function Player() {
   const glowImage = useMemo(() => {
     if (isSeries) {
       const ep = allEpisodes.find((e) => e.season === currentSeason && e.episode === currentEpisode)
-      return ep?.thumbnail || seriesMeta?.background || seriesMeta?.poster || null
+      return (isRealImage(ep?.thumbnail) ? ep.thumbnail : null) || seriesMeta?.background || seriesMeta?.poster || null
     }
     return movieMeta?.background || movieMeta?.poster || null
   }, [isSeries, allEpisodes, currentSeason, currentEpisode, seriesMeta, movieMeta])
@@ -804,6 +824,13 @@ export default function Player() {
   }, [isSeries, allEpisodes, currentSeason, currentEpisode])
 
   const nextEpisode = upNext.episodes[0] || null
+  // Warm the next episode's stream list a few seconds after this one opens, so autoplay-next
+  // starts without waiting on the network.
+  useEffect(() => {
+    if (!isSeries || !nextEpisode) return undefined
+    const tid = setTimeout(() => prefetchStreams('series', nextEpisode.id), 4000)
+    return () => clearTimeout(tid)
+  }, [isSeries, nextEpisode && nextEpisode.id])
 
   // "Up Next" sirf aage dekhta hai — pichla episode nikalne ke liye poori
   // (sabhi seasons milakar banayi) list mein current se ek pehle wala dhoondo.
@@ -875,7 +902,10 @@ export default function Player() {
   useEffect(() => {
     window.__suhaniOnNativeQualityChange = (url) => {
       const match = (streams || []).find((s) => s.url === url)
-      if (match) switchQuality(match)
+      if (match) {
+        rememberQuality(qualityLabel(match))
+        switchQuality(match)
+      }
     }
     return () => {
       delete window.__suhaniOnNativeQualityChange
@@ -1081,7 +1111,7 @@ export default function Player() {
                   // `sameEpisode` computes correctly), and only remounts
                   // fresh on a genuine episode change — which is exactly
                   // when a full reset is actually wanted.
-                  key={id}
+                  key={`${id}:${playerNonce}`}
                   src={active.url}
                   title={displayTitle}
                   qualities={qualitiesForPicker}
@@ -1097,11 +1127,13 @@ export default function Player() {
                     // instead of silently landing on native's default.
                     pendingLanguageRef.current =
                       selectedLanguage || activeQualityObj?.languages?.[0] || null
+                    rememberQuality(q?.label || qualityLabel(q))
                     switchQuality(q)
                   }}
                   ambientEnabled={ambientMode}
                   startAt={resumeAt.current}
                   onProgressTick={(t, dur) => {
+                    if (dur > 0 || t > 0) startedRef.current = true
                     resumeAt.current = t
                     lastKnownDurationRef.current = dur
                     // Throttle: save at most once every 10s of real time.

@@ -1,3 +1,4 @@
+import ArtImage from '../components/ArtImage'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getMeta, isVerified, getRelatedTitles } from '../api'
@@ -184,10 +185,15 @@ export default function Detail() {
 
   return (
     <div>
-      <div
-        className="w-full h-[30vh] sm:h-[38vh] bg-cover bg-center relative"
-        style={{ backgroundImage: `linear-gradient(to top, var(--reel-bg) 5%, color-mix(in srgb, var(--reel-bg) 40%, transparent)), url(${meta.background || meta.poster})` }}
-      >
+      <div className="w-full h-[30vh] sm:h-[38vh] relative">
+        {/* Banner: backdrop -> poster -> branded colour + logo, so it is never empty. */}
+        <ArtImage
+          srcs={[meta.background, meta.poster]}
+          name={meta.name}
+          logoOnly
+          className="absolute inset-0"
+        />
+        <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(to top, var(--reel-bg) 5%, color-mix(in srgb, var(--reel-bg) 40%, transparent))' }} />
         <BackButton className="absolute top-4 left-4 z-20" />
         <div className="absolute bottom-0 left-0 right-0 max-w-6xl mx-auto px-4 sm:px-6 pb-4 flex items-end gap-4">
           {meta.poster ? (
@@ -281,11 +287,11 @@ export default function Detail() {
                     onClick={() => navigate(`/watch/${type}/${encodeURIComponent(ep.id)}`)}
                     className="flex gap-3 text-left min-w-0 flex-1"
                   >
-                    <img
-                      src={ep.thumbnail}
-                      alt={ep.title}
-                      loading="lazy"
-                      className="w-24 sm:w-32 aspect-video object-cover rounded-md shrink-0"
+                    <ArtImage
+                      srcs={[ep.thumbnail]}
+                      name={ep.title || meta.name}
+                      logoOnly
+                      className="w-24 sm:w-32 aspect-video rounded-md shrink-0"
                     />
                     <div className="min-w-0">
                       <p className="font-medium text-sm">

@@ -1,3 +1,4 @@
+import { getQualityPref, setQualityPref, getLastQuality } from '../lib/qualityPref'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -123,6 +124,13 @@ export default function Profile() {
       return true
     }
   })
+
+  // Video quality preference (see lib/qualityPref.js for the rules).
+  const [qPref, setQPrefState] = useState(() => getQualityPref())
+  function chooseQuality(pref) {
+    setQPrefState(pref)
+    setQualityPref(pref)
+  }
 
   function toggleAutoplay(next) {
     setAutoplayState(next)
@@ -469,6 +477,38 @@ export default function Profile() {
         <ToggleRow label={t('profile_autoplay')} sub={t('profile_autoplay_sub')} checked={autoplay} onChange={toggleAutoplay} />
         <div className="h-px bg-reel-ink/5" />
         <ToggleRow label={t('profile_ambient_mode')} sub={t('profile_ambient_mode_sub')} checked={ambientMode} onChange={toggleAmbient} />
+        <div className="h-px bg-reel-ink/5" />
+        <div className="py-2.5">
+          <p className="text-sm text-reel-ink font-medium">Video quality</p>
+          <p className="text-[11px] text-reel-muted mt-0.5">
+            {qPref.mode === 'auto'
+              ? `Auto: jo quality aapne last chuni wahi chalegi${getLastQuality() ? ` (abhi: ${getLastQuality()})` : ''}. Pehli baar sabse kam quality.`
+              : qPref.mode === 'lowest'
+                ? 'Hamesha sabse kam quality (data bachat).'
+                : `Hamesha ${qPref.value}. Agar wo nahi mili to sabse kam quality chalegi.`}
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            {[
+              { label: 'Auto', pref: { mode: 'auto' } },
+              { label: 'Lowest', pref: { mode: 'lowest' } },
+              { label: '360p', pref: { mode: 'fixed', value: '360p' } },
+              { label: '480p', pref: { mode: 'fixed', value: '480p' } },
+              { label: '720p', pref: { mode: 'fixed', value: '720p' } },
+              { label: '1080p', pref: { mode: 'fixed', value: '1080p' } },
+            ].map((o) => {
+              const on = o.pref.mode === qPref.mode && (o.pref.mode !== 'fixed' || o.pref.value === qPref.value)
+              return (
+                <button
+                  key={o.label}
+                  onClick={() => chooseQuality(o.pref)}
+                  className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors active:scale-95 ${on ? 'chip-active' : 'chip'}`}
+                >
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </SectionCard>
 
       {/* ---- Appearance ---- */}
