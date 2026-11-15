@@ -242,6 +242,7 @@
          bar" comment describe karta hai), koi alag absolute-position layer
          nahi banti jo galat height-measurement/hang ka risk banaye. -->
     <LinearLayout
+        android:id="@+id/inlineBottomBlock"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
