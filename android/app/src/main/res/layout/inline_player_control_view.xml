@@ -90,12 +90,12 @@
                  fullscreen player's dedicated icon. -->
             <ImageView
                 android:id="@+id/inlinePipChevron"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:padding="6dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
                 android:src="@drawable/ic_chevron_down_pip"
                 android:tint="#FFF8E7"
-                android:background="@drawable/bg_icon_soft_glow"
+                android:background="@drawable/bg_inline_glass_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="minimize to mini player" />
 
@@ -104,38 +104,45 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="6dp"
+                android:background="@drawable/bg_inline_glass_pill">
+
             <ImageView
                 android:id="@+id/inlineAudioTrackButton"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:padding="6dp"
+                android:layout_width="38dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
                 android:src="@drawable/ic_audiotrack"
                 android:tint="#FFF8E7"
-                android:background="@drawable/bg_icon_soft_glow"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="audio track" />
 
             <ImageView
                 android:id="@+id/inlineSubtitleButton"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:padding="6dp"
+                android:layout_width="38dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
                 android:src="@drawable/ic_subtitle"
                 android:tint="#FFF8E7"
-                android:background="@drawable/bg_icon_soft_glow"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="subtitle" />
 
             <ImageView
                 android:id="@+id/inlineSettingsButton"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:padding="6dp"
+                android:layout_width="38dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
                 android:src="@drawable/ic_settings"
                 android:tint="#FFF8E7"
-                android:background="@drawable/bg_icon_soft_glow"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="settings" />
+
+            </LinearLayout>
 
             <!-- Hidden — settings-sheet ke "Playback speed"/"Decoder" row se
                  performClick() hote hain, logic wahi purana hai -->
@@ -329,12 +336,12 @@
 
             <ImageView
                 android:id="@+id/inlineFullscreenButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:padding="5dp"
                 android:src="@drawable/ic_fullscreen_expand"
                 android:tint="#FFF8E7"
-                android:background="@drawable/bg_icon_soft_glow"
+                android:background="@drawable/bg_inline_glass_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="fullscreen" />
 
