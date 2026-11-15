@@ -1,3 +1,4 @@
+import { pushToast } from '../lib/toastStore'
 import { useEffect, useMemo, useState } from 'react'
 import { getStreams, qualityLabel } from '../api'
 import { startDownload, downloadId, useDownloadsList } from '../lib/downloadsStore'
@@ -183,30 +184,30 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
 
   if (!open) return null
 
+  // Tap "Download" -> the sheet closes IMMEDIATELY and everything is queued in the background
+  // (user ask: no progress pop-up; the download just starts). Progress lives in the Downloads
+  // tab, and a single small toast confirms.
   async function confirmDownload() {
     if (!picked) return
-    setQueueing(true)
-    setDone(0)
-    setFailed(0)
-    for (const ep of episodes) {
+    const quality = picked
+    const list0 = episodes
+    const typ = type
+    onClose()
+    let ok = 0
+    let bad = 0
+    for (const ep of list0) {
       try {
-        const list = episodeStreams?.get(ep.id) || (await getStreams(type, ep.id))
-        const match = pickBestStream(list, picked)
-        if (!match) {
-          setFailed((f) => f + 1)
-          continue
-        }
-        const id = downloadId(type, ep.id, qualityLabel(match))
+        const list = episodeStreams?.get(ep.id) || (await getStreams(typ, ep.id))
+        const match = pickBestStream(list, quality)
+        if (!match) { bad++; continue }
+        const id = downloadId(typ, ep.id, qualityLabel(match))
         const already = downloadsList.find((d) => d.id === id)
         if (already && (already.status === 'downloading' || already.status === 'done' || already.status === 'queued')) {
-          setDone((n) => n + 1)
+          ok++
           continue
         }
-        // Fire-and-forget: startDownload manages its own progress (and its
-        // own one-at-a-time queue) in the store, Downloads tab will show
-        // every episode ticking up on its own.
         startDownload(match.url, {
-          type,
+          type: typ,
           titleId: ep.id,
           showId: imdbId,
           showName,
@@ -218,11 +219,13 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
           poster: showPoster,
           qualityLabel: qualityLabel(match),
         })
-        setDone((n) => n + 1)
+        ok++
       } catch {
-        setFailed((f) => f + 1)
+        bad++
       }
     }
+    if (ok) pushToast(list0.length > 1 ? `Download shuru: ${ok} episode(s)` : 'Download shuru ho gaya')
+    if (bad) pushToast(`${bad} download shuru nahi ho paaye`, 'error')
   }
 
   return (
