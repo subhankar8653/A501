@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
   getManifest,
@@ -75,12 +75,23 @@ function HomeContent({ t }) {
 
   // Tells the opening intro (components/Intro.jsx) that real content is on
   // screen, so it can fade out exactly when the app is ready.
+  // ONE-SHOT REVEAL (user ask: "sab ek time par"): the banner, Continue Watching and all
+  // rails stay hidden (but already loading) until the banner artwork is ready, then they
+  // fade in together. Safety timer so a slow/blocked image can never keep Home blank.
+  const [revealed, setRevealed] = useState(() => !!window.__hukaRevealed)
+  const reveal = useCallback(() => { window.__hukaRevealed = true; setRevealed(true) }, [])
   useEffect(() => {
-    if (!loadingTab && Object.keys(groupsByTab).length) {
+    if (revealed) return undefined
+    const id = setTimeout(reveal, 4000)
+    return () => clearTimeout(id)
+  }, [revealed, reveal])
+
+  useEffect(() => {
+    if (!loadingTab && Object.keys(groupsByTab).length && revealed) {
       window.__hukaReady = true
       window.dispatchEvent(new Event('huka-app-ready'))
     }
-  }, [loadingTab, groupsByTab])
+  }, [loadingTab, groupsByTab, revealed])
   const loadStatesRef = useRef({})
   const [error, setError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
@@ -382,7 +393,10 @@ function HomeContent({ t }) {
         </div>
       </div>
 
-      <HomeHero items={heroItems} loading={heroLoading} />
+      <div
+        style={{ opacity: revealed ? 1 : 0, transition: 'opacity 500ms ease-out' }}
+      >
+      <HomeHero items={heroItems} loading={heroLoading} onSettled={reveal} />
 
       <div className="max-w-6xl mx-auto px-0">
         <ContinueWatchingRail items={continueWatching} onRemove={removeContinueWatchingItem} />
@@ -422,6 +436,7 @@ function HomeContent({ t }) {
             </p>
           )}
         </div>
+      </div>
       </div>
     </div>
   )
