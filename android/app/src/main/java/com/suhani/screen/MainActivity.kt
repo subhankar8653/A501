@@ -1716,6 +1716,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val processingLabel = root.findViewById<TextView>(R.id.inlineProcessingLabel)
             inlineQualityButtonRef = qualityButton
             inlineTimeBarRef = timeBar
+            // Controller show/hide animation off: warna Media3 time bar ko alag se pehle hide karta hai
+            playerView.setControllerAnimationEnabled(false)
             inlineBottomBlockRef = playerView.findViewById(R.id.inlineBottomBlock)
             inlineBottomBlockRef?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
             inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
@@ -2135,6 +2137,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // khaali hoti thi. Ab yahan bhi hamesha sahi title metadata set karte hain,
         // taaki fullscreen mein switch karne par asli filename hi carry ho, "Video"
         // generic fallback kabhi na dikhe.
+        com.suhani.videoplayer.PlayerNetwork.clearOtherResources(this, uri)
         player.setMediaItem(
             MediaItem.Builder()
                 .setUri(Uri.parse(uri))
