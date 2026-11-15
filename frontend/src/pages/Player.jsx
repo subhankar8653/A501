@@ -334,24 +334,6 @@ export default function Player() {
   }
 
   const [retryKey, setRetryKey] = useState(0)
-  // START WATCHDOG (user report: "video kai baar load nahi hota, app band-khol karne par ho jata
-  // hai"): if the player has not reported a duration / position within 20 s of getting a stream,
-  // rebuild it once or twice (fresh native player = what an app restart effectively did).
-  const [playerNonce, setPlayerNonce] = useState(0)
-  const startedRef = useRef(false)
-  const nonceTries = useRef(0)
-  useEffect(() => { nonceTries.current = 0; setPlayerNonce(0) }, [id])
-  useEffect(() => {
-    if (!active?.url) return undefined
-    startedRef.current = false
-    const tid = setTimeout(() => {
-      if (!startedRef.current && !document.hidden && nonceTries.current < 2) {
-        nonceTries.current += 1
-        setPlayerNonce((n) => n + 1)
-      }
-    }, 20000)
-    return () => clearTimeout(tid)
-  }, [active?.url, playerNonce]) // eslint-disable-line react-hooks/exhaustive-deps
   const [toast, setToast] = useState('')
   // Continuously tracks current playback position so that switching quality
   // mid-video can resume from the same spot instead of restarting.
@@ -1111,7 +1093,7 @@ export default function Player() {
                   // `sameEpisode` computes correctly), and only remounts
                   // fresh on a genuine episode change — which is exactly
                   // when a full reset is actually wanted.
-                  key={`${id}:${playerNonce}`}
+                  key={id}
                   src={active.url}
                   title={displayTitle}
                   qualities={qualitiesForPicker}
@@ -1133,7 +1115,6 @@ export default function Player() {
                   ambientEnabled={ambientMode}
                   startAt={resumeAt.current}
                   onProgressTick={(t, dur) => {
-                    if (dur > 0 || t > 0) startedRef.current = true
                     resumeAt.current = t
                     lastKnownDurationRef.current = dur
                     // Throttle: save at most once every 10s of real time.
