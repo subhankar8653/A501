@@ -160,7 +160,7 @@ function base() {
   return cfg
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, timeoutMs = 20000) {
   // Bug fix (user report: "Movies/Web Series load hi nahi ho raha, hamesha
   // Loading... hi dikhta rehta hai" jabki Anime/K-Drama theek chalte hain):
   // pehle fetch() ka koi timeout nahi tha — agar backend kisi specific
@@ -169,7 +169,7 @@ async function fetchJson(url) {
   // reh jaata, aur "Loading..." kabhi hatta hi nahi. Ab 20s ke baad request
   // khud abort ho jaati hai taaki UI kabhi hamesha ke liye atki na rahe.
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 20000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(url, { signal: controller.signal })
     if (!res.ok) {
@@ -359,10 +359,55 @@ export async function getMeta(type, id) {
   return data.meta || null
 }
 
-export async function getStreams(type, id) {
+// Stream list loading (user report: "video load hone mein time lagta hai / kai baar load nahi
+// hota, app band karke kholo to ho jata hai"). Cause: ONE request, 20 s timeout, no retry - a
+// stalled connection kept the player on "loading" until the app was restarted (= fresh
+// connections). Now: short timeouts + automatic retries on a fresh connection, plus a small
+// cache so re-opening / next-episode prefetch is instant.
+const STREAM_CACHE_TTL = 4 * 60 * 1000
+const streamCache = new Map() // `${type}/${id}` -> { t, list }
+const streamInflight = new Map()
+
+async function loadStreamsWithRetry(type, id) {
   const { backendUrl, token } = base()
-  const data = await fetchJson(`${backendUrl}/stremio/${token}/stream/${type}/${id}.json`)
-  return data.streams || []
+  const url = `${backendUrl}/stremio/${token}/stream/${type}/${id}.json`
+  const timeouts = [8000, 9000, 12000, 15000]
+  let lastErr
+  for (let i = 0; i < timeouts.length; i++) {
+    try {
+      const data = await fetchJson(url, timeouts[i])
+      const list = data.streams || []
+      // An empty list right after a cold start is often a not-yet-warm backend: retry once.
+      if (!list.length && i === 0) { await new Promise((r) => setTimeout(r, 700)); continue }
+      return list
+    } catch (e) {
+      lastErr = e
+      if (e && e.message === 'NOT_CONFIGURED') throw e
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)))
+    }
+  }
+  if (lastErr) throw lastErr
+  return []
+}
+
+export function getStreams(type, id) {
+  const key = `${type}/${id}`
+  const hit = streamCache.get(key)
+  if (hit && Date.now() - hit.t < STREAM_CACHE_TTL) return Promise.resolve(hit.list)
+  if (streamInflight.has(key)) return streamInflight.get(key)
+  const p = loadStreamsWithRetry(type, id)
+    .then((list) => {
+      if (list.length) streamCache.set(key, { t: Date.now(), list })
+      return list
+    })
+    .finally(() => streamInflight.delete(key))
+  streamInflight.set(key, p)
+  return p
+}
+
+// Warm the cache (e.g. the NEXT episode while the current one plays). Never throws.
+export function prefetchStreams(type, id) {
+  try { getStreams(type, id).catch(() => {}) } catch { /* ignore */ }
 }
 
 // FEATURE (user ask: "language ko jyada ahmiyat do"): native player
