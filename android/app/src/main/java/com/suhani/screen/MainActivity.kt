@@ -3869,6 +3869,23 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     override fun onResume() {
         super.onResume()
         webView.onResume()
+        // BLACK-VIDEO GUARD (user report: video suddenly goes black while the rest of the page is
+        // fine). When the Activity comes back to the front (from the app switcher, a dialog, the
+        // lock screen, ...) the PlayerView's video Surface can be left detached/stale while audio
+        // keeps going. Re-attaching the SAME player to its view forces a fresh Surface. Only done
+        // while the inline overlay is really the owner (never while PlayerActivity has the player).
+        if (!playerActivityOwnsPlayer) {
+            val view = inlinePlayerView
+            val p = inlinePlayer
+            if (view != null && p != null && inlineOverlay?.visibility == View.VISIBLE) {
+                view.post {
+                    if (!playerActivityOwnsPlayer && inlineOverlay?.visibility == View.VISIBLE && inlinePlayer === p) {
+                        view.player = null
+                        view.player = p
+                    }
+                }
+            }
+        }
     }
 
     // Manifest mein MainActivity ke liye android:supportsPictureInPicture="true"
