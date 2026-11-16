@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getManifest, getCatalog, groupCatalogsByTab, loadNewToYou, isVerified } from '../api'
+import { getManifest, getCatalog, groupCatalogsByTab, loadNewToYou, isVerified, tabItemFilter, tagItem } from '../api'
 import { useOnlineStatus } from '../lib/connectivity'
 import MediaCard from '../components/MediaCard'
 import VerifyGate from '../components/VerifyGate'
@@ -33,6 +33,7 @@ export default function HukaTubePage() {
 // "Load more" button that keeps going until the category is exhausted.
 const SECTIONS = [
   { key: 'anime', title: 'Anime', first: 18, step: 12 },
+  { key: 'cartoon', title: 'Cartoon', first: 9, step: 9 },
   { key: 'movie', title: 'Movies', first: 9, step: 9 },
   { key: 'kdrama', title: 'K-Drama', first: 9, step: 9 },
   { key: 'series', title: 'Series', first: 6, step: 9 },
@@ -51,7 +52,7 @@ const PAGES_ALREADY = 3 // loadNewToYou() already scanned pages 0-2 of every cat
 // Fresh (< FRESH_MS) memory cache => zero network on return. Older => shown
 // instantly, refreshed silently without any loading flash.
 const FRESH_MS = 20 * 60 * 1000
-const LS_KEY = 'huka:new-cache:v1'
+const LS_KEY = 'huka:new-cache:v2'
 let memCache = null // { tabs, sec, ts, scrollY }
 
 function readDiskCache() {
@@ -88,7 +89,7 @@ async function fetchSections() {
   await Promise.all(
     SECTIONS.map(async (s) => {
       try {
-        const groups = await loadNewToYou(g[s.key] || [])
+        const groups = await loadNewToYou(g[s.key] || [], tabItemFilter(s.key))
         const items = groups[0]?.items || []
         out[s.key] = { items, shown: s.first, page: PAGES_ALREADY, more: (g[s.key] || []).length > 0, busy: false }
       } catch {
@@ -223,6 +224,7 @@ function NewContent({ t }) {
     // 2) fetch the next page of every catalog in this category
     patch(s.key, { busy: true })
     const known = new Set(cur.items.map((i) => i.id))
+    const keep = tabItemFilter(s.key)
     const fresh = []
     let anyFull = false
     await Promise.all(
@@ -233,7 +235,8 @@ function NewContent({ t }) {
           for (const m of metas) {
             if (m && m.id && !known.has(m.id)) {
               known.add(m.id)
-              fresh.push(m)
+              const tm = tagItem(m, cat)
+              if (!keep || keep(tm)) fresh.push(tm)
             }
           }
         } catch {

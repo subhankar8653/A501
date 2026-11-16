@@ -9,6 +9,7 @@ import {
   INITIAL_PAGES_PER_CATALOG,
   LOAD_MORE_PAGES_PER_CATALOG,
   HOME_TABS,
+  tabItemFilter,
   loadHomeCache,
   saveHomeCache,
   isVerified,
@@ -189,7 +190,7 @@ function HomeContent({ t }) {
 
     const loadState = createTabLoadState()
     loadStatesRef.current[active] = loadState
-    const run = () => loadTabPage(tabCatalogs[active], loadState, INITIAL_PAGES_PER_CATALOG)
+    const run = () => loadTabPage(tabCatalogs[active], loadState, INITIAL_PAGES_PER_CATALOG, tabItemFilter(active))
     const apply = ({ groups, exhausted }) => {
       if (cancelled) return
       setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
@@ -229,7 +230,8 @@ function HomeContent({ t }) {
       const { groups, exhausted } = await loadTabPage(
         tabCatalogs[active],
         loadState,
-        LOAD_MORE_PAGES_PER_CATALOG
+        LOAD_MORE_PAGES_PER_CATALOG,
+        tabItemFilter(active)
       )
       setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
       setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
@@ -241,23 +243,23 @@ function HomeContent({ t }) {
     }
   }
 
-  // Sentinel div near the bottom of the list — once it's on/near screen,
-  // load the next batch. rootMargin gives it a head start so more content
-  // is usually ready just before the user actually reaches the bottom.
-  const sentinelRef = useRef(null)
+  // Auto-fill: filter ke baad (jaise Web Series, Cartoon) agar bahut kam titles bache hon aur
+  // aur load ho sakta hai, to 6 baar tak khud agle batch laate hain (taaki tab khali na dikhe).
+  // Scroll-sentinel hata diya — wo spinner/Load-more ko baar-baar flicker karata tha. Ab neeche
+  // ek fixed-height "Load more" button hai jo load hote waqt apne andar hi spinner dikhata hai.
+  const autoFillRef = useRef({})
   useEffect(() => {
-    const el = sentinelRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) loadMoreActiveTab()
-      },
-      { rootMargin: '600px' }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
+    if (!tabCatalogs || active === 'new' || loadingTab || loadingMore || tabExhausted[active]) return
+    const gs = groupsByTab[active]
+    if (!gs) return
+    const total = gs.reduce((n, g) => n + (g.items ? g.items.length : 0), 0)
+    const tries = autoFillRef.current[active] || 0
+    if (total < 36 && tries < 6) {
+      autoFillRef.current[active] = tries + 1
+      loadMoreActiveTab()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tabCatalogs, groupsByTab, tabExhausted, loadingMore])
+  }, [active, tabCatalogs, groupsByTab, tabExhausted, loadingTab, loadingMore])
 
   // Manual pull-to-refresh: re-fetches the manifest + the active tab and
   // overwrites whatever was cached for them. Nothing else is touched, so
@@ -277,7 +279,8 @@ function HomeContent({ t }) {
         const { groups, exhausted } = await loadTabPage(
           nextTabCatalogs[active],
           loadState,
-          INITIAL_PAGES_PER_CATALOG
+          INITIAL_PAGES_PER_CATALOG,
+          tabItemFilter(active)
         )
         setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
         setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
@@ -436,27 +439,22 @@ function HomeContent({ t }) {
               {groups.map(({ language, items, titleKey }) => (
                 <LanguageRail key={language} language={titleKey ? t(titleKey) : language} items={items} />
               ))}
-              {/* Infinite-scroll trigger for this tab — invisible, just marks
-                  "getting close to the bottom" so the next small batch loads
-                  before the user actually hits the end of the list. Hidden
-                  once the tab has nothing left to load. */}
               {active !== 'new' && !tabExhausted[active] && (
-                <div ref={sentinelRef} className="h-1" />
-              )}
-              {active !== 'new' && !tabExhausted[active] && !loadingMore && (
-                <div className="flex justify-center pt-1 pb-6 px-4">
+                <div className="flex justify-center items-center min-h-[84px] pb-6 px-4">
                   <button
                     onClick={loadMoreActiveTab}
-                    className="inline-flex items-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-reel-gold text-reel-bg active:scale-95 transition"
+                    disabled={loadingMore}
+                    className="inline-flex items-center justify-center gap-2 min-w-[150px] text-sm font-semibold px-6 py-2.5 rounded-full bg-reel-gold text-reel-bg active:scale-95 transition disabled:opacity-80"
                   >
-                    {t('load_more')}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                    {loadingMore ? (
+                      <span className="w-4 h-4 rounded-full border-2 border-reel-bg border-t-transparent animate-spin" />
+                    ) : (
+                      <>
+                        {t('load_more')}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                      </>
+                    )}
                   </button>
-                </div>
-              )}
-              {loadingMore && (
-                <div className="flex justify-center py-4">
-                  <div className="w-5 h-5 rounded-full border-2 border-reel-gold border-t-transparent animate-spin" />
                 </div>
               )}
             </>
