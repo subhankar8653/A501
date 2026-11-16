@@ -2465,18 +2465,16 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         val color = inlineAccentColor
 
         inlinePlayPauseButtonRef?.let { btn ->
-            btn.imageTintList = android.content.res.ColorStateList.valueOf(color)
-            // bg_inline_hero_button.xml's ring stroke can't be tinted via
-            // setTint (that only recolors fills, not strokes), so rebuild
-            // the same dark-glass-circle-with-hairline-ring shape in code
-            // with the new color at ~60% alpha, matching the original
-            // #99FFD700 stroke's opacity.
-            val ring = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#66000000"))
-                setStroke(dpToPx(1f), applyAlpha(color, 0x99))
+            // Modern look: accent-filled rounded squircle + contrast-safe dark/light glyph (har theme mein).
+            val lum = (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0
+            btn.imageTintList = android.content.res.ColorStateList.valueOf(
+                if (lum > 0.55) Color.parseColor("#14110F") else Color.WHITE
+            )
+            btn.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(22f).toFloat()
+                setColor(color)
             }
-            btn.background = ring
         }
 
         inlineQualityButtonRef?.setTextColor(color)
@@ -2489,7 +2487,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // these are now included too. imageTintList is the right approach
         // for plain ImageViews (unlike the hero play button, these don't
         // have a separate ring/background needing a rebuilt drawable).
-        val tintList = android.content.res.ColorStateList.valueOf(color)
+        // Bare icons: hamesha near-white (accent sirf play button/progress/quality par) — har theme mein readable.
+        val tintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#FFFFFF"))
         inlinePrevButtonRef?.imageTintList = tintList
         inlineNextButtonRef?.imageTintList = tintList
         inlinePipChevronRef?.imageTintList = tintList
