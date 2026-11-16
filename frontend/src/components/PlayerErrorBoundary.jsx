@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { tr } from '../i18n/translations'
 
 // FEATURE (bug report: "episode pe click karta hoon toh blank page khulta
 // hai, player nahi khulta"): a JS exception anywhere in Player.jsx's render
@@ -27,7 +28,7 @@ export default class PlayerErrorBoundary extends Component {
     if (this.state.error) {
       return (
         <div className="px-4 sm:px-6 py-10 text-center">
-          <p className="text-reel-rust font-medium mb-2">Player load nahi ho paaya</p>
+          <p className="text-reel-rust font-medium mb-2">{tr('player_load_failed')}</p>
           <p className="text-xs text-reel-muted mb-4 break-words">{String(this.state.error?.message || this.state.error)}</p>
           <button
             onClick={() => this.setState({ error: null })}

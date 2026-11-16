@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getStreams, qualityLabel } from '../api'
 import { startDownload, downloadId, useDownloadsList } from '../lib/downloadsStore'
 import { useLanguage } from '../i18n/LanguageContext'
+import { tr } from '../i18n/translations'
 
 // Turns a quality label ("360p", "1080p", "4K"...) into a comparable number,
 // so we can sort qualities and find "the next one down" from what the user
@@ -224,8 +225,8 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
         bad++
       }
     }
-    if (ok) pushToast(list0.length > 1 ? `Download shuru: ${ok} episode(s)` : 'Download shuru ho gaya')
-    if (bad) pushToast(`${bad} download shuru nahi ho paaye`, 'error')
+    if (ok) pushToast(list0.length > 1 ? tr('toast_dl_started_n', { n: ok }) : tr('toast_dl_started'))
+    if (bad) pushToast(tr('toast_dl_failed_n', { n: bad }), 'error')
   }
 
   return (

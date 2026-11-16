@@ -8,6 +8,7 @@ import {
 } from '../api'
 import { activeBackend } from '../lib/endpoints'
 import { useLanguage } from '../i18n/LanguageContext'
+import { tr } from '../i18n/translations'
 
 const POLL_MS = 2500
 
@@ -87,7 +88,7 @@ export default function TelegramSignup({ onDone }) {
       window.location.href = link
     } catch {
       setPhase('error')
-      setError("Backend se connect nahi ho paya. Thodi der baad phir try karo.")
+      setError(tr('signup_backend_failed'))
     }
   }
 

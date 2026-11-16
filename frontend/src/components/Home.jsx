@@ -5,6 +5,7 @@ import { useOnlineStatus } from '../lib/connectivity'
 import LanguageRail from '../components/LanguageRail'
 import Rail from '../components/Rail'
 import HomeHero from '../components/HomeHero'
+import { tr } from '../i18n/translations'
 
 export default function Home() {
   // FEATURE (user ask: "jab offline ho toh sidha download page mein open
@@ -40,7 +41,7 @@ function HomeContent() {
         setTabCatalogs(groupCatalogsByTab(manifest.catalogs))
       })
       .catch(() => {
-        if (!cancelled) setError('Library load nahi ho payi. Setup check karo.')
+        if (!cancelled) setError(tr('home_library_failed'))
       })
     return () => {
       cancelled = true
@@ -127,7 +128,7 @@ function HomeContent() {
             <Rail title="Loading…" loading items={[]} />
           ) : !hasCatalogsForTab ? (
             <p className="text-center text-reel-muted mt-10 px-4">
-              Is category mein abhi content nahi hai.
+              {tr('home_cat_empty')}
             </p>
           ) : loadingTab && !groups ? (
             <Rail title="Loading…" loading items={[]} />
@@ -137,7 +138,7 @@ function HomeContent() {
             ))
           ) : (
             <p className="text-center text-reel-muted mt-10 px-4">
-              Is category mein abhi content nahi hai.
+              {tr('home_cat_empty')}
             </p>
           )}
         </div>

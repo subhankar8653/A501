@@ -722,7 +722,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               onClick={closePip}
               aria-label="Close mini player"
               className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white active:scale-90 transition"
-              title="Band karo"
+              title={t('vp_close')}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
@@ -730,7 +730,7 @@ export default function VideoPlayer({ src, poster, title, onEnded, qualities, ac
               onClick={exitPip}
               aria-label="Expand player"
               className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white active:scale-90 transition"
-              title="Bada karo"
+              title={t('vp_enlarge')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
             </button>

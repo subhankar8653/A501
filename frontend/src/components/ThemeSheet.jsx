@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useThemeMode } from '../theme/ThemeContext'
+import { tr } from '../i18n/translations'
 
 // FEATURE (user ask: "search icon ke aage ek aur icon add karo jo theme
 // mode change karega — admin/owner panel wale bohot saare theme mode use
@@ -39,7 +40,7 @@ function PatternGrid() {
   return (
     <>
       <p className="text-reel-ink font-semibold mb-1 mt-5">Pattern</p>
-      <p className="text-reel-muted text-xs mb-4">Background mein bhar jaane wala shape chuno</p>
+      <p className="text-reel-muted text-xs mb-4">{tr('theme_pattern_hint')}</p>
       <div className="grid grid-cols-4 gap-2.5">
         {patterns.map((p) => {
           const active = p.id === patternId
@@ -126,7 +127,7 @@ export default function ThemeSheet({ open, onClose }) {
         <div className="w-10 h-1 rounded-full bg-reel-ink/15 mx-auto mb-4" />
 
         <p className="text-reel-ink font-semibold mb-1">Theme</p>
-        <p className="text-reel-muted text-xs mb-4">Apna pasandida theme mode chuno</p>
+        <p className="text-reel-muted text-xs mb-4">{tr('theme_mode_hint')}</p>
 
         <div className="grid grid-cols-2 gap-2.5 mb-1">
           {themes.map((t) => {

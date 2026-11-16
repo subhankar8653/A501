@@ -10,6 +10,7 @@ import {
 } from '../lib/downloadsStore'
 import DownloadQualitySheet from '../components/DownloadQualitySheet'
 import VideoPlayer from '../components/VideoPlayer'
+import { tr } from '../i18n/translations'
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -58,7 +59,7 @@ function OfflinePlayer({ entry, onClose }) {
       <div className="flex-1 min-h-0">
         {err ? (
           <div className="w-full h-full flex items-center justify-center px-6">
-            <p className="text-reel-muted text-sm text-center">Yeh download offline play nahi ho paa raha.</p>
+            <p className="text-reel-muted text-sm text-center">{tr('dl_offline_fail')}</p>
           </div>
         ) : url ? (
           <VideoPlayer
@@ -96,11 +97,11 @@ function MovieRow({ d, onPlay }) {
             <p className="text-xs text-reel-muted mt-1">{d.progress || 0}% · Downloading…</p>
           </>
         ) : d.status === 'error' ? (
-          <p className="text-xs text-reel-rust mt-1">Download fail ho gayi</p>
+          <p className="text-xs text-reel-rust mt-1">{tr('dl_failed')}</p>
         ) : (
           <p className="text-xs text-reel-muted mt-1">
             {d.qualityLabel ? `${d.qualityLabel} · ` : ''}
-            {formatSize(d.sizeBytes)} · Offline available
+            {formatSize(d.sizeBytes)} · {tr('dl_offline_available')}
           </p>
         )}
       </div>
@@ -169,12 +170,12 @@ function SeasonEpisodeRow({ ep, entry, onPlay, onDownloadOne }) {
         ) : isDownloaded ? (
           <p className="text-xs text-reel-muted mt-1">
             {entry.qualityLabel ? `${entry.qualityLabel} · ` : ''}
-            {formatSize(entry.sizeBytes)} · Offline available
+            {formatSize(entry.sizeBytes)} · {tr('dl_offline_available')}
           </p>
         ) : entry?.status === 'error' ? (
-          <p className="text-xs text-reel-rust mt-1">Download fail ho gayi</p>
+          <p className="text-xs text-reel-rust mt-1">{tr('dl_failed')}</p>
         ) : (
-          <p className="text-xs text-reel-muted mt-1">Download nahi hui</p>
+          <p className="text-xs text-reel-muted mt-1">{tr('dl_not_done')}</p>
         )}
       </div>
 
@@ -353,7 +354,7 @@ function OfflineBanner() {
         <line x1="12" y1="20" x2="12.01" y2="20" />
       </svg>
       <p className="text-xs text-reel-muted">
-        Internet on karo, Home dekhne ke liye — abhi sirf downloads offline play ho sakte hain.
+        {tr('dl_offline_banner')}
       </p>
     </div>
   )
@@ -373,9 +374,9 @@ export default function Downloads() {
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-reel-surface2 flex items-center justify-center text-reel-muted">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
         </div>
-        <p className="text-reel-ink font-medium">Koi download nahi hai</p>
+        <p className="text-reel-ink font-medium">{tr('dl_none')}</p>
         <p className="text-reel-muted text-sm mt-1">
-          Kisi bhi title ke Detail ya Player screen par Download dabaakar yahan add karo.
+          {tr('dl_empty_hint')}
         </p>
       </div>
     )
