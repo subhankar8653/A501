@@ -311,19 +311,39 @@ const ratingOf = (i) => {
   return Number.isNaN(r) ? 0 : r
 }
 
+// Anime vs Cartoon: anime catalog mein Lego/Marvel/Disney jaise western cartoons bhi ghus jaate
+// the. Agar backend `originalLanguage` deta hai to ja/zh = anime, baaki = cartoon. Nahi deta
+// to genre (Family/Kids) aur naam ke andaaze se alag karte hain.
+const WESTERN_CARTOON = /lego|marvel|disney|pixar|dreamworks|minions|avengers|spider|batman|superman|shrek|toy story|frozen|lilo|stitch|despicable|ice age|looney|tom and jerry|simpsons|south park|family guy|paw patrol|peppa|barbie|hot wheels|transformers|scooby|mickey|winnie/i
+function isTrueAnime(i) {
+  if (!i || !i._anime) return false
+  const ol = String(i.originalLanguage || '').toLowerCase()
+  if (ol) return ol === 'ja' || ol === 'zh'
+  const genres = i.genres || []
+  if (genres.includes('Family') || genres.includes('Kids')) return false
+  return !WESTERN_CARTOON.test(i.name || '')
+}
+function isCartoon(i) {
+  if (!i || isTrueAnime(i)) return false
+  const genres = i.genres || []
+  return !!i._anime || genres.includes('Animation') || WESTERN_CARTOON.test(i.name || '')
+}
+
 function groupItemsByLanguage(mergedMap) {
   const all = [...mergedMap.values()].filter(Boolean)
   const byRating = (a, b) => ratingOf(b) - ratingOf(a)
   const byNew = (a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0)
-  const animeFirst = (a, b) => (b._anime ? 1 : 0) - (a._anime ? 1 : 0) || ratingOf(b) - ratingOf(a)
+  const animeFirst = (a, b) => (isTrueAnime(b) ? 1 : 0) - (isTrueAnime(a) ? 1 : 0) || ratingOf(b) - ratingOf(a)
   const sections = []
   const push = (titleKey, title, items) => {
     if (items.length) sections.push({ language: title, titleKey, items: items.slice(0, SECTION_MAX) })
   }
 
-  const anime = all.filter((i) => i._anime)
+  const anime = all.filter(isTrueAnime)
+  const cartoons = all.filter(isCartoon)
   push('cat_trending_anime', 'Trending Anime', [...anime].sort(byRating))
   push('cat_latest_anime', 'Latest Anime', [...anime].sort(byNew))
+  push('cat_cartoons', 'Cartoons', [...cartoons].sort(byRating))
   push('cat_top_rated', 'Top Rated', all.filter((i) => ratingOf(i) >= 7.5).sort(animeFirst))
   const yr = new Date().getFullYear()
   push('cat_new_releases', 'New Releases', all.filter((i) => Number(i.year) >= yr - 1).sort(animeFirst))
