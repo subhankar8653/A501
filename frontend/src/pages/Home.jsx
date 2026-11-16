@@ -347,10 +347,21 @@ function HomeContent({ t }) {
   // language group in the active tab (up to 5), so the hero auto-rotates
   // through a handful of picks instead of showing just one static item.
   const heroItems = useMemo(() => {
-    const picks = (groups || [])
-      .filter((g) => g.items && g.items.length)
-      .map((g) => g.items[0])
-    return picks.slice(0, 5)
+    // Anime-first sections ke top titles se hero banta hai; same title repeat nahi hota
+    // aur sirf wahi lete hain jinke paas banner image ho.
+    const seen = new Set()
+    const picks = []
+    for (let depth = 0; depth < 4 && picks.length < 6; depth++) {
+      for (const g of groups || []) {
+        const it = g.items && g.items[depth]
+        if (it && it.id && !seen.has(it.id) && (it.background || it.poster)) {
+          seen.add(it.id)
+          picks.push(it)
+          if (picks.length >= 6) break
+        }
+      }
+    }
+    return picks
   }, [groups])
   const heroLoading = !tabCatalogs || (loadingTab && !groups)
 
@@ -422,8 +433,8 @@ function HomeContent({ t }) {
             <Rail title={t('loading')} loading items={[]} />
           ) : groups && groups.length > 0 ? (
             <>
-              {groups.map(({ language, items }) => (
-                <LanguageRail key={language} language={language} items={items} />
+              {groups.map(({ language, items, titleKey }) => (
+                <LanguageRail key={language} language={titleKey ? t(titleKey) : language} items={items} />
               ))}
               {/* Infinite-scroll trigger for this tab — invisible, just marks
                   "getting close to the bottom" so the next small batch loads

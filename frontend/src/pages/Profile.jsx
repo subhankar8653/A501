@@ -22,6 +22,7 @@ import LanguagePicker from '../components/LanguagePicker'
 import ThemeSheet from '../components/ThemeSheet'
 import ContinueWatchingRail from '../components/ContinueWatchingRail'
 import { useLanguage } from '../i18n/LanguageContext'
+import { tr } from '../i18n/translations'
 
 // ---------------------------------------------------------------------
 // Small shared building blocks — every section below is one of these, so
@@ -479,13 +480,13 @@ export default function Profile() {
         <ToggleRow label={t('profile_ambient_mode')} sub={t('profile_ambient_mode_sub')} checked={ambientMode} onChange={toggleAmbient} />
         <div className="h-px bg-reel-ink/5" />
         <div className="py-2.5">
-          <p className="text-sm text-reel-ink font-medium">Video quality</p>
+          <p className="text-sm text-reel-ink font-medium">{t('profile_video_quality')}</p>
           <p className="text-[11px] text-reel-muted mt-0.5">
             {qPref.mode === 'auto'
-              ? `Auto: jo quality aapne last chuni wahi chalegi${getLastQuality() ? ` (abhi: ${getLastQuality()})` : ''}. Pehli baar sabse kam quality.`
+              ? tr('profile_quality_auto', { last: getLastQuality() ? ' ' + tr('profile_quality_now', { q: getLastQuality() }) : '' })
               : qPref.mode === 'lowest'
-                ? 'Hamesha sabse kam quality (data bachat).'
-                : `Hamesha ${qPref.value}. Agar wo nahi mili to sabse kam quality chalegi.`}
+                ? tr('profile_quality_lowest')
+                : tr('profile_quality_fixed', { q: qPref.value })}
           </p>
           <div className="flex flex-wrap gap-2 mt-2.5">
             {[
