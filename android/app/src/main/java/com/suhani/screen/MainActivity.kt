@@ -627,12 +627,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // se chipka rakhta hai: agar kisi wajah se upar float kare to translationY se wapas kheench deta hai.
     private fun pinInlineBottomBlock() {
         val block = inlineBottomBlockRef ?: return
-        val ov = inlineOverlay ?: return
-        if (block.height == 0 || ov.height == 0 || ov.scaleY != 1f) return
-        val a = IntArray(2); val b = IntArray(2)
-        ov.getLocationInWindow(a); block.getLocationInWindow(b)
-        val delta = (a[1] + ov.height) - (b[1] + block.height)
-        if (kotlin.math.abs(delta) >= 1) block.translationY = block.translationY + delta
+        val pv = inlinePlayerView ?: return
+        if (block.height == 0 || pv.height == 0) return
+        // Layout-space (animation/scale se bilkul independent): block ka bottom, PlayerView ke
+        // andar, ancestors ke `top` jodkar nikalo. translationY ko ABSOLUTE set karte hain
+        // (accumulate nahi) taaki galti se kabhi atak na jaye.
+        var bottom = block.bottom
+        var p = block.parent
+        while (p is View && p !== pv) {
+            bottom += p.top
+            p = p.parent
+        }
+        if (p !== pv) return
+        val delta = (pv.height - bottom).toFloat()
+        if (kotlin.math.abs(block.translationY - delta) >= 1f) block.translationY = delta
     }
     private var inlineBufferingIndicatorRef: View? = null
     // FEATURE (user follow-up: "sabhi icon pe kaam karna chahiye" — the
