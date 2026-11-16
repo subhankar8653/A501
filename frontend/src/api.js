@@ -299,18 +299,59 @@ async function fetchCatalogPageRange(cat, fromPage, toPage) {
   return { items, exhausted }
 }
 
+// HOME CATEGORIES (user ask: "language ki jagah koi aur type ki category, zyada content
+// mile, anime zyada featured ho"): ab Home language se nahi, SMART SECTIONS se banta hai —
+// Trending/Latest Anime, Top Rated, New Releases, Popular Movies/Series, phir genre-wise
+// (Action, Comedy, Romance...) aur ek "Hindi Audio" section. Har section mein anime pehle
+// aata hai. Group shape wahi purani rakhi ({ language: <title>, items }) + `titleKey` jo
+// translate hone wale fixed titles ke liye hai.
+const SECTION_MAX = 60
+const ratingOf = (i) => {
+  const r = parseFloat(i && i.imdbRating)
+  return Number.isNaN(r) ? 0 : r
+}
+
 function groupItemsByLanguage(mergedMap) {
-  const byLanguage = new Map()
-  for (const item of mergedMap.values()) {
-    const languages = item.languages && item.languages.length ? item.languages : ['Other']
-    for (const lang of languages) {
-      if (!byLanguage.has(lang)) byLanguage.set(lang, [])
-      byLanguage.get(lang).push(item)
+  const all = [...mergedMap.values()].filter(Boolean)
+  const byRating = (a, b) => ratingOf(b) - ratingOf(a)
+  const byNew = (a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0)
+  const animeFirst = (a, b) => (b._anime ? 1 : 0) - (a._anime ? 1 : 0) || ratingOf(b) - ratingOf(a)
+  const sections = []
+  const push = (titleKey, title, items) => {
+    if (items.length) sections.push({ language: title, titleKey, items: items.slice(0, SECTION_MAX) })
+  }
+
+  const anime = all.filter((i) => i._anime)
+  push('cat_trending_anime', 'Trending Anime', [...anime].sort(byRating))
+  push('cat_latest_anime', 'Latest Anime', [...anime].sort(byNew))
+  push('cat_top_rated', 'Top Rated', all.filter((i) => ratingOf(i) >= 7.5).sort(animeFirst))
+  const yr = new Date().getFullYear()
+  push('cat_new_releases', 'New Releases', all.filter((i) => Number(i.year) >= yr - 1).sort(animeFirst))
+
+  const movies = all.filter((i) => i.type === 'movie')
+  const series = all.filter((i) => i.type === 'series')
+  if (movies.length && series.length) {
+    push('cat_popular_series', 'Popular Series', [...series].sort(animeFirst))
+    push('cat_popular_movies', 'Popular Movies', [...movies].sort(animeFirst))
+  }
+
+  const byGenre = new Map()
+  for (const item of all) {
+    for (const g of item.genres || []) {
+      if (!g || typeof g !== 'string') continue
+      if (!byGenre.has(g)) byGenre.set(g, [])
+      byGenre.get(g).push(item)
     }
   }
-  return [...byLanguage.entries()]
+  [...byGenre.entries()]
     .sort((a, b) => b[1].length - a[1].length)
-    .map(([language, items]) => ({ language, items }))
+    .slice(0, 12)
+    .forEach(([genre, items]) => push(null, genre, [...items].sort(animeFirst)))
+
+  push('cat_hindi_audio', 'Hindi Audio', all.filter((i) => (i.languages || []).some((l) => /hindi/i.test(l))).sort(animeFirst))
+
+  if (sections.length === 0 && all.length) push('cat_all_titles', 'All Titles', all)
+  return sections
 }
 
 // Fresh progress-tracker for one tab's incremental load. Create one per
@@ -336,7 +377,12 @@ export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog) {
       try {
         const { items, exhausted } = await fetchCatalogPageRange(cat, prev.pagesLoaded, toPage)
         for (const item of items) {
-          if (item && item.id && !loadState.merged.has(item.id)) loadState.merged.set(item.id, item)
+          if (item && item.id) {
+            const isAnime = /anime/i.test(cat.name || '')
+            const have = loadState.merged.get(item.id)
+            if (!have) loadState.merged.set(item.id, isAnime ? { ...item, _anime: true } : item)
+            else if (isAnime && !have._anime) loadState.merged.set(item.id, { ...have, _anime: true })
+          }
         }
         loadState.catalogState.set(cat.id, { pagesLoaded: toPage, exhausted })
       } catch {
