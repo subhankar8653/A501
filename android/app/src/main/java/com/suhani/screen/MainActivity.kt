@@ -1735,6 +1735,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // Controller show/hide animation off: warna Media3 time bar ko alag se pehle hide karta hai
             playerView.setControllerAnimationEnabled(false)
             inlineTitleTextRef = playerView.findViewById(R.id.inlineTitleText)
+            // Premium press feedback: touch par halka scale-down (click ko nahi rokta).
+            listOf<View?>(
+                root.findViewById(R.id.inlinePlayPauseButton), root.findViewById(R.id.inlinePrevButton),
+                root.findViewById(R.id.inlineNextButton), root.findViewById(R.id.inlineFullscreenButton),
+                root.findViewById(R.id.inlineSettingsButton), root.findViewById(R.id.inlineAudioTrackButton),
+                root.findViewById(R.id.inlineSubtitleButton), root.findViewById(R.id.inlinePipChevron)
+            ).forEach { v ->
+                v?.setOnTouchListener { view, ev ->
+                    when (ev.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.88f).scaleY(0.88f).setDuration(90).start()
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                    }
+                    false
+                }
+            }
             inlineBottomBlockRef = playerView.findViewById(R.id.inlineBottomBlock)
             inlineBottomBlockRef?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
             inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
@@ -2482,7 +2497,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             )
             btn.background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(22f).toFloat()
+                cornerRadius = dpToPx(16f).toFloat()
                 setColor(color)
             }
         }
@@ -2490,7 +2505,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         inlineBufferingIndicatorRef?.let { ind ->
             ind.background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(22f).toFloat()
+                cornerRadius = dpToPx(16f).toFloat()
                 setColor(Color.parseColor("#CC101014"))
                 setStroke(dpToPx(1.5f), applyAlpha(color, 0xCC))
             }
