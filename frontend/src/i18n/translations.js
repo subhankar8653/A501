@@ -243,6 +243,7 @@ const dict = {
     'cat_popular_movies': "Popular Movies",
     'cat_hindi_audio': "Hindi Audio",
     'cat_all_titles': "Saare Titles",
+    'cat_cartoons': "Cartoons",
   },
   hi: {
     'more_like_this': 'इससे मिलते-जुलते',
@@ -470,6 +471,7 @@ const dict = {
     'cat_popular_movies': "लोकप्रिय फ़िल्में",
     'cat_hindi_audio': "हिन्दी ऑडियो",
     'cat_all_titles': "सभी टाइटल",
+    'cat_cartoons': "कार्टून",
   },
   en: {
     'more_like_this': 'More like this',
@@ -697,6 +699,7 @@ const dict = {
     'cat_popular_movies': "Popular Movies",
     'cat_hindi_audio': "Hindi Audio",
     'cat_all_titles': "All Titles",
+    'cat_cartoons': "Cartoons",
   },
   bn: {
     'more_like_this': 'এর মতো আরও',
@@ -924,6 +927,7 @@ const dict = {
     'cat_popular_movies': "জনপ্রিয় মুভি",
     'cat_hindi_audio': "হিন্দি অডিও",
     'cat_all_titles': "সব টাইটেল",
+    'cat_cartoons': "কার্টুন",
   },
   ur: {
     'more_like_this': 'اس جیسی مزید',
@@ -1151,6 +1155,7 @@ const dict = {
     'cat_popular_movies': "مقبول فلمیں",
     'cat_hindi_audio': "ہندی آڈیو",
     'cat_all_titles': "تمام ٹائٹلز",
+    'cat_cartoons': "کارٹون",
   },
   ta: {
     'more_like_this': 'இது போன்ற மேலும்',
@@ -1378,6 +1383,7 @@ const dict = {
     'cat_popular_movies': "பிரபல திரைப்படங்கள்",
     'cat_hindi_audio': "இந்தி ஆடியோ",
     'cat_all_titles': "அனைத்து தலைப்புகள்",
+    'cat_cartoons': "கார்ட்டூன்",
   },
   te: {
     'more_like_this': 'దీని లాంటివి మరిన్ని',
@@ -1605,6 +1611,7 @@ const dict = {
     'cat_popular_movies': "ప్రసిద్ధ సినిమాలు",
     'cat_hindi_audio': "హిందీ ఆడియో",
     'cat_all_titles': "అన్ని టైటిల్స్",
+    'cat_cartoons': "కార్టూన్లు",
   },
 }
 
