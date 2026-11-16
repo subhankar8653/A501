@@ -332,7 +332,15 @@ function HomeContent({ t }) {
     )
   }
 
-  const groups = tabCatalogs ? groupsByTab[active] : null
+  const rawGroups = tabCatalogs ? groupsByTab[active] : null
+  // Jis language mein bahut kam titles hon (< MIN_ITEMS) use Home par nahi dikhate —
+  // Home bhara-bhara lage. Agar sab hi kam hon to fallback mein sab dikhate hain.
+  const MIN_ITEMS = 6
+  const groups = useMemo(() => {
+    if (!rawGroups) return rawGroups
+    const strong = rawGroups.filter((g) => g.items && g.items.length >= MIN_ITEMS)
+    return strong.length > 0 ? strong : rawGroups
+  }, [rawGroups])
   const hasCatalogsForTab = tabCatalogs ? (tabCatalogs[active] || []).length > 0 : true
 
   // Spotlight picks for the hero banner carousel — top item from each
@@ -423,6 +431,17 @@ function HomeContent({ t }) {
                   once the tab has nothing left to load. */}
               {active !== 'new' && !tabExhausted[active] && (
                 <div ref={sentinelRef} className="h-1" />
+              )}
+              {active !== 'new' && !tabExhausted[active] && !loadingMore && (
+                <div className="flex justify-center pt-1 pb-6 px-4">
+                  <button
+                    onClick={loadMoreActiveTab}
+                    className="inline-flex items-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-reel-gold text-reel-bg active:scale-95 transition"
+                  >
+                    {t('load_more')}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                  </button>
+                </div>
               )}
               {loadingMore && (
                 <div className="flex justify-center py-4">
