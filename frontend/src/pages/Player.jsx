@@ -1423,12 +1423,19 @@ export default function Player() {
                     onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
                     className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-reel-ink/5"
                   >
-                    <ArtImage
-                      srcs={[ep.thumbnail, seriesMeta?.background, seriesMeta?.poster]}
-                      name={ep.title}
-                      logoOnly
-                      className="w-32 sm:w-40 aspect-video rounded-md shrink-0"
-                    />
+                    <div className="relative w-32 sm:w-40 aspect-video rounded-lg overflow-hidden shrink-0">
+                      <ArtImage
+                        srcs={[ep.thumbnail, seriesMeta?.background, seriesMeta?.poster]}
+                        name={ep.title}
+                        logoOnly
+                        className="w-full h-full"
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <span className="w-8 h-8 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center ring-1 ring-white/20">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                        </span>
+                      </span>
+                    </div>
                     <div className="min-w-0">
                       <p className="text-[11px] font-bold tracking-wider text-reel-gold">
                         S{ep.season} · E{ep.episode}
