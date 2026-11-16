@@ -311,22 +311,42 @@ const ratingOf = (i) => {
   return Number.isNaN(r) ? 0 : r
 }
 
-// Anime vs Cartoon: anime catalog mein Lego/Marvel/Disney jaise western cartoons bhi ghus jaate
-// the. Agar backend `originalLanguage` deta hai to ja/zh = anime, baaki = cartoon. Nahi deta
-// to genre (Family/Kids) aur naam ke andaaze se alag karte hain.
+// Anime vs Cartoon vs K-Drama: item-level classification (catalog ke naam par bharosa nahi —
+// anime catalog mein Lego/Marvel/Disney, aur Web Series catalog mein anime/k-drama/cartoon
+// ghus jaate the). `originalLanguage` backend deta hai (ja/zh = anime, ko = k-drama); backend
+// purana ho to genre (Animation/Family/Kids) aur naam ke andaaze se.
 const WESTERN_CARTOON = /lego|marvel|disney|pixar|dreamworks|minions|avengers|spider|batman|superman|shrek|toy story|frozen|lilo|stitch|despicable|ice age|looney|tom and jerry|simpsons|south park|family guy|paw patrol|peppa|barbie|hot wheels|transformers|scooby|mickey|winnie/i
-function isTrueAnime(i) {
-  if (!i || !i._anime) return false
+export function itemKind(i) {
+  if (!i) return 'other'
+  const genres = i.genres || []
   const ol = String(i.originalLanguage || '').toLowerCase()
-  if (ol) return ol === 'ja' || ol === 'zh'
-  const genres = i.genres || []
-  if (genres.includes('Family') || genres.includes('Kids')) return false
-  return !WESTERN_CARTOON.test(i.name || '')
+  const animated = genres.includes('Animation') || !!i._anime
+  if (animated) {
+    if (ol) return ol === 'ja' || ol === 'zh' ? 'anime' : 'cartoon'
+    if (i._anime && !genres.includes('Family') && !genres.includes('Kids') && !WESTERN_CARTOON.test(i.name || '')) return 'anime'
+    return 'cartoon'
+  }
+  if (ol === 'ko' || i._kdrama) return 'kdrama'
+  return 'other'
 }
-function isCartoon(i) {
-  if (!i || isTrueAnime(i)) return false
-  const genres = i.genres || []
-  return !!i._anime || genres.includes('Animation') || WESTERN_CARTOON.test(i.name || '')
+const isTrueAnime = (i) => itemKind(i) === 'anime'
+const isCartoon = (i) => itemKind(i) === 'cartoon'
+
+// Catalog ke naam ke hisaab se item par flag lagao (anime / kdrama catalog se aaya).
+export function tagItem(item, cat) {
+  const name = (cat && cat.name ? cat.name : '').toLowerCase()
+  const anime = name.includes('anime')
+  const kdrama = name.includes('k-drama') || name.includes('kdrama')
+  if (!anime && !kdrama) return item
+  return { ...item, ...(anime ? { _anime: true } : {}), ...(kdrama ? { _kdrama: true } : {}) }
+}
+
+// Har Home tab ke liye item filter (null = koi filter nahi).
+export function tabItemFilter(tabKey) {
+  if (tabKey === 'anime') return isTrueAnime
+  if (tabKey === 'cartoon') return isCartoon
+  if (tabKey === 'series') return (i) => itemKind(i) === 'other' // web series: anime/k-drama/cartoon nahi
+  return null
 }
 
 function groupItemsByLanguage(mergedMap) {
@@ -388,7 +408,7 @@ export function createTabLoadState() {
 // loadTabByLanguage() used to return in one big shot — just built up
 // gradually instead. `exhausted` tells the caller whether every catalog
 // in this tab has now been fully fetched (no more "load more" needed).
-export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog) {
+export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog, filter = null) {
   await Promise.all(
     (catalogsForTab || []).map(async (cat) => {
       const prev = loadState.catalogState.get(cat.id) || { pagesLoaded: 0, exhausted: false }
@@ -398,10 +418,12 @@ export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog) {
         const { items, exhausted } = await fetchCatalogPageRange(cat, prev.pagesLoaded, toPage)
         for (const item of items) {
           if (item && item.id) {
-            const isAnime = /anime/i.test(cat.name || '')
+            const t = tagItem(item, cat)
             const have = loadState.merged.get(item.id)
-            if (!have) loadState.merged.set(item.id, isAnime ? { ...item, _anime: true } : item)
-            else if (isAnime && !have._anime) loadState.merged.set(item.id, { ...have, _anime: true })
+            if (!have) loadState.merged.set(item.id, t)
+            else if ((t._anime && !have._anime) || (t._kdrama && !have._kdrama)) {
+              loadState.merged.set(item.id, { ...have, ...(t._anime ? { _anime: true } : {}), ...(t._kdrama ? { _kdrama: true } : {}) })
+            }
           }
         }
         loadState.catalogState.set(cat.id, { pagesLoaded: toPage, exhausted })
@@ -416,7 +438,12 @@ export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog) {
   const exhausted = (catalogsForTab || []).every(
     (cat) => (loadState.catalogState.get(cat.id) || {}).exhausted
   )
-  return { groups: groupItemsByLanguage(loadState.merged), exhausted }
+  let source = loadState.merged
+  if (filter) {
+    source = new Map()
+    for (const [id, it] of loadState.merged) if (filter(it)) source.set(id, it)
+  }
+  return { groups: groupItemsByLanguage(source), exhausted }
 }
 
 export async function getMeta(type, id) {
@@ -727,6 +754,7 @@ export const HOME_TABS = [
   { key: 'all', label: 'All' },
   { key: 'new', label: 'New to You' },
   { key: 'anime', label: 'Anime' },
+  { key: 'cartoon', label: 'Cartoon' },
   { key: 'movie', label: 'Movies' },
   { key: 'kdrama', label: 'K-Drama' },
   { key: 'series', label: 'Web Series' },
@@ -737,7 +765,7 @@ export const HOME_TABS = [
 // first (Anime / K-Drama / Short Drama get their own tab regardless of
 // type) and falls back to the Stremio type (movie/series) otherwise.
 export function groupCatalogsByTab(manifestCatalogs) {
-  const tabs = { anime: [], movie: [], kdrama: [], series: [], shortdrama: [] }
+  const tabs = { anime: [], cartoon: [], movie: [], kdrama: [], series: [], shortdrama: [] }
   for (const cat of manifestCatalogs || []) {
     const name = (cat.name || '').toLowerCase()
     if (name.includes('anime')) tabs.anime.push(cat)
@@ -752,6 +780,8 @@ export function groupCatalogsByTab(manifestCatalogs) {
   // any single tab, just fed everything at once instead of one type.
   const everything = [...tabs.anime, ...tabs.movie, ...tabs.kdrama, ...tabs.series, ...tabs.shortdrama]
   tabs.all = everything
+  // Cartoon: anime + movie + series catalogs scan hote hain, itemKind()=='cartoon' wale rehte hain.
+  tabs.cartoon = [...tabs.anime, ...tabs.movie, ...tabs.series]
   // "New to You" scans that same full set — loadNewToYou() (not
   // loadTabByLanguage) is what actually picks out the latest uploads.
   tabs.new = everything
@@ -772,7 +802,7 @@ const NEW_TO_YOU_LIMIT = 60
 // sorts by each title's actual addedAt timestamp (see convert_to_stremio_meta
 // in stremio_routes.py) so the freshest uploads across the WHOLE app show
 // first — not just the freshest within one catalog.
-export async function loadNewToYou(catalogsForTab) {
+export async function loadNewToYou(catalogsForTab, filter = null) {
   const merged = new Map()
   await Promise.all(
     (catalogsForTab || []).map(async (cat) => {
@@ -782,7 +812,7 @@ export async function loadNewToYou(catalogsForTab) {
           const metas = await getCatalog(cat.type, cat.id, { skip: skip || undefined })
           if (!metas.length) break
           for (const item of metas) {
-            if (item && item.id && !merged.has(item.id)) merged.set(item.id, item)
+            if (item && item.id && !merged.has(item.id)) merged.set(item.id, tagItem(item, cat))
           }
           if (metas.length < CATALOG_PAGE_SIZE) break // this catalog's already exhausted
         }
@@ -793,6 +823,7 @@ export async function loadNewToYou(catalogsForTab) {
   )
 
   const items = [...merged.values()]
+    .filter((it) => !filter || filter(it))
     .sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0))
     .slice(0, NEW_TO_YOU_LIMIT)
 
