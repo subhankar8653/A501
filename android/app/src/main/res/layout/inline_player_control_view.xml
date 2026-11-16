@@ -117,7 +117,7 @@
                 android:layout_width="38dp"
                 android:layout_height="36dp"
                 android:padding="8dp"
-                android:src="@drawable/ic_audiotrack"
+                android:src="@drawable/ic_inline_audio_lang"
                 android:tint="#FFF8E7"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="audio track" />
@@ -184,12 +184,12 @@
 
         <ImageButton
             android:id="@+id/inlinePrevButton"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:padding="4dp"
-            android:src="@drawable/ic_skip_previous"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:padding="10dp"
+            android:src="@drawable/ic_inline_prev_episode"
             android:tint="#FFF8E7"
-            android:background="@drawable/bg_icon_soft_glow"
+            android:background="@drawable/bg_inline_glass_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="previous episode" />
 
@@ -207,12 +207,12 @@
 
         <ImageButton
             android:id="@+id/inlineNextButton"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:padding="4dp"
-            android:src="@drawable/ic_skip_next"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:padding="10dp"
+            android:src="@drawable/ic_inline_next_episode"
             android:tint="#FFF8E7"
-            android:background="@drawable/bg_icon_soft_glow"
+            android:background="@drawable/bg_inline_glass_circle"
             android:foreground="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="next episode" />
 
