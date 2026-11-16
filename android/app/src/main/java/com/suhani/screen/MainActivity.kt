@@ -3191,7 +3191,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         }
 
         if (labels.isEmpty()) {
-            android.widget.Toast.makeText(this, "Is video mein koi subtitle track nahi mili", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "No subtitle track found in this video", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         labels.add("Off")
@@ -3313,7 +3313,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         val labels = tracks.map { it.third }.toMutableList()
 
         if (labels.isEmpty()) {
-            android.widget.Toast.makeText(this, "Audio track ki info abhi load ho rahi hai, thodi der mein try karein", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "Audio track info is still loading, please try again in a moment", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         labels.add("Disable")
