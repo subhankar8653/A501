@@ -1,4 +1,15 @@
 /** @type {import('tailwindcss').Config} */
+// FIX: reel-* colors CSS variables hain, isliye Tailwind ke opacity modifiers
+// (ring-reel-ink/5, bg-reel-gold/15 ...) pehle kaam hi nahi karte the — ring
+// default NEELE rang ka aata tha, bg gayab. Ab har color alpha ke saath
+// color-mix() se sahi theme-colour banata hai.
+const reelColor = (name) => ({ opacityValue }) => {
+  if (opacityValue === undefined || String(opacityValue).startsWith('var(')) return `var(--reel-${name})`
+  const a = parseFloat(opacityValue)
+  if (!(a < 1)) return `var(--reel-${name})`
+  return `color-mix(in srgb, var(--reel-${name}) ${Math.round(a * 100)}%, transparent)`
+}
+
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
@@ -14,13 +25,13 @@ export default {
         // Defaults for each var live in src/index.css so nothing breaks if
         // JS hasn't set them yet (first paint / no-JS fallback).
         reel: {
-          bg: 'var(--reel-bg)',
-          surface: 'var(--reel-surface)',
-          surface2: 'var(--reel-surface2)',
-          gold: 'var(--reel-gold)',
-          rust: 'var(--reel-rust)',
-          ink: 'var(--reel-ink)',
-          muted: 'var(--reel-muted)',
+          bg: reelColor('bg'),
+          surface: reelColor('surface'),
+          surface2: reelColor('surface2'),
+          gold: reelColor('gold'),
+          rust: reelColor('rust'),
+          ink: reelColor('ink'),
+          muted: reelColor('muted'),
         },
       },
       fontFamily: {
