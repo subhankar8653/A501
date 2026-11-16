@@ -2597,9 +2597,25 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
      *  bottom-sheet se khulte hain (plain grey AlertDialog ki jagah), bilkul
      *  playback-speed sheet jaisa hi look: solid near-black gradient, rounded
      *  top corners, faint gold hairline, aur selected row par gold checkmark. */
+    // Sheet ko live theme colour do: patla accent border + accent title/selected row.
+    private fun themeInlineSheetBackground(sheetView: View) {
+        sheetView.background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#FF16161A"), Color.parseColor("#F20B0B0E"))
+        ).apply {
+            val r = dpToPx(22f).toFloat()
+            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+            setStroke(dpToPx(1f), applyAlpha(inlineAccentColor, 0x55))
+        }
+    }
+
     private fun showInlineChoiceSheet(title: String, options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
         val sheetView = LayoutInflater.from(this).inflate(R.layout.inline_choice_sheet, null)
-        sheetView.findViewById<TextView>(R.id.choiceSheetTitle).text = title
+        sheetView.findViewById<TextView>(R.id.choiceSheetTitle).apply {
+            text = title
+            setTextColor(applyAlpha(inlineAccentColor, 0xCC))
+        }
+        themeInlineSheetBackground(sheetView)
         val container = sheetView.findViewById<ViewGroup>(R.id.inlineChoiceRowsContainer)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(sheetView)
@@ -2609,9 +2625,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val isSelected = index == selectedIndex
             row.findViewById<TextView>(R.id.choiceRowLabel).apply {
                 text = label
-                setTextColor(if (isSelected) android.graphics.Color.parseColor("#FFD700") else android.graphics.Color.WHITE)
+                setTextColor(if (isSelected) inlineAccentColor else android.graphics.Color.WHITE)
             }
-            row.findViewById<TextView>(R.id.choiceRowCheck).visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+            row.findViewById<TextView>(R.id.choiceRowCheck).apply {
+                visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+                setTextColor(inlineAccentColor)
+            }
             row.setOnClickListener {
                 onSelect(index)
                 dialog.dismiss()
@@ -2713,6 +2732,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     ) {
         val sheetView = LayoutInflater.from(this).inflate(R.layout.inline_settings_sheet, null)
         val container = sheetView.findViewById<ViewGroup>(R.id.inlineSettingsRowsContainer)
+        themeInlineSheetBackground(sheetView)
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(sheetView)
 
