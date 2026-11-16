@@ -321,20 +321,6 @@ function HomeContent({ t }) {
     setPullY(0)
   }
 
-  if (error) {
-    return (
-      <div className="text-center mt-10 px-4">
-        <p className="text-reel-rust mb-3">{error}</p>
-        <button
-          onClick={() => setRetryKey((k) => k + 1)}
-          className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
-        >
-          {t('retry')}
-        </button>
-      </div>
-    )
-  }
-
   const rawGroups = tabCatalogs ? groupsByTab[active] : null
   // Jis language mein bahut kam titles hon (< MIN_ITEMS) use Home par nahi dikhate —
   // Home bhara-bhara lage. Agar sab hi kam hon to fallback mein sab dikhate hain.
@@ -367,6 +353,23 @@ function HomeContent({ t }) {
     return picks
   }, [groups])
   const heroLoading = !tabCatalogs || (loadingTab && !groups)
+
+  // NOTE: error early-return hooks (useMemo) ke BAAD hona chahiye, warna error->retry par
+  // 'Rendered more hooks' crash aata hai.
+  if (error) {
+    return (
+      <div className="text-center mt-10 px-4">
+        <p className="text-reel-rust mb-3">{error}</p>
+        <button
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="text-sm px-4 py-2 rounded-full bg-reel-surface2 text-reel-ink hover:bg-reel-surface2/70 active:scale-95 transition"
+        >
+          {t('retry')}
+        </button>
+      </div>
+    )
+  }
+
 
   return (
     <div
