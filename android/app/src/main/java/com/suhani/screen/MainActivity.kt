@@ -613,6 +613,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineTimeBarRef: DefaultTimeBar? = null
     private var inlineBottomBlockRef: View? = null
+    private var inlineTitleTextRef: TextView? = null
+
+    // Subtitle icon: hamesha full-visible; ON hone par theme accent, OFF par white.
+    private fun setInlineSubtitleActive(btn: ImageView?, on: Boolean) {
+        btn ?: return
+        btn.alpha = 1f
+        btn.imageTintList = android.content.res.ColorStateList.valueOf(if (on) inlineAccentColor else Color.WHITE)
+    }
 
     // Keep-screen-on (YouTube jaisa): video chalte waqt screen dim/sleep nahi hogi.
     private fun updateInlineKeepScreenOn() {
@@ -1726,6 +1734,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineTimeBarRef = timeBar
             // Controller show/hide animation off: warna Media3 time bar ko alag se pehle hide karta hai
             playerView.setControllerAnimationEnabled(false)
+            inlineTitleTextRef = playerView.findViewById(R.id.inlineTitleText)
             inlineBottomBlockRef = playerView.findViewById(R.id.inlineBottomBlock)
             inlineBottomBlockRef?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
             inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
@@ -1810,7 +1819,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // asli track-picker popup khulta hai (available subtitle tracks + Off).
             // Subtitle ab default OFF start hoti hai, isliye icon bhi shuru mein
             // dimmed (0.5 alpha) dikhta hai — user ON kare to hi full-opacity ho.
-            subtitleButton.alpha = 0.5f
+            setInlineSubtitleActive(subtitleButton, false)
             subtitleButton.setOnClickListener { showInlineSubtitleDialog(subtitleButton) }
 
             speedButton.setOnClickListener {
@@ -2146,6 +2155,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         // taaki fullscreen mein switch karne par asli filename hi carry ho, "Video"
         // generic fallback kabhi na dikhe.
         com.suhani.videoplayer.PlayerNetwork.clearOtherResources(this, uri)
+        inlineTitleTextRef?.text = inlineTitle
         player.setMediaItem(
             MediaItem.Builder()
                 .setUri(Uri.parse(uri))
@@ -2477,6 +2487,20 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             }
         }
 
+        inlineBufferingIndicatorRef?.let { ind ->
+            ind.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(22f).toFloat()
+                setColor(Color.parseColor("#CC101014"))
+                setStroke(dpToPx(1.5f), applyAlpha(color, 0xCC))
+            }
+            (ind as? ViewGroup)?.let { g ->
+                for (k in 0 until g.childCount) {
+                    (g.getChildAt(k) as? ProgressBar)?.indeterminateTintList =
+                        android.content.res.ColorStateList.valueOf(color)
+                }
+            }
+        }
         inlineQualityButtonRef?.setTextColor(color)
         // BUG FIX (user report: "processing jo likha hai uska rang nahi
         // badla"): was a fixed #FFF8E7 cream — now follows theme too.
@@ -2493,7 +2517,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         inlineNextButtonRef?.imageTintList = tintList
         inlinePipChevronRef?.imageTintList = tintList
         inlineAudioTrackButtonRef?.imageTintList = tintList
-        inlineSubtitleButtonRef?.imageTintList = tintList
+        setInlineSubtitleActive(inlineSubtitleButtonRef, subtitleManuallyEnabled)
         inlineSettingsButtonRef?.imageTintList = tintList
         inlineFullscreenButtonRef?.imageTintList = tintList
         inlinePipButtonRef?.imageTintList = tintList
@@ -3150,7 +3174,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                     .build()
-                subtitleButton.alpha = 0.5f
+                setInlineSubtitleActive(subtitleButton, false)
             } else {
                 subtitleManuallyEnabled = true
                 val (group, index) = trackRefs[which]
@@ -3158,7 +3182,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
                     .build()
-                subtitleButton.alpha = 1f
+                setInlineSubtitleActive(subtitleButton, true)
             }
         }
     }
