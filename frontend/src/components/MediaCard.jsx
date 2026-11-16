@@ -15,7 +15,7 @@ import PosterPlaceholder from './PosterPlaceholder'
 // `memo()` add kiya taaki jab parent (Rail/HomeContent) re-render ho
 // (naya tab select karne par, downloads update hone par, etc.) to jin
 // cards ke props nahi badle unhe React dobara process hi na kare.
-function MediaCard({ item, index = 0 }) {
+function MediaCard({ item, index = 0, fluid = false }) {
   // status: loading -> ok | fail. A failed/stalled poster is retried (cache-busted)
   // twice before we give up and keep the branded placeholder (colour + logo + title).
   const [status, setStatus] = useState('loading')
@@ -51,7 +51,7 @@ function MediaCard({ item, index = 0 }) {
       to={`/title/${item.type}/${encodeURIComponent(item.id)}`}
       // Sized so 3 posters fill one row on a phone screen — big enough that
       // titles stay readable (4-per-row made names truncate too tight).
-      className="group shrink-0 w-[calc(33.333vw-19px)] sm:w-[180px] animate-card-in active:scale-95 transition-transform duration-200 will-change-transform hover:-translate-y-1"
+      className={`group ${fluid ? 'w-full min-w-0' : 'shrink-0 w-[calc(33.333vw-19px)] sm:w-[180px]'} animate-card-in active:scale-95 transition-transform duration-200 will-change-transform hover:-translate-y-1`}
       style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
     >
       <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-reel-surface2 ring-1 ring-reel-ink/[0.06] group-hover:ring-reel-gold/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_2px_10px_-4px_rgba(0,0,0,0.5)] group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_18px_36px_-14px_rgba(232,163,61,0.35)] transition-[box-shadow,ring] duration-300">

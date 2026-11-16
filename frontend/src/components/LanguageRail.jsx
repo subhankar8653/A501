@@ -46,21 +46,18 @@ function Row({ items, keySuffix = '' }) {
   )
 }
 
-// Ek language ki rail. Chhoti list (< 10) ek hi row mein, badi list do rows mein.
-// Shuru mein PAGE items dikhte hain; "Show more" se aur khulte jaate hain.
-const PAGE = 12
+// Ek category ki grid: 3 cards per row. Pehle 12 (4 rows), "Show more" par 6 (2 rows) aur.
+// Grid hone se purani rows kabhi nahi badalti — naye cards sirf neeche jud jaate hain.
+const FIRST_PAGE = 12
+const NEXT_PAGE = 6
 
 export default function LanguageRail({ language, items }) {
   const { t } = useLanguage()
-  const [visible, setVisible] = useState(PAGE)
+  const [visible, setVisible] = useState(FIRST_PAGE)
   if (!items || items.length === 0) return null
 
   const shown = items.slice(0, visible)
   const remaining = items.length - shown.length
-  const twoRows = shown.length >= 10
-  const mid = twoRows ? Math.ceil(shown.length / 2) : shown.length
-  const row1 = shown.slice(0, mid)
-  const row2 = shown.slice(mid)
 
   return (
     <section className="mb-9">
@@ -73,20 +70,19 @@ export default function LanguageRail({ language, items }) {
           </span>
         </h2>
       </div>
-      <Row items={row1} />
-      {row2.length > 0 ? (
-        <div className="mt-3">
-          <Row items={row2} keySuffix="-row2" />
-        </div>
-      ) : null}
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-x-3 gap-y-4 px-4 sm:px-0">
+        {shown.map((item, i) => (
+          <MediaCard key={item.id} item={item} index={i % 6} fluid />
+        ))}
+      </div>
       {remaining > 0 ? (
-        <div className="flex justify-center mt-4 px-4">
+        <div className="flex justify-center mt-5 px-4">
           <button
-            onClick={() => setVisible((v) => v + PAGE)}
+            onClick={() => setVisible((v) => v + NEXT_PAGE)}
             className="inline-flex items-center gap-2 text-sm font-semibold px-5 py-2 rounded-full bg-reel-surface2 text-reel-ink ring-1 ring-reel-ink/10 active:scale-95 transition"
           >
             {t('show_more')}
-            <span className="text-xs text-reel-gold">+{Math.min(PAGE, remaining)}</span>
+            <span className="text-xs text-reel-gold">+{Math.min(NEXT_PAGE, remaining)}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
           </button>
         </div>
