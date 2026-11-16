@@ -50,6 +50,28 @@ function parseStreamMeta(stream) {
   return { filename, badges }
 }
 
+// Title ko clean "main title" + chips (episode / audio / quality) mein todta hai,
+// jaise "You and I Are Polar Opposites S01E01 Audio: [Hindi] [1080p]".
+function splitTitle(t) {
+  const full = String(t || '')
+  const m = full.match(/^(.*?)\s+(S\d{1,2}E\d{1,3})\b\s*(?:Audio:\s*)?(.*)$/i)
+  if (!m) return { main: full, ep: null, chips: [] }
+  let chips = [...m[3].matchAll(/\[([^\]]+)\]/g)].map((x) => x[1])
+  if (chips.length === 0 && m[3].trim()) chips = [m[3].trim()]
+  return { main: m[1].trim(), ep: m[2].toUpperCase(), chips }
+}
+
+const IconDrive = (props) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01M10 16h.01" />
+  </svg>
+)
+const IconComment = (props) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+)
+
 // Default playback quality should be the LOWEST available (360p over 480p
 // over 720p... etc), not whatever the backend happens to list first — user
 // ask: data-friendly default, let them manually bump it up if they want.
@@ -1143,15 +1165,36 @@ export default function Player() {
           <div className="px-4 sm:px-6">
           {/* Title + badges */}
           <div className="mt-4">
-            <h1 className="font-display text-lg text-reel-ink break-words">{displayTitle}</h1>
-            <div className="flex flex-wrap gap-2 mt-2">
+            {(() => {
+              const tp = splitTitle(displayTitle)
+              return (
+                <h1 className="font-sans text-[19px] font-semibold leading-snug tracking-tight text-reel-ink break-words">
+                  {tp.main}
+                </h1>
+              )
+            })()}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5">
+              {(() => {
+                const tp = splitTitle(displayTitle)
+                return (
+                  <>
+                    {tp.ep ? (
+                      <span className="text-[11px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-reel-gold text-reel-bg">{tp.ep}</span>
+                    ) : null}
+                    {tp.chips.map((c, i) => (
+                      <span key={i} className="text-[11px] font-semibold tracking-wide px-2.5 py-1 rounded-md bg-reel-surface2 text-reel-ink ring-1 ring-reel-ink/10">{c}</span>
+                    ))}
+                  </>
+                )
+              })()}
               {/* BUG FIX (user ask: "language file size ke baad hona
                   chahiye"): file-size badge ab sabse pehle, language buttons
                   uske baad — pehle order ulta tha (language pehle, size
                   baad mein). */}
               {meta.badges.map((b, i) => (
-                <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">
-                  {b}
+                <span key={i} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md bg-reel-surface2 text-reel-muted whitespace-pre">
+                  <IconDrive className="text-reel-gold" />
+                  {b.replace('💾', '').trim()}
                 </span>
               ))}
               {/* BUG FIX (see unifiedLanguages comment above): ab sirf EK
@@ -1322,11 +1365,15 @@ export default function Player() {
               bottom-sheet mein khulti hai (dekho CommentsSheet.jsx) */}
           <button
             onClick={() => setCommentsOpen(true)}
-            className="mt-6 w-full flex items-center justify-between gap-3 bg-reel-surface rounded-lg px-4 py-3 ring-1 ring-reel-ink/5 active:scale-[0.99] transition text-left"
+            className="mt-6 w-full flex items-center gap-3 bg-reel-surface rounded-2xl px-3.5 py-3 ring-1 ring-reel-ink/5 active:scale-[0.99] transition text-left"
           >
-            <span className="text-sm font-display font-semibold text-reel-ink">
-              💬 {t('comments_title')} {commentCount != null ? `· ${commentCount}` : ''}
+            <span className="w-9 h-9 rounded-xl bg-reel-gold/15 text-reel-gold flex items-center justify-center shrink-0">
+              <IconComment />
             </span>
+            <span className="flex-1 min-w-0 text-sm font-semibold text-reel-ink">{t('comments_title')}</span>
+            {commentCount != null ? (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-reel-surface2 text-reel-ink">{commentCount}</span>
+            ) : null}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-reel-muted shrink-0"><path d="m9 18 6-6-6-6" /></svg>
           </button>
 
@@ -1354,16 +1401,19 @@ export default function Player() {
           {isSeries && upNext.episodes.length > 0 ? (
             <div className="mt-8 pt-6 border-t border-reel-ink/5">
               <div className="flex items-center justify-between mb-3 gap-3">
-                <h2 className="font-display text-lg text-reel-ink">{t('player_up_next')} · {upNext.label}</h2>
+                <h2 className="font-sans text-[15px] font-semibold text-reel-ink">
+                  {t('player_up_next')} <span className="text-reel-muted font-normal">· {upNext.label}</span>
+                </h2>
                 <button
                   onClick={toggleAutoplay}
-                  aria-pressed={autoplay}
-                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full shrink-0 active:scale-95 transition ${
-                    autoplay ? 'bg-reel-gold text-reel-bg font-semibold' : 'bg-reel-surface2 text-reel-muted'
-                  }`}
+                  role="switch"
+                  aria-checked={autoplay}
+                  className="flex items-center gap-2 text-xs text-reel-muted shrink-0 active:scale-95 transition"
                 >
-                  <span className={`w-2 h-2 rounded-full ${autoplay ? 'bg-reel-bg' : 'bg-reel-muted'}`} />
-                  {t('player_autoplay')} {autoplay ? t('on') : t('off')}
+                  <span>{t('player_autoplay')}</span>
+                  <span className={`relative w-9 h-5 rounded-full transition-colors ${autoplay ? 'bg-reel-gold' : 'bg-reel-surface2 ring-1 ring-reel-ink/10'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full shadow transition-transform ${autoplay ? 'translate-x-4 bg-reel-bg' : 'bg-reel-muted'}`} />
+                  </span>
                 </button>
               </div>
               <div className="space-y-3">
@@ -1380,9 +1430,10 @@ export default function Player() {
                       className="w-32 sm:w-40 aspect-video rounded-md shrink-0"
                     />
                     <div className="min-w-0">
-                      <p className="font-medium text-sm">
-                        S{ep.season} · E{ep.episode} · {ep.title}
+                      <p className="text-[11px] font-bold tracking-wider text-reel-gold">
+                        S{ep.season} · E{ep.episode}
                       </p>
+                      <p className="font-semibold text-sm leading-snug mt-0.5 line-clamp-1">{ep.title}</p>
                       <p className="text-xs text-reel-muted mt-1 line-clamp-2">{ep.overview}</p>
                     </div>
                   </button>
