@@ -263,6 +263,8 @@ def convert_to_stremio_meta(item: dict) -> dict:
         "cast": item.get("cast") or [],
         "runtime": item.get("runtime") or "",
         "languages": item_languages(item),
+        # Frontend isko anime (ja/zh) vs cartoon (baaki deshon ka) alag karne ke liye use karta hai.
+        "originalLanguage": (item.get("original_language") or ""),
         # FEATURE (user ask: "New to You" home tab — sabse latest upload
         # dikhna chahiye): non-Stremio-spec extra field, harmless for any
         # Stremio client, but lets our own frontend sort a mixed batch of
