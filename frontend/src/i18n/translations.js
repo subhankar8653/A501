@@ -254,6 +254,7 @@ const dict = {
     'cat_hindi_audio': "Hindi Audio",
     'cat_all_titles': "Saare Titles",
     'cat_cartoons': "Cartoons",
+    'cat_kdrama': "K-Drama",
   },
   hi: {
     'more_like_this': 'इससे मिलते-जुलते',
@@ -492,6 +493,7 @@ const dict = {
     'cat_hindi_audio': "हिन्दी ऑडियो",
     'cat_all_titles': "सभी टाइटल",
     'cat_cartoons': "कार्टून",
+    'cat_kdrama': "K-Drama",
   },
   en: {
     'more_like_this': 'More like this',
@@ -730,6 +732,7 @@ const dict = {
     'cat_hindi_audio': "Hindi Audio",
     'cat_all_titles': "All Titles",
     'cat_cartoons': "Cartoons",
+    'cat_kdrama': "K-Drama",
   },
   bn: {
     'more_like_this': 'এর মতো আরও',
@@ -968,6 +971,7 @@ const dict = {
     'cat_hindi_audio': "হিন্দি অডিও",
     'cat_all_titles': "সব টাইটেল",
     'cat_cartoons': "কার্টুন",
+    'cat_kdrama': "K-Drama",
   },
   ur: {
     'more_like_this': 'اس جیسی مزید',
@@ -1206,6 +1210,7 @@ const dict = {
     'cat_hindi_audio': "ہندی آڈیو",
     'cat_all_titles': "تمام ٹائٹلز",
     'cat_cartoons': "کارٹون",
+    'cat_kdrama': "K-Drama",
   },
   ta: {
     'more_like_this': 'இது போன்ற மேலும்',
@@ -1444,6 +1449,7 @@ const dict = {
     'cat_hindi_audio': "இந்தி ஆடியோ",
     'cat_all_titles': "அனைத்து தலைப்புகள்",
     'cat_cartoons': "கார்ட்டூன்",
+    'cat_kdrama': "K-Drama",
   },
   te: {
     'more_like_this': 'దీని లాంటివి మరిన్ని',
@@ -1682,6 +1688,7 @@ const dict = {
     'cat_hindi_audio': "హిందీ ఆడియో",
     'cat_all_titles': "అన్ని టైటిల్స్",
     'cat_cartoons': "కార్టూన్లు",
+    'cat_kdrama': "K-Drama",
   },
 }
 

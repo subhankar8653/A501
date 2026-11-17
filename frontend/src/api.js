@@ -349,7 +349,7 @@ export function tabItemFilter(tabKey) {
   return null
 }
 
-function groupItemsByLanguage(mergedMap) {
+function groupItemsByLanguage(mergedMap, mode = 'tab') {
   const all = [...mergedMap.values()].filter(Boolean)
   const byRating = (a, b) => ratingOf(b) - ratingOf(a)
   const byNew = (a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0)
@@ -361,6 +361,36 @@ function groupItemsByLanguage(mergedMap) {
 
   const anime = all.filter(isTrueAnime)
   const cartoons = all.filter(isCartoon)
+
+  // "All" tab: Anime tab ki copy nahi — sab type ka MIX, anime sirf 2 sections (Trending +
+  // Latest, chhote) mein aage rakha jaata hai, baaki sections movies/series/k-drama/cartoon ke.
+  if (mode === 'all') {
+    const MIX = 24
+    const movies = all.filter((i) => i.type === 'movie' && itemKind(i) === 'other')
+    const webSeries = all.filter((i) => i.type === 'series' && itemKind(i) === 'other')
+    const kdrama = all.filter((i) => itemKind(i) === 'kdrama')
+    push('cat_trending_anime', 'Trending Anime', [...anime].sort(byRating).slice(0, MIX))
+    push('cat_popular_movies', 'Popular Movies', [...movies].sort(byRating).slice(0, MIX))
+    push('cat_popular_series', 'Popular Series', [...webSeries].sort(byRating).slice(0, MIX))
+    push('cat_cartoons', 'Cartoons', [...cartoons].sort(byRating).slice(0, MIX))
+    push('cat_kdrama', 'K-Drama', [...kdrama].sort(byRating).slice(0, MIX))
+    push('cat_latest_anime', 'Latest Anime', [...anime].sort(byNew).slice(0, MIX))
+    push('cat_top_rated', 'Top Rated', all.filter((i) => ratingOf(i) >= 7.5).sort(byRating).slice(0, MIX))
+    const yr0 = new Date().getFullYear()
+    push('cat_new_releases', 'New Releases', all.filter((i) => Number(i.year) >= yr0 - 1).sort(byNew).slice(0, MIX))
+    const g0 = new Map()
+    for (const item of all) for (const g of item.genres || []) {
+      if (!g || typeof g !== 'string' || g === 'Animation') continue
+      if (!g0.has(g)) g0.set(g, [])
+      g0.get(g).push(item)
+    }
+    ;[...g0.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 6)
+      .forEach(([genre, items]) => push(null, genre, [...items].sort(byRating).slice(0, MIX)))
+    push('cat_hindi_audio', 'Hindi Audio', all.filter((i) => (i.languages || []).some((l) => /hindi/i.test(l))).sort(byRating).slice(0, MIX))
+    if (sections.length === 0 && all.length) push('cat_all_titles', 'All Titles', all)
+    return sections
+  }
+
   push('cat_trending_anime', 'Trending Anime', [...anime].sort(byRating))
   push('cat_latest_anime', 'Latest Anime', [...anime].sort(byNew))
   push('cat_cartoons', 'Cartoons', [...cartoons].sort(byRating))
@@ -408,7 +438,7 @@ export function createTabLoadState() {
 // loadTabByLanguage() used to return in one big shot — just built up
 // gradually instead. `exhausted` tells the caller whether every catalog
 // in this tab has now been fully fetched (no more "load more" needed).
-export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog, filter = null) {
+export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog, filter = null, mode = 'tab') {
   await Promise.all(
     (catalogsForTab || []).map(async (cat) => {
       const prev = loadState.catalogState.get(cat.id) || { pagesLoaded: 0, exhausted: false }
@@ -443,7 +473,7 @@ export async function loadTabPage(catalogsForTab, loadState, pagesPerCatalog, fi
     source = new Map()
     for (const [id, it] of loadState.merged) if (filter(it)) source.set(id, it)
   }
-  return { groups: groupItemsByLanguage(source), exhausted }
+  return { groups: groupItemsByLanguage(source, mode), exhausted }
 }
 
 export async function getMeta(type, id) {
@@ -876,7 +906,7 @@ export async function loadTabByLanguage(catalogsForTab) {
 // forces an immediate one — either way the old cache entry is simply
 // overwritten by the new one, never left stacking up.
 // ---------------------------------------------------------------------
-const HOME_CACHE_KEY = 'huka-tube:home-cache-v1'
+const HOME_CACHE_KEY = 'huka-tube:home-cache-v2'
 
 export function loadHomeCache() {
   try {

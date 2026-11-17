@@ -83,7 +83,7 @@ function HomeContent({ t }) {
   const reveal = useCallback(() => { window.__hukaRevealed = true; setRevealed(true) }, [])
   useEffect(() => {
     if (revealed) return undefined
-    const id = setTimeout(reveal, 4000)
+    const id = setTimeout(reveal, 5000)
     return () => clearTimeout(id)
   }, [revealed, reveal])
 
@@ -190,7 +190,7 @@ function HomeContent({ t }) {
 
     const loadState = createTabLoadState()
     loadStatesRef.current[active] = loadState
-    const run = () => loadTabPage(tabCatalogs[active], loadState, INITIAL_PAGES_PER_CATALOG, tabItemFilter(active))
+    const run = () => loadTabPage(tabCatalogs[active], loadState, INITIAL_PAGES_PER_CATALOG, tabItemFilter(active), active === 'all' ? 'all' : 'tab')
     const apply = ({ groups, exhausted }) => {
       if (cancelled) return
       setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
@@ -231,7 +231,8 @@ function HomeContent({ t }) {
         tabCatalogs[active],
         loadState,
         LOAD_MORE_PAGES_PER_CATALOG,
-        tabItemFilter(active)
+        tabItemFilter(active),
+        active === 'all' ? 'all' : 'tab'
       )
       setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
       setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
@@ -280,7 +281,8 @@ function HomeContent({ t }) {
           nextTabCatalogs[active],
           loadState,
           INITIAL_PAGES_PER_CATALOG,
-          tabItemFilter(active)
+          tabItemFilter(active),
+          active === 'all' ? 'all' : 'tab'
         )
         setGroupsByTab((prev) => ({ ...prev, [active]: groups }))
         setTabExhausted((prev) => ({ ...prev, [active]: exhausted }))
@@ -335,7 +337,11 @@ function HomeContent({ t }) {
   // Spotlight picks for the hero banner carousel — top item from each
   // language group in the active tab (up to 5), so the hero auto-rotates
   // through a handful of picks instead of showing just one static item.
+  const heroFrozen = useRef({})
   const heroItems = useMemo(() => {
+    // Ek baar pick ho jaaye to us tab ke liye hero FIXED rehta hai — background refresh ya
+    // auto-fill se groups badalne par banner dobara reload/slide nahi hota.
+    if (heroFrozen.current[active] && heroFrozen.current[active].length) return heroFrozen.current[active]
     // Anime-first sections ke top titles se hero banta hai; same title repeat nahi hota
     // aur sirf wahi lete hain jinke paas banner image ho.
     const seen = new Set()
@@ -350,9 +356,15 @@ function HomeContent({ t }) {
         }
       }
     }
+    if (picks.length >= 3 || (picks.length > 0 && !loadingTab)) heroFrozen.current[active] = picks
     return picks
-  }, [groups])
+  }, [groups, active, loadingTab])
   const heroLoading = !tabCatalogs || (loadingTab && !groups)
+
+  // Hero ke liye koi banner hi nahi (ya content khali) to 5s intezaar kyun — turant dikhao.
+  useEffect(() => {
+    if (!revealed && !heroLoading && groups && heroItems.length === 0) reveal()
+  }, [revealed, heroLoading, groups, heroItems, reveal])
 
   // NOTE: error early-return hooks (useMemo) ke BAAD hona chahiye, warna error->retry par
   // 'Rendered more hooks' crash aata hai.
@@ -401,6 +413,7 @@ function HomeContent({ t }) {
           gold-gradient-with-glow treatment for calmer rectangular chips
           (.chip/.chip-active — see index.css) — a single confident solid
           fill on the active chip instead of a glowing pill among several. */}
+      <div style={{ opacity: revealed ? 1 : 0, transition: 'opacity 500ms ease-out' }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-3 relative z-10">
         <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
           {HOME_TABS.map((tab) => (
@@ -418,9 +431,6 @@ function HomeContent({ t }) {
         </div>
       </div>
 
-      <div
-        style={{ opacity: revealed ? 1 : 0, transition: 'opacity 500ms ease-out' }}
-      >
       <HomeHero items={heroItems} loading={heroLoading} onSettled={reveal} />
 
       <div className="max-w-6xl mx-auto px-0">
