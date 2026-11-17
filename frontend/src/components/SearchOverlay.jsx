@@ -198,7 +198,7 @@ export default function SearchOverlay({ initialQuery = '', onClose }) {
                         e.stopPropagation()
                         setRecent(removeRecentSearch(term))
                       }}
-                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-reel-ink/5 opacity-0 group-hover:opacity-100 transition active:scale-90"
+                      className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-reel-muted hover:text-reel-ink hover:bg-reel-ink/5 transition active:scale-90"
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                         <path d="M18 6 6 18M6 6l12 12" />

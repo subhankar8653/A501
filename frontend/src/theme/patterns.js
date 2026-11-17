@@ -183,6 +183,28 @@ export const PATTERNS = [
     markup: (c) =>
       `<path d="M4 4h6c0-1.4 1-2.4 2-2.4s2 1 2 2.4h6v6c1.4 0 2.4 1 2.4 2s-1 2-2.4 2v6h-6c0 1.4-1 2.4-2 2.4s-2-1-2-2.4H4v-6c-1.4 0-2.4-1-2.4-2s1-2 2.4-2z" fill="${c}"/>`,
   },
+  {
+    id: 'dots',
+    name: 'Dots',
+    markup: (c) =>
+      `<circle cx="6" cy="6" r="2.6" fill="${c}"/><circle cx="18" cy="6" r="2.6" fill="${c}"/><circle cx="12" cy="12" r="2.6" fill="${c}"/><circle cx="6" cy="18" r="2.6" fill="${c}"/><circle cx="18" cy="18" r="2.6" fill="${c}"/>`,
+  },
+  {
+    id: 'plus',
+    name: 'Plus',
+    markup: (c) =>
+      `<rect x="10" y="3" width="4" height="18" rx="2" fill="${c}"/><rect x="3" y="10" width="18" height="4" rx="2" fill="${c}"/>`,
+  },
+  {
+    id: 'triangle',
+    name: 'Triangle',
+    markup: (c) => `<path d="M12 3 22 20H2z" fill="${c}"/>`,
+  },
+  {
+    id: 'hexagon',
+    name: 'Hexagon',
+    markup: (c) => `<path d="M12 2 21 7v10l-9 5-9-5V7z" fill="${c}"/>`,
+  },
 ]
 
 export function getPattern(id) {

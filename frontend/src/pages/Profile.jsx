@@ -12,6 +12,7 @@ import {
   getMySubscription,
   getBotUsername,
 } from '../api'
+import { getRecentSearches, clearRecentSearches } from '../api'
 import { useSavedList } from '../lib/savedStore'
 import { useDownloadsList, deleteDownload } from '../lib/downloadsStore'
 import { pushToast } from '../lib/toastStore'
@@ -189,6 +190,13 @@ export default function Profile() {
     } catch {
       pushToast('Could not reach the bot — try again in a moment.', 'error')
     }
+  }
+
+  const [searchCount, setSearchCount] = useState(() => getRecentSearches().length)
+  function handleClearSearchHistory() {
+    clearRecentSearches()
+    setSearchCount(0)
+    pushToast(t('search_history_cleared'))
   }
 
   function handleLogout() {
@@ -534,6 +542,26 @@ export default function Profile() {
         </button>
       </SectionCard>
       <ThemeSheet open={themeSheetOpen} onClose={() => setThemeSheetOpen(false)} />
+
+      {/* ---- Privacy: search history ---- */}
+      <SectionCard
+        title={t('profile_privacy')}
+        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>}
+      >
+        <div className="flex items-center justify-between gap-3 py-1">
+          <div className="min-w-0">
+            <p className="text-sm text-reel-ink font-medium">{t('profile_search_history')}</p>
+            <p className="text-[11px] text-reel-muted">{t('profile_search_history_sub')}{searchCount ? ` · ${searchCount}` : ''}</p>
+          </div>
+          <button
+            onClick={handleClearSearchHistory}
+            disabled={!searchCount}
+            className="shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-reel-rust/15 text-reel-rust ring-1 ring-reel-rust/30 active:scale-95 transition disabled:opacity-40"
+          >
+            {t('profile_search_history_clear')}
+          </button>
+        </div>
+      </SectionCard>
 
       {/* ---- Language ---- */}
       <SectionCard

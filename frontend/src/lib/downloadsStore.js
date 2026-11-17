@@ -431,11 +431,10 @@ export async function startDownload(url, meta) {
     const queue = readQueue()
     queue.push({ id, url, meta })
     writeQueue(queue)
-    pushToast(`Queued: ${meta.filename || 'download'}`)
+    pushToast('Added to download queue')
     return id
   }
 
-  pushToast(`Download started: ${meta.filename || 'download'}`)
   return runDownload(id, url, meta)
 }
 
