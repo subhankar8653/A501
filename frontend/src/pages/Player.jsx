@@ -409,7 +409,7 @@ export default function Player() {
     setRelated(null)
     getRelatedTitles('movie', imdbId, movieMeta.genres[0])
       .then((items) => {
-        if (!cancelled) setRelated(items)
+        if (!cancelled) setRelated([...(items || [])].sort((a, b) => (b && b.poster ? 1 : 0) - (a && a.poster ? 1 : 0)))
       })
       .catch(() => {
         if (!cancelled) setRelated([])

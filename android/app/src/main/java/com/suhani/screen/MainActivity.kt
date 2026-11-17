@@ -613,6 +613,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineTimeBarRef: DefaultTimeBar? = null
     private var inlineBottomBlockRef: View? = null
+    // Bottom block pin watchdog: ViewTreeObserver listeners kabhi-kabhi (view re-attach /
+    // app background-foreground ke baad) mar jaate hain, tab time bar upar atak jaata tha.
+    // Isliye ek halka periodic check bhi chalta hai (400ms) jo har haal mein pin sahi karta hai.
+    private val inlinePinHandler = Handler(Looper.getMainLooper())
+    private val inlinePinTick = object : Runnable {
+        override fun run() {
+            if (inlineBottomBlockRef == null) return
+            pinInlineBottomBlock()
+            inlinePinHandler.postDelayed(this, 400)
+        }
+    }
+    private fun startInlinePinWatchdog() {
+        inlinePinHandler.removeCallbacks(inlinePinTick)
+        inlinePinHandler.postDelayed(inlinePinTick, 200)
+    }
     private var inlineTitleTextRef: TextView? = null
 
     // Subtitle icon: hamesha full-visible; ON hone par theme accent, OFF par white.
@@ -1753,6 +1768,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             inlineBottomBlockRef = playerView.findViewById(R.id.inlineBottomBlock)
             inlineBottomBlockRef?.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
             inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
+            playerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> inlineBottomBlockRef?.post { pinInlineBottomBlock() } }
+            inlineBottomBlockRef?.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    inlineBottomBlockRef?.viewTreeObserver?.addOnGlobalLayoutListener { pinInlineBottomBlock() }
+                    inlineBottomBlockRef?.post { pinInlineBottomBlock() }
+                }
+                override fun onViewDetachedFromWindow(v: View) {}
+            })
+            startInlinePinWatchdog()
             inlineBufferingIndicatorRef = bufferingIndicator
             inlineProcessingLabelRef = processingLabel
             inlinePipChevronRef = pipChevron
@@ -2986,6 +3010,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         params.leftMargin = (left * density).toInt()
         params.topMargin = statusBarInsetPx + (top * density).toInt()
         overlay.layoutParams = params
+        overlay.post { pinInlineBottomBlock() }
         // BUG FIX (dekho `awaitingRectAfterPipReturn` field ka comment): yeh
         // pakka signal hai ki JS ab WAAKI (sahi) page par dobara mount ho
         // chuki hai aur is video ke container ka asli, current rect bhej
@@ -3678,6 +3703,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 inlineQualityButtonRef = null
                 inlineTimeBarRef = null
                 inlineBottomBlockRef = null
+                inlinePinHandler.removeCallbacks(inlinePinTick)
                 inlineThinProgressBarRef = null
                 inlineBufferingIndicatorRef = null
                 inlineProcessingLabelRef = null
@@ -3966,6 +3992,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
     override fun onResume() {
         super.onResume()
+        inlineBottomBlockRef?.post { pinInlineBottomBlock() }
         webView.onResume()
         // BLACK-VIDEO GUARD (user report: video suddenly goes black while the rest of the page is
         // fine). When the Activity comes back to the front (from the app switcher, a dialog, the
