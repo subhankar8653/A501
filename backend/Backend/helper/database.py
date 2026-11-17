@@ -244,7 +244,7 @@ class Database:
             try:
                 await self.add_notification(
                     int(parent["u"]), "reply",
-                    f"{(name or 'Someone')[:40]} ne reply kiya",
+                    f"{(name or 'Someone')[:40]} replied to your comment",
                     text[:140], media_type=media_type, media_id=media_id,
                     poster=poster,
                     ref=f"reply:{key}:{entry['ts']}",
@@ -263,6 +263,26 @@ class Database:
             "ts": int(datetime.now(timezone.utc).timestamp()), "ref": ref,
         }
         await self.dbs["tracking"]["notifications"].insert_one(doc)
+
+    async def notify_safe(self, user_id: int, kind: str, title: str, body: str = "", ref: str = "") -> None:
+        # Never let a notification failure break a payment/subscription flow.
+        try:
+            await self.add_notification(user_id, kind, title, body, ref=ref)
+        except Exception:
+            pass
+
+    async def notify_plan_active(self, user_id: int, days: int = 0, never: bool = False) -> None:
+        if never:
+            await self.notify_safe(user_id, "subscription", "Subscription activated",
+                                   "Your plan is active with no expiry. Enjoy watching!", ref="sub_active")
+        else:
+            extra = f" for {days} days" if days else ""
+            await self.notify_safe(user_id, "subscription", "Subscription activated",
+                                   f"Your plan is now active{extra}. Enjoy watching!", ref="sub_active")
+
+    async def notify_plan_inactive(self, user_id: int) -> None:
+        await self.notify_safe(user_id, "subscription", "Subscription deactivated",
+                               "Your plan is no longer active. Renew from the bot to keep watching.", ref="sub_inactive")
 
     async def get_notifications(self, user_id: int, limit: int = 40) -> list:
         cutoff = int(datetime.now(timezone.utc).timestamp()) - 30 * 86400
@@ -735,6 +755,7 @@ class Database:
                 "$unset": {"pending_payment": ""}
             }
         )
+        await self.notify_plan_active(user_id, int(duration or 0))
         return await self.get_user(user_id)
 
     async def reject_payment(self, user_id: int) -> bool:
@@ -756,6 +777,7 @@ class Database:
             {"_id": user_id},
             {"$set": {"subscription_status": "expired"}}
         )
+        await self.notify_plan_inactive(user_id)
 
     async def get_expiring_users(self, hours: int = 24) -> List[dict]:
         now = datetime.utcnow()
@@ -894,6 +916,11 @@ class Database:
             if status == "active":
                 await self.ensure_api_token_for_user(user_id, (user or {}).get("first_name"))
             await self.align_token_with_subscription(user_id)
+            if status == "active":
+                if action == "extend":
+                    await self.notify_plan_active(user_id, days)
+            else:
+                await self.notify_plan_inactive(user_id)
             return True
 
         elif action == "delete":
@@ -902,6 +929,7 @@ class Database:
                 {"$set": {"subscription_status": "expired", "subscription_expiry": now}}
             )
             await self.align_token_with_subscription(user_id)
+            await self.notify_plan_inactive(user_id)
             return True
 
         elif action == "remove":
@@ -945,6 +973,7 @@ class Database:
         token_doc = await self.ensure_api_token_for_user(user_id, (user or {}).get("first_name"))
         token = token_doc.get("token") if token_doc else None
         await self.align_token_with_subscription(user_id)
+        await self.notify_plan_active(user_id, days)
         return {
             "user_id": user_id,
             "subscription_expiry": new_expiry.isoformat(),
@@ -975,6 +1004,7 @@ class Database:
         token = token_doc.get("token") if token_doc else None
         if token:
             await self.set_token_lifetime(token, True)
+        await self.notify_plan_active(user_id, never=True)
         return {
             "user_id": user_id,
             "never_expires": True,

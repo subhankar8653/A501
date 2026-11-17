@@ -15,7 +15,6 @@ import {
 import { useSavedList } from '../lib/savedStore'
 import { useDownloadsList, deleteDownload } from '../lib/downloadsStore'
 import { pushToast } from '../lib/toastStore'
-import { isNewUploadsEnabled, setNewUploadsEnabled } from '../lib/notificationsStore'
 import { useThemeMode } from '../theme/ThemeContext'
 import TelegramSignup from '../components/TelegramSignup'
 import LanguagePicker from '../components/LanguagePicker'
@@ -105,7 +104,6 @@ export default function Profile() {
   const [continueWatching, setContinueWatching] = useState(null)
   const [subscription, setSubscription] = useState(null)
   const [themeSheetOpen, setThemeSheetOpen] = useState(false)
-  const [notifEnabled, setNotifEnabled] = useState(() => isNewUploadsEnabled())
 
   // Same localStorage keys/semantics as Player.jsx's own toggles — this is
   // just a second control surface over the exact same settings, so
@@ -149,11 +147,6 @@ export default function Profile() {
     } catch {
       /* ignore storage failures */
     }
-  }
-
-  function toggleNotif(next) {
-    setNotifEnabled(next)
-    setNewUploadsEnabled(next)
   }
 
   useEffect(() => {
@@ -541,14 +534,6 @@ export default function Profile() {
         </button>
       </SectionCard>
       <ThemeSheet open={themeSheetOpen} onClose={() => setThemeSheetOpen(false)} />
-
-      {/* ---- Notifications ---- */}
-      <SectionCard
-        title={t('profile_notifications')}
-        icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>}
-      >
-        <ToggleRow label={t('profile_notif_new_uploads')} sub={t('profile_notif_new_uploads_sub')} checked={notifEnabled} onChange={toggleNotif} />
-      </SectionCard>
 
       {/* ---- Language ---- */}
       <SectionCard

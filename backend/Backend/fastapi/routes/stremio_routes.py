@@ -1107,20 +1107,40 @@ async def notifications_api(token: str, token_data: dict = Depends(verify_token)
     user_id = token_data.get("user_id")
     items = []
     if user_id:
-        items = await db.get_notifications(int(user_id))
+        user = None
         try:
             user = await db.get_user(int(user_id))
+        except Exception:
+            pass
+        # Welcome notification: every user gets exactly one, addressed by name,
+        # so the bell is never empty.
+        try:
+            col = db.dbs["tracking"]["notifications"]
+            if not await col.find_one({"user_id": int(user_id), "ref": "welcome"}):
+                nm = ((user or {}).get("first_name") or "").strip()
+                if not nm or nm.startswith("User "):
+                    nm = ""
+                await db.add_notification(
+                    int(user_id), "welcome",
+                    f"Welcome, {nm}!" if nm else "Welcome!",
+                    "Glad to have you here. New replies, plan updates and announcements will show up here.",
+                    ref="welcome",
+                )
+        except Exception:
+            pass
+        items = await db.get_notifications(int(user_id))
+        try:
             expiry = user.get("subscription_expiry") if user else None
             if expiry and SettingsManager.current().subscription and not token_data.get("is_admin"):
                 exp = expiry if expiry.tzinfo else expiry.replace(tzinfo=timezone.utc)
                 now = datetime.now(timezone.utc)
                 days = (exp - now).days
                 if exp < now:
-                    items.append({"kind": "subscription", "title": "Subscription khatam ho gaya",
-                                  "body": "Dobara active karne ke liye bot se plan lo.", "ts": int(exp.timestamp())})
+                    items.append({"kind": "subscription", "title": "Subscription expired",
+                                  "body": "Renew from the bot to keep watching.", "ts": int(exp.timestamp())})
                 elif days <= 3:
-                    items.append({"kind": "subscription", "title": f"Subscription {max(days, 0)} din me khatam hoga",
-                                  "body": "Bina ruke dekhne ke liye time se renew karo.",
+                    items.append({"kind": "subscription", "title": f"Subscription expires in {max(days, 0)} day(s)",
+                                  "body": "Renew in time to keep watching without a break.",
                                   "ts": int((exp - timedelta(days=3)).timestamp())})
         except Exception:
             pass
