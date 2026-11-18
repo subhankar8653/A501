@@ -12,9 +12,15 @@ const ROTATE_MS = 5000
 // shown (a featured card with a missing picture looks broken, so it is skipped).
 // Each image gets one retry; after SETTLE_MS anything still pending counts as failed.
 const SETTLE_MS = 3500
+// Jo artwork ek baar load ho chuka, wapas aane par turant 'ok' maano (skeleton dobara na dikhe).
+const LOADED_URLS = new Set()
 
 function useLoadedSlides(list, onSettled) {
-  const [okMap, setOkMap] = useState({})
+  const [okMap, setOkMap] = useState(() => {
+    const m = {}
+    list.forEach((s) => { if (LOADED_URLS.has(s.background || s.poster)) m[s.id] = true })
+    return m
+  })
   const [timedOut, setTimedOut] = useState(false)
   const key = list.map((s) => `${s.id}|${s.background || s.poster || ''}`).join(',')
 
@@ -28,7 +34,7 @@ function useLoadedSlides(list, onSettled) {
       if (!url) { setOkMap((m) => ({ ...m, [id]: false })); return }
       const load = (u, retry) => {
         const im = new Image()
-        im.onload = () => !dead && setOkMap((m) => ({ ...m, [id]: true }))
+        im.onload = () => { LOADED_URLS.add(url); if (!dead) setOkMap((m) => ({ ...m, [id]: true })) }
         im.onerror = () => {
           if (dead) return
           if (retry) setTimeout(() => load(url + (url.includes('?') ? '&' : '?') + '_r=1', false), 900)

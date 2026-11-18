@@ -24,6 +24,8 @@ import ContinueWatchingRail from '../components/ContinueWatchingRail'
 import VerifyGate from '../components/VerifyGate'
 import { useLanguage } from '../i18n/LanguageContext'
 
+const HERO_CACHE = {}
+
 export default function Home() {
   // FEATURE (user ask: "jab offline ho toh sidha download page mein open
   // hona chahiye, aur home page pe lock ho jana chahiye"): Home needs live
@@ -337,7 +339,8 @@ function HomeContent({ t }) {
   // Spotlight picks for the hero banner carousel — top item from each
   // language group in the active tab (up to 5), so the hero auto-rotates
   // through a handful of picks instead of showing just one static item.
-  const heroFrozen = useRef({})
+  // Module-level cache: Home unmount hone ke baad bhi (dusri category/page se wapas aane par) featured banner wahi rahe.
+  const heroFrozen = { current: HERO_CACHE }
   const heroItems = useMemo(() => {
     // Ek baar pick ho jaaye to us tab ke liye hero FIXED rehta hai — background refresh ya
     // auto-fill se groups badalne par banner dobara reload/slide nahi hota.
@@ -359,7 +362,7 @@ function HomeContent({ t }) {
     if (picks.length >= 3 || (picks.length > 0 && !loadingTab)) heroFrozen.current[active] = picks
     return picks
   }, [groups, active, loadingTab])
-  const heroLoading = !tabCatalogs || (loadingTab && !groups)
+  const heroLoading = !(heroFrozen.current[active] && heroFrozen.current[active].length) && (!tabCatalogs || (loadingTab && !groups))
 
   // Hero ke liye koi banner hi nahi (ya content khali) to 5s intezaar kyun — turant dikhao.
   useEffect(() => {
