@@ -382,6 +382,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var bottomPipButton: ImageView
     private lateinit var bottomAspectButton: ImageView
     private lateinit var bottomAutoplayButton: ImageView
+    private lateinit var bottomExpandButton: ImageView
     private lateinit var bottomQualityButton: ImageView
     // Series ke next/prev episode ka state MainActivity se aata hai (queue single-item
     // hone par Media3 ko pata nahi hota). pendingEpisodeNav set hone par finish()
@@ -921,6 +922,7 @@ class PlayerActivity : AppCompatActivity() {
         topContainer = findViewById(R.id.topContainer)
         bottomAspectButton = findViewById(R.id.bottomAspectButton)
         bottomAutoplayButton = findViewById(R.id.bottomAutoplayButton)
+        bottomExpandButton = findViewById(R.id.bottomExpandButton)
         bottomQualityButton = findViewById(R.id.bottomQualityButton)
         hasNextEpisodeExtra = intent.getBooleanExtra("has_next_episode", false)
         hasPrevEpisodeExtra = intent.getBooleanExtra("has_prev_episode", false)
@@ -1020,7 +1022,7 @@ class PlayerActivity : AppCompatActivity() {
             sleepTimerButton, equalizerButton, backgroundPlayButton,
             ambientGlowButton, statsForNerdsButton, expandActionsButton,
             audioTrackButton, subtitleButton, speedButton,
-            bottomPipButton, bottomAspectButton, bottomAutoplayButton, bottomQualityButton, resetZoomChip
+            bottomPipButton, bottomAspectButton, bottomAutoplayButton, bottomQualityButton, bottomExpandButton, resetZoomChip
         ).forEach { applyPressScale(it) }
 
         abHandler.post(abRunnable)
@@ -1303,6 +1305,7 @@ class PlayerActivity : AppCompatActivity() {
         bottomAspectButton.imageTintList = tintList
         bottomQualityButton.imageTintList = tintList
         bottomAutoplayButton.imageTintList = tintList
+        bottomExpandButton.imageTintList = tintList
         backButton.imageTintList = tintList
         // BUG FIX (user report: "fullscreen mein subtitle icon ka rang nahi
         // badla") — this field existed but was missed from the first pass.
@@ -2236,6 +2239,7 @@ class PlayerActivity : AppCompatActivity() {
         aspectRatioButton.setOnClickListener { cycleAspectRatio() }
         bottomAspectButton.setOnClickListener { cycleAspectRatio() }
         bottomQualityButton.setOnClickListener { showQualityDialog() }
+        bottomExpandButton.setOnClickListener { finish() }
         bottomAutoplayButton.setOnClickListener {
             autoplayEnabled = !autoplayEnabled
             syncAutoplayButton()

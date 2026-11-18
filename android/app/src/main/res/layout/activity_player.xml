@@ -213,9 +213,39 @@
                 tools:text="Movie_Sample.mkv" />
 
             <ImageView
+                android:id="@+id/bottomPipButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_pip"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="picture in picture" />
+
+            <ImageView
+                android:id="@+id/bottomAutoplayButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_autoplay"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="autoplay" />
+
+            <ImageView
+                android:id="@+id/bottomQualityButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_quality_hd"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="quality" />
+
+            <ImageView
                 android:id="@+id/audioTrackButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
+                android:layout_marginStart="4dp"
                 android:padding="8dp"
                 android:src="@drawable/ic_inline_audio_lang"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
