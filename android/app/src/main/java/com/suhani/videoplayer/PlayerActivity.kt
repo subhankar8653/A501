@@ -6676,6 +6676,13 @@ class PlayerActivity : AppCompatActivity() {
     // Ek "seek session" ke andar har agle tap par yeh window jitni der tak
     // agla tap "continuation" mana jaata hai (10s -> 20s -> 30s ...).
     private val SEEK_CONTINUATION_WINDOW_MS = 700L
+    private var pendingSeekTarget = -1L
+    private val seekCommitHandler = Handler(Looper.getMainLooper())
+    private val seekCommitRunnable = Runnable {
+        val t = pendingSeekTarget
+        pendingSeekTarget = -1L
+        if (t >= 0 && ::player.isInitialized) player.seekTo(t)
+    }
     private var lastSeekTapTime = 0L
 
     // Double-tap (aur uske baad continuous single-tap) seek: har call se 10s
@@ -6690,14 +6697,19 @@ class PlayerActivity : AppCompatActivity() {
         lastSeekTapTime = SystemClock.elapsedRealtime()
 
         val seekAmount = seekSecondsPref * 1000L
-        if (forward) {
+        // Debounce: har tap par seekTo() = har baar naya buffer/reload. Ab taps ka target
+        // accumulate hota hai aur tap rukne ke ~280ms baad SIRF EK seek hota hai.
+        val base = if (pendingSeekTarget >= 0) pendingSeekTarget else player.currentPosition
+        val newTarget = if (forward) {
             val duration = player.duration
-            val target = player.currentPosition + seekAmount
-            val safeTarget = if (duration != C.TIME_UNSET) target.coerceAtMost(duration) else target
-            player.seekTo(safeTarget)
+            val t = base + seekAmount
+            if (duration != C.TIME_UNSET) t.coerceAtMost(duration) else t
         } else {
-            player.seekTo((player.currentPosition - seekAmount).coerceAtLeast(0))
+            (base - seekAmount).coerceAtLeast(0)
         }
+        pendingSeekTarget = newTarget
+        seekCommitHandler.removeCallbacks(seekCommitRunnable)
+        seekCommitHandler.postDelayed(seekCommitRunnable, 280L)
         showSeekFeedback(forward, seekAccumulatedUnits * seekSecondsPref)
 
         seekSessionHandler.removeCallbacks(seekSessionResetRunnable)

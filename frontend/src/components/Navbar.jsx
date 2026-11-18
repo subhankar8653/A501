@@ -5,7 +5,7 @@ import ThemeSheet from './ThemeSheet'
 import NotificationSheet from './NotificationSheet'
 import { useNotifications } from '../lib/notificationsStore'
 import { useUpdate } from '../lib/useUpdate'
-import logo from '../assets/logo.png'
+import { BrandLogo } from './PosterPlaceholder'
 
 // REDESIGN (user ask: "Home ko or jada professional or stylist... header or
 // footer ko aur achcha karo, ek frontend designer ke tor pe"): the header
@@ -33,10 +33,9 @@ export default function Navbar() {
           {/* Brand mark: logo + wordmark, tightened up so it reads as one
               cohesive lockup instead of two separate elements. */}
           <Link to="/" className="flex items-center gap-2 shrink-0 group">
-            <img
-              src={logo}
-              alt="HukaTube"
-              className="w-7 h-7 rounded-lg shadow-[0_3px_10px_-3px_rgba(232,163,61,0.5)] transition-transform duration-300 group-hover:scale-105"
+            <BrandLogo
+              size="28px"
+              className="shrink-0 rounded-lg shadow-[0_3px_10px_-3px_var(--reel-gold)] transition-transform duration-300 group-hover:scale-105"
             />
             <span className="font-display text-[1.1rem] sm:text-[1.25rem] font-bold tracking-tight leading-none">
               <span className="bg-gradient-to-b from-[#F6CE87] to-reel-gold bg-clip-text text-transparent">Huka</span>

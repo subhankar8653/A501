@@ -187,7 +187,6 @@
                 android:layout_height="40dp"
                 android:padding="9dp"
                 android:src="@drawable/ic_back"
-                android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="back" />
 
@@ -197,8 +196,9 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:textColor="#FFFFFF"
+                android:textColor="#F2FFFFFF"
                 android:textSize="15sp"
+                android:textStyle="bold"
                 android:maxLines="1"
                 android:singleLine="true"
                 android:ellipsize="marquee"
@@ -217,8 +217,7 @@
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:padding="8dp"
-                android:src="@drawable/ic_audiotrack"
-                android:background="@drawable/bg_icon_circle"
+                android:src="@drawable/ic_inline_audio_lang"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="audio track" />
 
@@ -229,7 +228,6 @@
                 android:layout_marginStart="4dp"
                 android:padding="8dp"
                 android:src="@drawable/ic_subtitle"
-                android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="subtitle" />
 
@@ -271,7 +269,6 @@
                 android:layout_marginStart="4dp"
                 android:padding="9dp"
                 android:src="@drawable/ic_more_vert"
-                android:background="@drawable/bg_icon_circle"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="more" />
 

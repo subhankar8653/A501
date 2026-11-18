@@ -16,8 +16,8 @@ export function hueFor(str = '') {
 export function BrandLogo({ size = '38%', className = '' }) {
   return (
     <svg viewBox="0 0 1254 1254" style={{ width: size }} className={className} aria-hidden="true">
-      <rect width="1254" height="1254" rx="282" fill="#fdd008" />
-      <path d={GLYPH} fill="#0a0b0a" />
+      <rect width="1254" height="1254" rx="282" style={{ fill: 'var(--reel-gold)' }} />
+      <path d={GLYPH} style={{ fill: 'var(--reel-bg)' }} />
     </svg>
   )
 }

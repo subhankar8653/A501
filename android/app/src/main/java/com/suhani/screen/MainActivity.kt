@@ -613,6 +613,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private var inlineQualityButtonRef: TextView? = null
     private var inlineTimeBarRef: DefaultTimeBar? = null
     private var inlineBottomBlockRef: View? = null
+    // Rapid +10s/-10s taps ko ek hi seek mein jodne ke liye (buffering/reload spam rokta hai).
+    private var inlinePendingSeekTarget = -1L
+    private val inlineSeekCommitHandler = Handler(Looper.getMainLooper())
+    private val inlineSeekCommitRunnable = Runnable {
+        val t = inlinePendingSeekTarget
+        inlinePendingSeekTarget = -1L
+        if (t >= 0) inlinePlayer?.seekTo(t)
+    }
     // Bottom block pin watchdog: ViewTreeObserver listeners kabhi-kabhi (view re-attach /
     // app background-foreground ke baad) mar jaate hain, tab time bar upar atak jaata tha.
     // Isliye ek halka periodic check bhi chalta hai (400ms) jo har haal mein pin sahi karta hai.
@@ -1967,9 +1975,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 // karta tha. Ab wahi shared GesturePrefs preference yahan bhi use hoti hai.
                 val seekSecondsPref = GesturePrefs.getSeekSeconds(this@MainActivity)
                 val seekMs = seekSecondsPref * 1000L
-                val target = if (forward) (p.currentPosition + seekMs).coerceAtMost(max)
-                             else (p.currentPosition - seekMs).coerceAtLeast(0)
-                p.seekTo(target)
+                // Debounce: har tap par seekTo() karne se 10 tap = 10 alag reload hote the.
+                // Ab target accumulate hota hai aur tap rukne ke ~280ms baad SIRF EK seek hota hai.
+                val base = if (inlinePendingSeekTarget >= 0) inlinePendingSeekTarget else p.currentPosition
+                val target = if (forward) (base + seekMs).coerceAtMost(max)
+                             else (base - seekMs).coerceAtLeast(0)
+                inlinePendingSeekTarget = target
+                inlineSeekCommitHandler.removeCallbacks(inlineSeekCommitRunnable)
+                inlineSeekCommitHandler.postDelayed(inlineSeekCommitRunnable, 280)
 
                 val side = if (forward) 1 else -1
                 inlineSeekAccumulatedUnits += 1

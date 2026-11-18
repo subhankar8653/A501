@@ -743,10 +743,8 @@ export default function Player() {
       if (t.label && !order.includes(t.label)) order.push(t.label)
     }
     const isGenericLabel = (l) => /^unknown$/i.test(l) || /^track\b/i.test(l)
-    return [
-      ...order.filter((l) => !isGenericLabel(l)),
-      ...order.filter((l) => isGenericLabel(l)),
-    ]
+    // Sirf asli languages dikhao — "Unknown" / "Track 01" jaise generic labels chips mein nahi.
+    return order.filter((l) => !isGenericLabel(l))
   }, [availableLanguages, audioTracks])
 
   // Tapping a unified language button: if the file that's ALREADY loaded
@@ -1402,7 +1400,7 @@ export default function Player() {
             <div className="mt-8 pt-6 border-t border-reel-ink/5">
               <div className="flex items-center justify-between mb-3 gap-3">
                 <h2 className="font-sans text-[15px] font-semibold text-reel-ink">
-                  {t('player_up_next')} <span className="text-reel-muted font-normal">· {upNext.label}</span>
+                  {t('player_up_next')} <span className="text-reel-muted font-normal">· {upNext.episodes[0] ? `S${String(upNext.episodes[0].season).padStart(2, '0')} ${t('episode') === 'episode' ? 'Episode' : t('episode')} ${String(upNext.episodes[0].episode).padStart(2, '0')}` : upNext.label}</span>
                 </h2>
                 <button
                   onClick={toggleAutoplay}
