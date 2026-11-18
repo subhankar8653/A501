@@ -153,6 +153,7 @@ class DownloadService : Service() {
         }
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Download"
 
+        mainHandler.removeCallbacks(delayedStop)
         createChannelIfNeeded()
         activeDownloads[id] = Progress(title, 0)
         postForegroundNotification()
@@ -245,11 +246,21 @@ class DownloadService : Service() {
         }
     }
 
-    private fun refreshNotificationOrStop() {
+    private val delayedStop = Runnable {
         if (activeDownloads.isEmpty()) {
             @Suppress("DEPRECATION")
             stopForeground(true)
             stopSelf()
+        }
+    }
+
+    private fun refreshNotificationOrStop() {
+        if (activeDownloads.isEmpty()) {
+            // Turant stopSelf() se agla queued download ka start-intent kho
+            // sakta tha (2-3 downloads ke baad 0% par atakna) — thoda ruk kar
+            // tabhi band karo jab sach mein koi aur download na aaya ho.
+            mainHandler.removeCallbacks(delayedStop)
+            mainHandler.postDelayed(delayedStop, 2500L)
         } else {
             postForegroundNotification()
         }

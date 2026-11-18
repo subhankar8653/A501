@@ -187,6 +187,11 @@ class WebAppInterface(private val activity: MainActivity) {
     // deta hai, aur JS apni normal navigate() se episode badal deta hai
     // (isliye title/Up-Next-list/comments waghera bhi sync rehte hain).
     @JavascriptInterface
+    fun setAutoplay(on: Boolean) {
+        runOnUiThreadSafely { activity.inlineAutoplay = on }
+    }
+
+    @JavascriptInterface
     fun setAdjacentEpisodes(hasNext: Boolean, hasPrev: Boolean) {
         runOnUiThreadSafely { activity.updateInlineAdjacentEpisodes(hasNext, hasPrev) }
     }
@@ -607,6 +612,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     private val suppressNextInlineUnmountReset = Runnable { suppressNextInlineUnmount = false }
     private var inlineHasNextEpisode = false
     private var inlineHasPrevEpisode = false
+    // Website ka autoplay toggle (JS se sync hota hai) — fullscreen ke autoplay button ko seed karta hai.
+    var inlineAutoplay = true
     private var inlinePrevButtonRef: ImageButton? = null
     private var inlineNextButtonRef: ImageButton? = null
     private var inlinePlayPauseButtonRef: ImageButton? = null
@@ -3472,6 +3479,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // to the old hardcoded gold — see PlayerActivity's
             // `themeAccentColor` field comment for the full picture.
             putExtra("theme_color", colorToHex(inlineAccentColor))
+            putExtra("has_next_episode", inlineHasNextEpisode)
+            putExtra("has_prev_episode", inlineHasPrevEpisode)
+            putExtra("autoplay", inlineAutoplay)
             // Bug fix ("bada player khulta hai fir PiP hota hai" jhatka — asli wajah):
             // PlayerActivity ko yeh chhote inline player ka EXACT on-screen rect bhi
             // bhej do, taaki wahan real PiP mein jaate waqt system ka shrink animation
@@ -3508,6 +3518,27 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         } else {
             startActivityForResult(intent, REQUEST_FULLSCREEN_PLAYER)
         }
+    }
+
+    private fun handleFullscreenEpisodeNav(dir: String, oldUri: String) {
+        val fn = if (dir == "next") "__suhaniOnNativeNext" else "__suhaniOnNativePrev"
+        // Agar restore ke dauraan inline ENDED se website already agle episode par
+        // jaa chuki ho to dobara next mat bhejo (do episode skip ho jaate).
+        if (inlineUri == oldUri) webView.evaluateJavascript("if (window.$fn) window.$fn();", null)
+        val handler = Handler(Looper.getMainLooper())
+        val deadline = android.os.SystemClock.elapsedRealtime() + 10000L
+        val poll = object : Runnable {
+            override fun run() {
+                if (inlineUri.isNotEmpty() && inlineUri != oldUri && inlinePlayer != null &&
+                    inlineOverlay?.visibility == View.VISIBLE
+                ) {
+                    handler.postDelayed({ openFullscreenFromInline() }, 500L)
+                    return
+                }
+                if (android.os.SystemClock.elapsedRealtime() < deadline) handler.postDelayed(this, 300L)
+            }
+        }
+        handler.postDelayed(poll, 300L)
     }
 
     /** BUG FIX (user report + screenshot: "PiP expand karne par watch page ki
@@ -3644,6 +3675,21 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             val pos = data?.getLongExtra("resume_position_ms", 0L) ?: 0L
             val wasPlaying = data?.getBooleanExtra("resume_playing", true) ?: true
             val pipGenuinelyClosed = data?.getBooleanExtra("pip_closed", false) ?: false
+            // Fullscreen ke autoplay toggle ko website tak pahunchao.
+            if (data?.hasExtra("autoplay") == true) {
+                val ap = data.getBooleanExtra("autoplay", true)
+                if (ap != inlineAutoplay) {
+                    inlineAutoplay = ap
+                    webView.evaluateJavascript("if (window.__suhaniSetAutoplay) window.__suhaniSetAutoplay($ap);", null)
+                }
+            }
+            // Fullscreen mein Next/Prev episode dabaya: inline restore hone do, phir
+            // website se episode badlwao aur naya episode aate hi fullscreen dobara kholo.
+            val episodeNav = data?.getStringExtra("episode_nav")
+            if (episodeNav != null && !pipGenuinelyClosed) {
+                val uriAtReturn = inlineUri
+                Handler(Looper.getMainLooper()).postDelayed({ handleFullscreenEpisodeNav(episodeNav, uriAtReturn) }, 450L)
+            }
 
             // User ki request: agar yeh genuinely PiP window ke "X"/swipe-away se
             // close hua hai (dekho PlayerActivity.finish()'s "pip_closed" extra),

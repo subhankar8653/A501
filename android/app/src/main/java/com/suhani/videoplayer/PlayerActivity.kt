@@ -381,6 +381,16 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var unlockButton: ImageView
     private lateinit var bottomPipButton: ImageView
     private lateinit var bottomAspectButton: ImageView
+    private lateinit var bottomAutoplayButton: ImageView
+    private lateinit var bottomQualityButton: ImageView
+    // Series ke next/prev episode ka state MainActivity se aata hai (queue single-item
+    // hone par Media3 ko pata nahi hota). pendingEpisodeNav set hone par finish()
+    // result mein "episode_nav" bhejta hai aur MainActivity naya episode kholkar
+    // fullscreen dobara khol deta hai.
+    private var hasNextEpisodeExtra = false
+    private var hasPrevEpisodeExtra = false
+    private var autoplayEnabled = true
+    private var pendingEpisodeNav: String? = null
     private lateinit var backButton: ImageView
 
     private lateinit var topContainer: LinearLayout
@@ -910,6 +920,11 @@ class PlayerActivity : AppCompatActivity() {
         bottomPipButton = findViewById(R.id.bottomPipButton)
         topContainer = findViewById(R.id.topContainer)
         bottomAspectButton = findViewById(R.id.bottomAspectButton)
+        bottomAutoplayButton = findViewById(R.id.bottomAutoplayButton)
+        bottomQualityButton = findViewById(R.id.bottomQualityButton)
+        hasNextEpisodeExtra = intent.getBooleanExtra("has_next_episode", false)
+        hasPrevEpisodeExtra = intent.getBooleanExtra("has_prev_episode", false)
+        autoplayEnabled = intent.getBooleanExtra("autoplay", true)
         backButton = findViewById(R.id.backButton)
         playerTitleText = findViewById(R.id.playerTitleText)
         // Premium touch: lambe/long file names ab truncate ho kar "..." nahi dikhte,
@@ -1005,7 +1020,7 @@ class PlayerActivity : AppCompatActivity() {
             sleepTimerButton, equalizerButton, backgroundPlayButton,
             ambientGlowButton, statsForNerdsButton, expandActionsButton,
             audioTrackButton, subtitleButton, speedButton,
-            bottomPipButton, bottomAspectButton, resetZoomChip
+            bottomPipButton, bottomAspectButton, bottomAutoplayButton, bottomQualityButton, resetZoomChip
         ).forEach { applyPressScale(it) }
 
         abHandler.post(abRunnable)
@@ -1247,15 +1262,10 @@ class PlayerActivity : AppCompatActivity() {
         // constructor is used (not the newer setColors(IntArray) setter,
         // which needs API 29+) to stay compatible with this app's minSdk 24.
         val heroBg = {
-            GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(applyAccentAlpha(color, 0x59), applyAccentAlpha(Color.BLACK, 0x59))
-            ).apply {
+            GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                gradientType = GradientDrawable.RADIAL_GRADIENT
-                gradientRadius = dpToPx(34f)
-                cornerRadius = dpToPx(20f)
-                setStroke(dpToPxInt(1.4f).coerceAtLeast(1), color)
+                setColor(color)
+                cornerRadius = dpToPx(14f)
             }
         }
         exoPlayButton?.background = heroBg()
@@ -1291,6 +1301,8 @@ class PlayerActivity : AppCompatActivity() {
         unlockButton.imageTintList = tintList
         bottomPipButton.imageTintList = tintList
         bottomAspectButton.imageTintList = tintList
+        bottomQualityButton.imageTintList = tintList
+        bottomAutoplayButton.imageTintList = tintList
         backButton.imageTintList = tintList
         // BUG FIX (user report: "fullscreen mein subtitle icon ka rang nahi
         // badla") — this field existed but was missed from the first pass.
@@ -1303,8 +1315,8 @@ class PlayerActivity : AppCompatActivity() {
         if (::subtitleButton.isInitialized) {
             subtitleButton.imageTintList = tintList
         }
-        playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_prev)?.imageTintList = tintList
-        playerView.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_next)?.imageTintList = tintList
+        playerView.findViewById<ImageButton>(R.id.fsPrevButton)?.imageTintList = tintList
+        playerView.findViewById<ImageButton>(R.id.fsNextButton)?.imageTintList = tintList
         // BUG FIX (user report: "time duration ka number ka rang nahi
         // badla") — "01:23 / 23:00" was fixed white in XML.
         playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_position)?.setTextColor(color)
@@ -2008,6 +2020,7 @@ class PlayerActivity : AppCompatActivity() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             playerTitleText.text = mediaItem?.mediaMetadata?.title ?: "Video"
+            syncEpisodeNavButtons()
             // Bug fix: naye video par purane A-B repeat points carry-over nahi hone chahiye
             abState = 0
             pointA = -1L
@@ -2147,6 +2160,11 @@ class PlayerActivity : AppCompatActivity() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             syncPlayPauseIcon()
+            if (playbackState == Player.STATE_ENDED && autoplayEnabled &&
+                !player.hasNextMediaItem() && hasNextEpisodeExtra && pendingEpisodeNav == null
+            ) {
+                onEpisodeNextClicked()
+            }
             if (playbackState == Player.STATE_READY) {
                 ioRetryCount = 0
                 maybeAutoSearchSubtitle()
@@ -2217,6 +2235,16 @@ class PlayerActivity : AppCompatActivity() {
     private fun setupBatch1Features() {
         aspectRatioButton.setOnClickListener { cycleAspectRatio() }
         bottomAspectButton.setOnClickListener { cycleAspectRatio() }
+        bottomQualityButton.setOnClickListener { showQualityDialog() }
+        bottomAutoplayButton.setOnClickListener {
+            autoplayEnabled = !autoplayEnabled
+            syncAutoplayButton()
+            showGestureFeedback(if (autoplayEnabled) "Autoplay ON" else "Autoplay OFF")
+        }
+        syncAutoplayButton()
+        playerView.findViewById<ImageButton>(R.id.fsPrevButton)?.setOnClickListener { onEpisodePrevClicked() }
+        playerView.findViewById<ImageButton>(R.id.fsNextButton)?.setOnClickListener { onEpisodeNextClicked() }
+        syncEpisodeNavButtons()
 
         screenshotButton.setOnClickListener { takeScreenshot() }
 
@@ -4690,6 +4718,36 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------
     // More menu: poora grid (screenshot jaisa) + Video Display / Shortcuts switches
     // ---------------------------------------------------------------------
+    private fun syncAutoplayButton() {
+        bottomAutoplayButton.alpha = if (autoplayEnabled) 1f else 0.4f
+    }
+
+    private fun canGoNext(): Boolean =
+        (::player.isInitialized && player.hasNextMediaItem()) || hasNextEpisodeExtra
+
+    private fun canGoPrev(): Boolean =
+        (::player.isInitialized && player.hasPreviousMediaItem()) || hasPrevEpisodeExtra
+
+    /** Prev/Next ki asli state: queue mein agla item ho YA series ka agla episode ho. */
+    private fun syncEpisodeNavButtons() {
+        playerView.findViewById<ImageButton>(R.id.fsNextButton)?.let {
+            it.isEnabled = canGoNext(); it.alpha = if (it.isEnabled) 1f else 0.3f
+        }
+        playerView.findViewById<ImageButton>(R.id.fsPrevButton)?.let {
+            it.isEnabled = canGoPrev(); it.alpha = if (it.isEnabled) 1f else 0.3f
+        }
+    }
+
+    private fun onEpisodeNextClicked() {
+        if (player.hasNextMediaItem()) { player.seekToNextMediaItem(); return }
+        if (hasNextEpisodeExtra) { pendingEpisodeNav = "next"; finish() }
+    }
+
+    private fun onEpisodePrevClicked() {
+        if (player.hasPreviousMediaItem()) { player.seekToPreviousMediaItem(); return }
+        if (hasPrevEpisodeExtra) { pendingEpisodeNav = "prev"; finish() }
+    }
+
     private fun showMoreMenu() {
         // Teen dot dobara dabaya jab panel pehle se khula hai -> band kar do
         // (toggle behavior).
@@ -4708,47 +4766,21 @@ class PlayerActivity : AppCompatActivity() {
         // custom order drag-reorder se already bana chuka ho to wahi
         // applySavedMoreMenuOrder() mein priority leta hai — ye sirf naya/
         // reset order hai.
+        // Sirf kaam ki cheezein (user ne maanga: baaki sab hata do). Quality aur
+        // Autoplay ab seedha fullscreen controls mein hain.
         val items = listOf(
-            // -- Playback & Queue --
-            Triple("Playing Queue", R.drawable.ic_playlist_play, false),
-            // Settings-icon -> "Playback Speed" -> speed panel, YouTube jaisa
-            // flow — badge/topbar wale speedButton se seedha bhi khulta hai,
-            // yeh sirf ussi showSpeedSheet() ka doosra entry-point hai.
             Triple("Playback Speed", R.drawable.ic_speed_ramp, false),
-            Triple("A-B Repeat", R.drawable.ic_ab_repeat, false),
-            Triple("Prev Frame", R.drawable.ic_frame_back, false),
-            Triple("Next Frame", R.drawable.ic_frame_forward, false),
             Triple("Sleep Timer", R.drawable.ic_timer, false),
-            Triple("Shuffle", R.drawable.ic_shuffle, false),
             Triple("Loop", R.drawable.ic_loop, false),
             Triple("Mute", R.drawable.ic_volume_up, false),
-            // -- Display & Appearance --
-            // "Aspect Ratio" hata diya — bottom control bar mein already
-            // hamesha visible hai (bottomAspectButton), yahan duplicate tha.
             Triple("Rotate", R.drawable.ic_screen_rotation, false),
-            Triple("Display Settings", R.drawable.ic_equalizer, false),
             Triple("Night Mode", R.drawable.ic_night_mode, false),
-            // -- Tools --
-            Triple("Gesture Settings", R.drawable.ic_settings, false),
-            Triple("Bookmark", R.drawable.ic_bookmark, false),
-            Triple("Cut", R.drawable.ic_ab_repeat, false),
             Triple("Screenshot", R.drawable.ic_camera, false),
             Triple("Cast", R.drawable.ic_cast, false),
             Triple("Audio Effect", R.drawable.ic_equalizer, false),
-            // "Background Play" hata diya — yeh asal mein bottom control bar
-            // ke PiP button jaisa hi hai (dono tryEnterPipOnBack() call karte
-            // the), sirf naam alag tha. Duplicate tha isliye hata diya.
             Triple("Playback Stats", R.drawable.ic_stats_nerds, false),
-            Triple("Smart Chapters", R.drawable.ic_chapters, false),
-            Triple("Speed Ramp", R.drawable.ic_speed_ramp, false),
-            // -- Library & Info --
-            Triple("Favourite", R.drawable.ic_favorite, true),
-            Triple("Add To Playlist", R.drawable.ic_playlist_play, true),
             Triple("Information", R.drawable.ic_info, false),
-            Triple("Share", R.drawable.ic_share, false),
-            Triple("Quality", R.drawable.ic_quality, false),
-            Triple("Network Stream", R.drawable.ic_network_stream, false),
-            Triple("Tutorial", R.drawable.ic_info, false)
+            Triple("Share", R.drawable.ic_share, false)
         )
 
         // UNIQUE LOOK v5 — pehle grid manually LinearLayout rows se bana tha
@@ -4796,19 +4828,9 @@ class PlayerActivity : AppCompatActivity() {
         fun handleItemClick(label: String) {
             hideMoreMenu()
             when (label) {
-                "Playing Queue" -> showPlayingQueueDialog()
                 "Playback Speed" -> showSpeedSheet()
-                "Display Settings" -> showDisplaySettingsDialog()
-                "Gesture Settings" -> showGestureSettingsDialog()
-                "Bookmark" -> showBookmarkDialog()
-                "Cut" -> showCutDialog()
-                "Favourite" -> toggleFavourite()
-                "Add To Playlist" -> showAddToPlaylistDialog()
                 "Information" -> showInformationDialog()
                 "Share" -> shareCurrentVideo()
-                "Quality" -> showQualityDialog()
-                "Network Stream" -> showNetworkStreamDialog()
-                "Tutorial" -> showTutorialDialog()
                 // In sabki apni click-logic/toggle-state pehle se hidden
                 // dock buttons par attached hai — performClick() se wahi
                 // reuse ho jaati hai, dobara likhne ki zaroorat nahi.
@@ -4816,17 +4838,11 @@ class PlayerActivity : AppCompatActivity() {
                 "Audio Effect" -> equalizerButton.performClick()
                 "Screenshot" -> screenshotButton.performClick()
                 "Rotate" -> rotateButton.performClick()
-                "A-B Repeat" -> abRepeatButton.performClick()
                 "Playback Stats" -> statsForNerdsButton.performClick()
-                "Smart Chapters" -> analyzeSceneChapters(showDialogWhenDone = true)
-                "Speed Ramp" -> showSpeedRampDialog()
                 "Night Mode" -> nightModeButton.performClick()
-                "Shuffle" -> shuffleButton.performClick()
                 "Loop" -> loopButton.performClick()
                 "Mute" -> muteButton.performClick()
                 "Sleep Timer" -> sleepTimerButton.performClick()
-                "Prev Frame" -> frameBackButton.performClick()
-                "Next Frame" -> frameForwardButton.performClick()
             }
         }
 
@@ -7147,6 +7163,8 @@ class PlayerActivity : AppCompatActivity() {
                     // ke waqt hi — expand ke baad onPictureInPictureModeChanged() ise
                     // pehle hi false kar chuka hota hai (dekho uska comment).
                     putExtra("pip_closed", pipCloseFlagForResult)
+                    putExtra("autoplay", autoplayEnabled)
+                    pendingEpisodeNav?.let { putExtra("episode_nav", it) }
                 }
             )
         }

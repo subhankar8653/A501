@@ -888,6 +888,24 @@ export default function Player() {
     window.AndroidPlayer?.setAdjacentEpisodes?.(!!nextEpisode, !!prevEpisode)
   }, [nextEpisode, prevEpisode])
 
+  // Autoplay state native fullscreen ke button ke saath sync (dono taraf).
+  useEffect(() => {
+    window.AndroidPlayer?.setAutoplay?.(!!autoplay)
+  }, [autoplay])
+  useEffect(() => {
+    window.__suhaniSetAutoplay = (on) => {
+      setAutoplay(!!on)
+      try {
+        localStorage.setItem('suhani-screen:autoplay', on ? 'on' : 'off')
+      } catch {
+        /* ignore */
+      }
+    }
+    return () => {
+      delete window.__suhaniSetAutoplay
+    }
+  }, [])
+
   // BUG FIX (user report: "480p select kiya, quality button 480p dikha raha
   // hai, lekin niche title/filename abhi bhi 1080p wala hi dikha raha hai"):
   // chhote (inline) native player ka apna khud ka quality-picker hai

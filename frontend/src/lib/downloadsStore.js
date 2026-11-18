@@ -139,6 +139,7 @@ if (typeof window !== 'undefined') {
   // use wapas resurrect nahi karega — bas ignore ho jaayega.
   window.__nativeDownloadProgress = (id, progressPct, sizeBytes) => {
     if (!getDownloadEntry(id)) return
+    markNativeAlive(id, sizeBytes)
     upsert({ id, progress: progressPct, sizeBytes })
   }
   window.__nativeDownloadDone = (id, contentUri) => {
@@ -192,6 +193,61 @@ if (typeof window !== 'undefined') {
 }
 
 const activeControllers = new Map() // id -> AbortController
+
+// STALL FIX (user report: "2-3 download ke baad next download 0% par atak
+// jaata hai, app band-khol karne par hi chalta hai"): native side kabhi-kabhi
+// start hi nahi hota / koi callback kho jaata hai, aur queue sirf callbacks se
+// aage badhti thi — isliye hamesha ke liye 0% par ruki rehti. Ab ek watchdog
+// har 6 sec check karta hai: koi native download 40 sec se bina progress ke
+// hai to use dobara start karta hai (max 3 baar, phir error), aur agar queue
+// mein item hai par koi active nahi to queue ko khud aage badhata hai.
+const nativeAlive = new Map() // id -> { size, at, retries }
+const STALL_MS = 40000
+const MAX_STALL_RETRIES = 3
+
+function markNativeAlive(id, size, fresh) {
+  const prev = nativeAlive.get(id)
+  if (fresh) {
+    nativeAlive.set(id, { size: -1, at: Date.now(), retries: prev ? prev.retries : 0 })
+    return
+  }
+  if (!prev || prev.size !== size) {
+    nativeAlive.set(id, { size, at: Date.now(), retries: prev ? prev.retries : 0 })
+  }
+}
+
+function stallWatchdogTick() {
+  if (!hasNativeDownloader()) return
+  const now = Date.now()
+  const list = readMeta()
+  const downloading = list.filter((d) => d.status === 'downloading')
+  for (const d of downloading) {
+    const st = nativeAlive.get(d.id)
+    if (!st) {
+      markNativeAlive(d.id, 0, true)
+      continue
+    }
+    if (now - st.at < STALL_MS) continue
+    if (st.retries >= MAX_STALL_RETRIES || !d.url) {
+      nativeAlive.delete(d.id)
+      upsert({ id: d.id, status: 'error', progress: 0 })
+      pushToast(`Download failed: ${d.filename || 'file'}`, 'error')
+      processQueue()
+      continue
+    }
+    nativeAlive.set(d.id, { size: -1, at: now, retries: st.retries + 1 })
+    try {
+      window.AndroidDownloader.startDownload(d.id, d.url, d.filename || d.episodeTitle || d.showName || 'Download')
+    } catch {
+      /* ignore */
+    }
+  }
+  if (downloading.length === 0 && readQueue().length > 0) processQueue()
+}
+
+if (typeof window !== 'undefined' && !window.__huka_dl_watchdog) {
+  window.__huka_dl_watchdog = window.setInterval(stallWatchdogTick, 6000)
+}
 
 // FEATURE (user ask: "download pause ho kar watch band hote hi wahin se
 // aage badhega, poore se dobara nahi"): plain-browser (no native bridge)
@@ -313,6 +369,7 @@ async function runDownload(id, url, meta) {
     // download ko ek foreground service (DownloadService.kt) ke andar chalata
     // hai, jisse ek ongoing notification bhi dikhti hai — usme title dikhane
     // ke liye episode/movie ka naam bhi bhej rahe hain.
+    markNativeAlive(id, 0, true)
     window.AndroidDownloader.startDownload(id, url, meta.filename || meta.episodeTitle || meta.showName || 'Download')
     return id
   }
