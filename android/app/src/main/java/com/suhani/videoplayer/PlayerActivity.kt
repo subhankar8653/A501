@@ -384,7 +384,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var bottomAutoplayButton: ImageView
     private lateinit var bottomExpandButton: ImageView
     private lateinit var topAmbientButton: ImageView
-    private lateinit var bottomQualityButton: ImageView
+    private var themeSoftIcon: Int = Color.WHITE
+    private lateinit var bottomQualityButton: TextView
     // Series ke next/prev episode ka state MainActivity se aata hai (queue single-item
     // hone par Media3 ko pata nahi hota). pendingEpisodeNav set hone par finish()
     // result mein "episode_nav" bhejta hai aur MainActivity naya episode kholkar
@@ -1287,8 +1288,8 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        speedButton.setTextColor(color)
-        decoderButton.setTextColor(color)
+        speedButton.setTextColor(softIcon)
+        decoderButton.setTextColor(softIcon)
         scrubPreviewTime.setTextColor(color)
         playerSnackbarIcon.imageTintList = android.content.res.ColorStateList.valueOf(color)
 
@@ -1298,8 +1299,9 @@ class PlayerActivity : AppCompatActivity() {
         // Aankhon ko na chubhe: icons accent ka halka (white ke taraf) aur thoda transparent version use karte hain;
         // time-bar / play button asli accent rehte hain.
         val softIcon = androidx.core.graphics.ColorUtils.setAlphaComponent(
-            androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.45f), 0xD9
+            androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.4f), 0xF0
         )
+        themeSoftIcon = softIcon
         val tintList = android.content.res.ColorStateList.valueOf(softIcon)
         frameBackButton.imageTintList = tintList
         frameForwardButton.imageTintList = tintList
@@ -1310,7 +1312,7 @@ class PlayerActivity : AppCompatActivity() {
         unlockButton.imageTintList = tintList
         bottomPipButton.imageTintList = tintList
         bottomAspectButton.imageTintList = tintList
-        bottomQualityButton.imageTintList = tintList
+        bottomQualityButton.setTextColor(softIcon)
         bottomAutoplayButton.imageTintList = tintList
         bottomExpandButton.imageTintList = tintList
         if (::topAmbientButton.isInitialized) topAmbientButton.imageTintList = tintList
@@ -1330,8 +1332,10 @@ class PlayerActivity : AppCompatActivity() {
         playerView.findViewById<ImageButton>(R.id.fsNextButton)?.imageTintList = tintList
         // BUG FIX (user report: "time duration ka number ka rang nahi
         // badla") — "01:23 / 23:00" was fixed white in XML.
-        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_position)?.setTextColor(color)
-        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_duration)?.setTextColor(color)
+        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_position)?.setTextColor(softIcon)
+        playerView.findViewById<TextView>(androidx.media3.ui.R.id.exo_duration)?.setTextColor(softIcon)
+
+        styleOverlayWidgets(color, softIcon)
 
         if (::playerView.isInitialized) {
             playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.let { bar ->
@@ -1348,6 +1352,29 @@ class PlayerActivity : AppCompatActivity() {
                 // that built-in dot.
                 bar.setScrubberColor(color)
             }
+        }
+    }
+
+    /** Volume/brightness slider, hold-2x badge: theme accent ke saath (pehle fixed gold the). */
+    private fun styleOverlayWidgets(color: Int, soft: Int) {
+        if (!::volumeFill.isInitialized || !::brightnessFill.isInitialized) return
+        val light = androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.35f)
+        fun fill() = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(color, light)).apply {
+            cornerRadius = dpToPx(6f)
+        }
+        volumeFill.background = fill()
+        brightnessFill.background = fill()
+        fun pill(radiusDp: Float, startC: Int, endC: Int, strokeAlpha: Int) = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(startC, endC)
+        ).apply {
+            cornerRadius = dpToPx(radiusDp)
+            setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(color, strokeAlpha))
+        }
+        volumeSliderContainer.background = pill(18f, 0x88000000.toInt(), 0x70000000, 0x80)
+        brightnessSliderContainer.background = pill(18f, 0x88000000.toInt(), 0x70000000, 0x80)
+        if (::speedIndicatorBadge.isInitialized) {
+            speedIndicatorBadge.background = pill(20f, 0xE6000000.toInt(), 0xCC000000.toInt(), 0xA0)
+            speedIndicatorBadge.setTextColor(soft)
         }
     }
 
@@ -2032,6 +2059,7 @@ class PlayerActivity : AppCompatActivity() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             playerTitleText.text = mediaItem?.mediaMetadata?.title ?: "Video"
             syncEpisodeNavButtons()
+            syncQualityLabel()
             // Bug fix: naye video par purane A-B repeat points carry-over nahi hone chahiye
             abState = 0
             pointA = -1L
@@ -2254,6 +2282,7 @@ class PlayerActivity : AppCompatActivity() {
             showGestureFeedback(if (autoplayEnabled) "Autoplay ON" else "Autoplay OFF")
         }
         syncAutoplayButton()
+        syncQualityLabel()
         playerView.findViewById<ImageButton>(R.id.fsPrevButton)?.setOnClickListener { onEpisodePrevClicked() }
         playerView.findViewById<ImageButton>(R.id.fsNextButton)?.setOnClickListener { onEpisodeNextClicked() }
         syncEpisodeNavButtons()
@@ -4733,6 +4762,17 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------
     // More menu: poora grid (screenshot jaisa) + Video Display / Shortcuts switches
     // ---------------------------------------------------------------------
+    /** Top-bar quality button mein ASLI chal rahi quality dikhao (360p play ho to HD nahi). */
+    private fun syncQualityLabel() {
+        if (!::bottomQualityButton.isInitialized || !::player.isInitialized) return
+        val uri = player.currentMediaItem?.localConfiguration?.uri?.toString()
+            ?: queue.getOrNull(player.currentMediaItemIndex)?.uriString
+        val label = availableQualities.firstOrNull { it.second == uri }?.first
+            ?: Regex("(\\d{3,4}p)", RegexOption.IGNORE_CASE).find(playerTitleText.text)?.value
+            ?: "Auto"
+        bottomQualityButton.text = label
+    }
+
     private fun syncAmbientTopButton() {
         if (::topAmbientButton.isInitialized) topAmbientButton.alpha = if (ambientGlowOn) 1f else 0.4f
     }
@@ -4844,6 +4884,14 @@ class PlayerActivity : AppCompatActivity() {
             setOnClickListener { /* no-op: panel ke andar tap se peeche scrim tak na pahunche */ }
         }
 
+        panel.background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0xB02B2B2B.toInt(), 0xA01A1A1A.toInt())
+        ).apply {
+            cornerRadius = dpToPx(18f)
+            setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(themeAccentColor, 0x80))
+        }
+
         fun handleItemClick(label: String) {
             hideMoreMenu()
             when (label) {
@@ -4916,6 +4964,12 @@ class PlayerActivity : AppCompatActivity() {
         // takrata nahi aur top/bottom symmetry bhi nahi todta).
         val closeButton = FrameLayoutCircle(this, closeButtonSizePx, R.drawable.ic_close, false).apply {
             setOnClickListener { hideMoreMenu() }
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(applyAccentAlpha(themeAccentColor, 0x24))
+                setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(themeAccentColor, 0x70))
+            }
+            (getChildAt(0) as? ImageView)?.imageTintList = android.content.res.ColorStateList.valueOf(themeSoftIcon)
         }
         panel.addView(
             closeButton,
@@ -5043,9 +5097,14 @@ class PlayerActivity : AppCompatActivity() {
             }
             val iconFrame = FrameLayout(parent.context).apply {
                 layoutParams = LinearLayout.LayoutParams(iconSizePx, iconSizePx)
-                background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(applyAccentAlpha(themeAccentColor, 0x24))
+                    setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(themeAccentColor, 0x70))
+                }
             }
             val iconView = ImageView(parent.context).apply {
+                imageTintList = android.content.res.ColorStateList.valueOf(themeSoftIcon)
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.WRAP_CONTENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -5724,10 +5783,52 @@ class PlayerActivity : AppCompatActivity() {
             showPlayerSnackbar("Is video ke liye aur koi quality available nahi hai")
             return
         }
-        val labels = availableQualities.map { it.first }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Quality")
-            .setItems(labels) { _, which ->
+        val currentUri = player.currentMediaItem?.localConfiguration?.uri?.toString()
+            ?: queue.getOrNull(player.currentMediaItemIndex)?.uriString
+        val currentIdx = availableQualities.indexOfFirst { it.second == currentUri }
+        val accent = themeAccentColor
+        val soft = themeSoftIcon
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = availableQualities.size
+            override fun getItem(position: Int) = availableQualities[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
+                val selected = position == currentIdx
+                val row = LinearLayout(this@PlayerActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(dp(18), dp(13), dp(18), dp(13))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dpToPx(12f)
+                        setColor(if (selected) applyAccentAlpha(accent, 0x2A) else Color.TRANSPARENT)
+                    }
+                }
+                val label = TextView(this@PlayerActivity).apply {
+                    text = availableQualities[position].first
+                    textSize = 16f
+                    setTextColor(if (selected) soft else Color.parseColor("#E6FFFFFF"))
+                    typeface = if (selected) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+                }
+                row.addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                if (selected) {
+                    row.addView(ImageView(this@PlayerActivity).apply {
+                        setImageResource(R.drawable.ic_check_small)
+                        imageTintList = android.content.res.ColorStateList.valueOf(accent)
+                    }, LinearLayout.LayoutParams(dp(20), dp(20)))
+                }
+                return row
+            }
+        }
+        val titleView = TextView(this).apply {
+            text = "Quality"
+            textSize = 18f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(dp(22), dp(18), dp(22), dp(8))
+        }
+        val qualityDialog = AlertDialog.Builder(this)
+            .setCustomTitle(titleView)
+            .setAdapter(adapter) { _, which ->
                 val (label, url) = availableQualities[which]
                 val resumePos = player.currentPosition
                 val wasPlaying = player.isPlaying || player.playWhenReady
@@ -5777,6 +5878,7 @@ class PlayerActivity : AppCompatActivity() {
                 player.setMediaItem(item, resumePos)
                 player.prepare()
                 player.playWhenReady = wasPlaying
+                syncQualityLabel()
 
                 // Naye tracks ready hone ka intezaar karo — usi POSITION wala subtitle
                 // track wapas select karna hai. Yeh ab ek instance-tied one-shot listener
@@ -5795,8 +5897,24 @@ class PlayerActivity : AppCompatActivity() {
 
                 showPlayerSnackbar("Quality: $label")
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        qualityDialog.setOnShowListener {
+            qualityDialog.window?.apply {
+                setBackgroundDrawable(android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dpToPx(20f)
+                    setColor(Color.parseColor("#F2161619"))
+                    setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(accent, 0x80))
+                })
+                setLayout(dp(300), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+                setGravity(android.view.Gravity.CENTER)
+            }
+            qualityDialog.listView?.apply {
+                divider = null
+                setPadding(dp(8), 0, dp(8), dp(12))
+                clipToPadding = false
+            }
+        }
+        qualityDialog.show()
     }
 
     private fun showNetworkStreamDialog() {

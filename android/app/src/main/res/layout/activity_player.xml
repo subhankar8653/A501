@@ -241,13 +241,18 @@
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="autoplay" />
 
-            <ImageView
+            <TextView
                 android:id="@+id/bottomQualityButton"
-                android:layout_width="36dp"
+                android:layout_width="wrap_content"
                 android:layout_height="36dp"
-                android:layout_marginStart="4dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_quality_hd"
+                android:layout_marginStart="2dp"
+                android:gravity="center"
+                android:minWidth="36dp"
+                android:paddingHorizontal="6dp"
+                android:text="HD"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
                 android:foreground="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="quality" />
 
