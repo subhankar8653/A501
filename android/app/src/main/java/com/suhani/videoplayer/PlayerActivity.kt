@@ -1288,6 +1288,10 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        val softIcon = androidx.core.graphics.ColorUtils.setAlphaComponent(
+            androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.4f), 0xF0
+        )
+        themeSoftIcon = softIcon
         speedButton.setTextColor(softIcon)
         decoderButton.setTextColor(softIcon)
         scrubPreviewTime.setTextColor(color)
@@ -1298,10 +1302,6 @@ class PlayerActivity : AppCompatActivity() {
         // now follow the theme too, not just the hero play/pause button).
         // Aankhon ko na chubhe: icons accent ka halka (white ke taraf) aur thoda transparent version use karte hain;
         // time-bar / play button asli accent rehte hain.
-        val softIcon = androidx.core.graphics.ColorUtils.setAlphaComponent(
-            androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.4f), 0xF0
-        )
-        themeSoftIcon = softIcon
         val tintList = android.content.res.ColorStateList.valueOf(softIcon)
         frameBackButton.imageTintList = tintList
         frameForwardButton.imageTintList = tintList
