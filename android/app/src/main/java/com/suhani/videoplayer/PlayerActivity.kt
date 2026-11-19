@@ -3741,9 +3741,9 @@ class PlayerActivity : AppCompatActivity() {
     // fine-grained SeekBar), aur quick preset pills (Normal/1.25x/1.5x/2x/3x).
     // Purana speedButton "tap to cycle" behavior isi se replace hua hai.
     // ---------------------------------------------------------------------
-    private val speedSheetPresets = floatArrayOf(1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+    private val speedSheetPresets = floatArrayOf(1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
     private val SPEED_MIN = 0.25f
-    private val SPEED_MAX = 3.0f
+    private val SPEED_MAX = 4.0f
     private val SPEED_STEP = 0.05f
 
     private fun formatSpeedLabel(speed: Float): String {
@@ -3758,8 +3758,12 @@ class PlayerActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_speed_sheet)
-            setPadding(dp(22), dp(14), dp(22), dp(26))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#F2121215"))
+                cornerRadii = floatArrayOf(dpToPx(20f), dpToPx(20f), dpToPx(20f), dpToPx(20f), 0f, 0f, 0f, 0f)
+                setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(themeAccentColor, 0x80))
+            }
+            setPadding(dp(22), dp(14), dp(22), dp(18))
         }
 
         // Drag handle
@@ -3775,7 +3779,7 @@ class PlayerActivity : AppCompatActivity() {
         val speedLabel = TextView(this).apply {
             text = formatSpeedLabel(currentSpeed)
             textSize = 20f
-            setTextColor(android.graphics.Color.WHITE)
+            setTextColor(themeSoftIcon)
             setTypeface(typeface, Typeface.BOLD)
             gravity = android.view.Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
@@ -3797,7 +3801,7 @@ class PlayerActivity : AppCompatActivity() {
         val minusBtn = TextView(this).apply {
             text = "−"
             textSize = 20f
-            setTextColor(android.graphics.Color.WHITE)
+            setTextColor(themeSoftIcon)
             gravity = android.view.Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
@@ -3805,7 +3809,7 @@ class PlayerActivity : AppCompatActivity() {
         val plusBtn = TextView(this).apply {
             text = "+"
             textSize = 20f
-            setTextColor(android.graphics.Color.WHITE)
+            setTextColor(themeSoftIcon)
             gravity = android.view.Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             background = ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_icon_circle)
@@ -3833,11 +3837,15 @@ class PlayerActivity : AppCompatActivity() {
         fun refreshPills(selected: Float) {
             pillViews.forEach { (tv, value) ->
                 val isSel = Math.abs(value - selected) < 0.01f
-                tv.background = ContextCompat.getDrawable(
-                    this@PlayerActivity,
-                    if (isSel) R.drawable.bg_speed_pill_selected else R.drawable.bg_speed_pill
-                )
-                tv.setTextColor(if (isSel) android.graphics.Color.parseColor("#0B0B12") else android.graphics.Color.WHITE)
+                tv.background = if (isSel) android.graphics.drawable.GradientDrawable().apply {
+                    setColor(themeAccentColor)
+                    cornerRadius = dpToPx(18f)
+                } else android.graphics.drawable.GradientDrawable().apply {
+                    setColor(applyAccentAlpha(themeAccentColor, 0x22))
+                    setStroke(dpToPx(1f).toInt().coerceAtLeast(1), applyAccentAlpha(themeAccentColor, 0x55))
+                    cornerRadius = dpToPx(18f)
+                }
+                tv.setTextColor(if (isSel) android.graphics.Color.parseColor("#0B0B12") else themeSoftIcon)
             }
         }
 
@@ -3895,6 +3903,12 @@ class PlayerActivity : AppCompatActivity() {
             // bg_speed_sheet drawable shows (no white edges/corners).
             val bottomSheet = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            // Landscape mein sheet aadha (peek) khulta tha — ek hi baar mein poora expand karo.
+            if (bottomSheet != null) {
+                val behavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(bottomSheet)
+                behavior.skipCollapsed = true
+                behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            }
         }
         sheet.show()
     }

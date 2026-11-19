@@ -452,6 +452,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // seedha (window.__suhaniPipReturnTo bridge se) navigate karo — koi
     // browser history state par bharosa nahi.
     private var pipReturnPath: String? = null
+    // Fullscreen kholte waqt wali watch-page path — wapas aane par WebView kahin aur ho to yahin le aao.
+    private var fullscreenOriginPath: String? = null
     // PERMANENT FIX (user ask: "PiP kaunse episode/video ki hai yeh yaad
     // rakhne wala ek pakka system chahiye, taaki expand karte waqt seedha
     // wahi episode khule"): `pipReturnPath` (upar) ab tak `currentWebViewPathOrNull()`
@@ -2823,9 +2825,9 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
     // both directly (tapping the top-bar label) and via the settings sheet's
     // "Playback speed" row.
     // ---------------------------------------------------------------------
-    private val inlineSpeedPresets = floatArrayOf(1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+    private val inlineSpeedPresets = floatArrayOf(1.0f, 1.5f, 2.0f, 3.0f, 4.0f)
     private val INLINE_SPEED_MIN = 0.25f
-    private val INLINE_SPEED_MAX = 3.0f
+    private val INLINE_SPEED_MAX = 4.0f
     private val INLINE_SPEED_STEP = 0.05f
 
     private fun formatInlineSpeedLabel(speed: Float): String {
@@ -2841,8 +2843,12 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = androidx.core.content.ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_speed_sheet)
-            setPadding(dp(22), dp(14), dp(22), dp(26))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.parseColor("#F2121215"))
+                cornerRadii = floatArrayOf(dp(20).toFloat(), dp(20).toFloat(), dp(20).toFloat(), dp(20).toFloat(), 0f, 0f, 0f, 0f)
+                setStroke(dp(1), (0x80 shl 24) or (inlineAccentColor and 0x00FFFFFF))
+            }
+            setPadding(dp(22), dp(14), dp(22), dp(18))
         }
 
         root.addView(View(this).apply {
@@ -2899,8 +2905,8 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
                 marginStart = dp(10)
                 marginEnd = dp(10)
             }
-            progressTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
-            thumbTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FFD700"))
+            progressTintList = android.content.res.ColorStateList.valueOf(inlineAccentColor)
+            thumbTintList = android.content.res.ColorStateList.valueOf(inlineAccentColor)
         }
         sliderRow.addView(minusBtn)
         sliderRow.addView(seek)
@@ -2913,10 +2919,14 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         fun refreshPills(selected: Float) {
             pillViews.forEach { (tv, value) ->
                 val isSel = Math.abs(value - selected) < 0.01f
-                tv.background = androidx.core.content.ContextCompat.getDrawable(
-                    this@MainActivity,
-                    if (isSel) R.drawable.bg_speed_pill_selected else R.drawable.bg_speed_pill
-                )
+                tv.background = if (isSel) android.graphics.drawable.GradientDrawable().apply {
+                    setColor(inlineAccentColor)
+                    cornerRadius = dp(18).toFloat()
+                } else android.graphics.drawable.GradientDrawable().apply {
+                    setColor((0x22 shl 24) or (inlineAccentColor and 0x00FFFFFF))
+                    setStroke(dp(1), (0x55 shl 24) or (inlineAccentColor and 0x00FFFFFF))
+                    cornerRadius = dp(18).toFloat()
+                }
                 tv.setTextColor(if (isSel) android.graphics.Color.parseColor("#0B0B12") else android.graphics.Color.WHITE)
             }
         }
@@ -2971,6 +2981,15 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         sheet.setOnShowListener {
             val bottomSheet = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             bottomSheet?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
+        sheet.setOnShowListener {
+            val bs = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bs?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            if (bs != null) {
+                val b = com.google.android.material.bottomsheet.BottomSheetBehavior.from(bs)
+                b.skipCollapsed = true
+                b.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            }
         }
         sheet.show()
     }
@@ -3390,6 +3409,7 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
         if (nowMs - lastPlayerLaunchAt < 700L) return // debounce double taps
         lastPlayerLaunchAt = nowMs
         playerActivityOwnsPlayer = true
+        fullscreenOriginPath = (lastKnownWatchPath ?: currentWebViewPathOrNull())?.takeIf { it.startsWith("/watch/") }
         val pos = inlinePlayer?.currentPosition ?: 0L
         val wasPlaying = inlinePlayer?.playWhenReady ?: true
         // Bug fix (premium smoothness / "buffering" feel): pehle yahan turant
@@ -3902,6 +3922,32 @@ class MainActivity : AppCompatActivity(), DownloadService.ProgressListener {
             // `didNavigateBackForPip` value par, jo entry-time par set hui
             // thi aur is asli decision ko sahi se reflect nahi karti thi).
             awaitingRectAfterPipReturn = needsPipReturnNavigate
+
+            // Fullscreen -> PiP -> Home -> expand -> back: WebView Home par ho to
+            // wapas us watch page par le jao (warna native player Home ke upar khulta tha).
+            val originPath = fullscreenOriginPath
+            fullscreenOriginPath = null
+            if (!needsPipReturnNavigate && originPath != null) {
+                val lit = JSONObject.quote(originPath)
+                webView.evaluateJavascript(
+                    "(function(){var o=$lit;var p=location.pathname+location.search;" +
+                        "if(p!==o&&window.__suhaniPipReturnTo){window.__suhaniPipReturnTo(o);return true}return false})()"
+                ) { r ->
+                    if (r == "true") {
+                        awaitingRectAfterPipReturn = true
+                        inlineOverlay?.visibility = View.GONE
+                        awaitingRectTimeoutRunnable?.let { awaitingRectHandler.removeCallbacks(it) }
+                        val tr = Runnable {
+                            if (awaitingRectAfterPipReturn) {
+                                awaitingRectAfterPipReturn = false
+                                showInlineOverlayWithFade()
+                            }
+                        }
+                        awaitingRectTimeoutRunnable = tr
+                        awaitingRectHandler.postDelayed(tr, 2600L)
+                    }
+                }
+            }
 
             // Fullscreen mein PlayerActivity isi player instance ko istemal kar raha
             // tha (SharedPlayerHolder ke through) — agar wo abhi bhi zinda hai (decoder
