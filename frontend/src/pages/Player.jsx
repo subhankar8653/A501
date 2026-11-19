@@ -850,7 +850,7 @@ export default function Player() {
     // yahan turant hata dena UI ko turant consistent rakhta hai).
     removeWatchProgress(imdbId, isSeries ? id : undefined).catch(() => {})
     if (autoplay && isSeries && upNext.episodes[0]) {
-      navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`)
+      navigate(`/watch/series/${encodeURIComponent(upNext.episodes[0].id)}`, { replace: true })
     }
   }
 
@@ -860,10 +860,10 @@ export default function Player() {
   // episode ka URL nahi jaanta, bas yeh do window function call karta hai.
   useEffect(() => {
     window.__suhaniOnNativeNext = () => {
-      if (nextEpisode) navigate(`/watch/series/${encodeURIComponent(nextEpisode.id)}`)
+      if (nextEpisode) navigate(`/watch/series/${encodeURIComponent(nextEpisode.id)}`, { replace: true })
     }
     window.__suhaniOnNativePrev = () => {
-      if (prevEpisode) navigate(`/watch/series/${encodeURIComponent(prevEpisode.id)}`)
+      if (prevEpisode) navigate(`/watch/series/${encodeURIComponent(prevEpisode.id)}`, { replace: true })
     }
     // BUG FIX (user report: "Autoplay On hone ke bawajood episode khatam
     // hone par next episode play nahi hota"): native (inline) playback mein
@@ -1436,7 +1436,7 @@ export default function Player() {
                 {upNext.episodes.map((ep) => (
                   <button
                     key={ep.id}
-                    onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`)}
+                    onClick={() => navigate(`/watch/series/${encodeURIComponent(ep.id)}`, { replace: true })}
                     className="w-full flex gap-4 text-left bg-reel-surface hover:bg-reel-surface2 active:scale-[0.98] transition rounded-lg p-3 ring-1 ring-reel-ink/5"
                   >
                     <div className="relative w-32 sm:w-40 aspect-video rounded-lg overflow-hidden shrink-0">

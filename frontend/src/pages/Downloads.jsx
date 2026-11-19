@@ -84,7 +84,7 @@ function OfflinePlayer({ entry, onClose }) {
               <VideoPlayer
                 key={url}
                 src={url}
-                title={entry.filename}
+                title={entry.playbackTitle || entry.filename}
                 onEnded={onClose}
                 onFatalError={() => setErr(true)}
               />
@@ -98,7 +98,7 @@ function OfflinePlayer({ entry, onClose }) {
 
         <div className="px-4 sm:px-6">
           <div className="mt-4">
-            <h1 className="font-display text-lg text-reel-ink break-words">{entry.filename}</h1>
+            <h1 className="font-display text-lg text-reel-ink break-words">{entry.playbackTitle || entry.filename}</h1>
             <div className="flex flex-wrap gap-2 mt-2">
               {badges.map((b, i) => (
                 <span key={i} className="text-xs px-2.5 py-1 rounded-full bg-reel-surface2 text-reel-muted whitespace-pre">

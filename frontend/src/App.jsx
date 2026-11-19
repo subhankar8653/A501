@@ -156,7 +156,8 @@ export default function App() {
         // Player ka naya `key` navigate() se PEHLE hi ready ho), phir
         // navigate() karo.
         setPipReturnNonce((n) => n + 1)
-        navigate(path)
+        // Same page par wapas aate waqt history mein duplicate entry mat banao (back sahi jagah jaaye).
+        navigate(path, { replace: path === window.location.pathname + window.location.search })
       }
     }
     return () => {

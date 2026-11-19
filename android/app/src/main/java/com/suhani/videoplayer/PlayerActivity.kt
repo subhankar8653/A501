@@ -383,6 +383,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var bottomAspectButton: ImageView
     private lateinit var bottomAutoplayButton: ImageView
     private lateinit var bottomExpandButton: ImageView
+    private lateinit var topAmbientButton: ImageView
     private lateinit var bottomQualityButton: ImageView
     // Series ke next/prev episode ka state MainActivity se aata hai (queue single-item
     // hone par Media3 ko pata nahi hota). pendingEpisodeNav set hone par finish()
@@ -923,6 +924,7 @@ class PlayerActivity : AppCompatActivity() {
         bottomAspectButton = findViewById(R.id.bottomAspectButton)
         bottomAutoplayButton = findViewById(R.id.bottomAutoplayButton)
         bottomExpandButton = findViewById(R.id.bottomExpandButton)
+        topAmbientButton = findViewById(R.id.topAmbientButton)
         bottomQualityButton = findViewById(R.id.bottomQualityButton)
         hasNextEpisodeExtra = intent.getBooleanExtra("has_next_episode", false)
         hasPrevEpisodeExtra = intent.getBooleanExtra("has_prev_episode", false)
@@ -1022,7 +1024,7 @@ class PlayerActivity : AppCompatActivity() {
             sleepTimerButton, equalizerButton, backgroundPlayButton,
             ambientGlowButton, statsForNerdsButton, expandActionsButton,
             audioTrackButton, subtitleButton, speedButton,
-            bottomPipButton, bottomAspectButton, bottomAutoplayButton, bottomQualityButton, bottomExpandButton, resetZoomChip
+            bottomPipButton, bottomAspectButton, bottomAutoplayButton, bottomQualityButton, bottomExpandButton, topAmbientButton, resetZoomChip
         ).forEach { applyPressScale(it) }
 
         abHandler.post(abRunnable)
@@ -1293,7 +1295,12 @@ class PlayerActivity : AppCompatActivity() {
         // FEATURE (user follow-up: "sabhi icon pe kaam karna chahiye" —
         // same request as the inline player's; ALL fullscreen-player icons
         // now follow the theme too, not just the hero play/pause button).
-        val tintList = android.content.res.ColorStateList.valueOf(color)
+        // Aankhon ko na chubhe: icons accent ka halka (white ke taraf) aur thoda transparent version use karte hain;
+        // time-bar / play button asli accent rehte hain.
+        val softIcon = androidx.core.graphics.ColorUtils.setAlphaComponent(
+            androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, 0.45f), 0xD9
+        )
+        val tintList = android.content.res.ColorStateList.valueOf(softIcon)
         frameBackButton.imageTintList = tintList
         frameForwardButton.imageTintList = tintList
         expandActionsButton.imageTintList = tintList
@@ -1306,6 +1313,7 @@ class PlayerActivity : AppCompatActivity() {
         bottomQualityButton.imageTintList = tintList
         bottomAutoplayButton.imageTintList = tintList
         bottomExpandButton.imageTintList = tintList
+        if (::topAmbientButton.isInitialized) topAmbientButton.imageTintList = tintList
         backButton.imageTintList = tintList
         // BUG FIX (user report: "fullscreen mein subtitle icon ka rang nahi
         // badla") — this field existed but was missed from the first pass.
@@ -2554,10 +2562,13 @@ class PlayerActivity : AppCompatActivity() {
         ambientGlowOn = featurePrefs.getBoolean("ambient_glow_on", true)
         ambientGlowView.setGlowEnabled(ambientGlowOn)
         setToggleActive(ambientGlowButton, ambientGlowOn)
+        topAmbientButton.setOnClickListener { ambientGlowButton.performClick() }
+        syncAmbientTopButton()
         ambientGlowButton.setOnClickListener {
             ambientGlowOn = !ambientGlowOn
             ambientGlowView.setGlowEnabled(ambientGlowOn)
             setToggleActive(ambientGlowButton, ambientGlowOn)
+            syncAmbientTopButton()
             featurePrefs.edit().putBoolean("ambient_glow_on", ambientGlowOn).apply()
             showGestureFeedback(if (ambientGlowOn) "Ambient Glow ON" else "Ambient Glow OFF")
         }
@@ -4722,6 +4733,10 @@ class PlayerActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------
     // More menu: poora grid (screenshot jaisa) + Video Display / Shortcuts switches
     // ---------------------------------------------------------------------
+    private fun syncAmbientTopButton() {
+        if (::topAmbientButton.isInitialized) topAmbientButton.alpha = if (ambientGlowOn) 1f else 0.4f
+    }
+
     private fun syncAutoplayButton() {
         bottomAutoplayButton.alpha = if (autoplayEnabled) 1f else 0.4f
     }

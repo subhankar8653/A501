@@ -222,6 +222,16 @@
                 android:contentDescription="picture in picture" />
 
             <ImageView
+                android:id="@+id/topAmbientButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_ambient_glow"
+                android:foreground="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="ambient mode" />
+
+            <ImageView
                 android:id="@+id/bottomAutoplayButton"
                 android:layout_width="36dp"
                 android:layout_height="36dp"

@@ -76,6 +76,13 @@ function blockReasonOf(streams) {
   return blocked || null
 }
 
+function streamTitleOf(stream) {
+  const lines = (stream?.title || '').split('\n').map((l) => l.trim()).filter(Boolean)
+  let name = stream?.name || ''
+  for (const line of lines) if (line.startsWith('📁')) name = line.replace('📁', '').trim()
+  return name
+}
+
 export default function DownloadQualitySheet({ open, onClose, type, imdbId, showName, showPoster, episodes }) {
   const { t } = useLanguage()
   const [labels, setLabels] = useState(null) // null = loading, [] = none found
@@ -217,6 +224,8 @@ export default function DownloadQualitySheet({ open, onClose, type, imdbId, show
           episode: ep.episode,
           episodeTitle: ep.title,
           filename: ep.filename || `${showName} E${ep.episode}`,
+          // Online player jaisa hi caption (Name S01E01 Audio: [Hindi] [1080p]) offline fullscreen ke liye bhi.
+          playbackTitle: streamTitleOf(match) || ep.filename || '',
           poster: showPoster,
           qualityLabel: qualityLabel(match),
         })

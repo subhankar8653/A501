@@ -473,6 +473,7 @@ export async function startDownload(url, meta) {
     episode: meta.episode ?? null,
     episodeTitle: meta.episodeTitle || '',
     filename: meta.filename || 'download',
+    playbackTitle: meta.playbackTitle || '',
     poster: meta.poster || null,
     qualityLabel: meta.qualityLabel || '',
     // FEATURE: pause/resume (native ya JS fallback) ke liye baad mein isi
